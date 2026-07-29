@@ -1,0 +1,1922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Question Bank Portal</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0a0a;
+    --panel:#111111;
+    --field:#141414;
+    --border:#262626;
+    --border-focus:#c9a227;
+    --text:#e8e8e8;
+    --muted:#8a8a8a;
+    --label:#9a9a9a;
+    --gold:#c9a227;
+    --gold-text:#0a0a0a;
+    --danger:#e05252;
+    --ok:#4caf7d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:28px;
+  }
+  .wrap{max-width:820px;margin:0 auto;}
+  .card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:26px 28px;
+    margin-bottom:20px;
+  }
+  .header-row{display:flex;justify-content:space-between;align-items:flex-start;}
+  h1{font-size:22px;margin:0 0 4px 0;font-weight:700;}
+  .sub{color:var(--muted);font-size:11px;letter-spacing:.08em;font-weight:600;text-transform:uppercase;margin:0;}
+  hr{border:none;border-top:1px solid var(--border);margin:18px 0 22px 0;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px 24px;}
+  label.field-label{
+    display:block;
+    font-size:11px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--label);
+    font-weight:700;
+    margin-bottom:8px;
+  }
+  label.field-label .req{color:var(--gold);}
+  select, input[type=text], textarea{
+    width:100%;
+    background:var(--field);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:9px;
+    padding:11px 14px;
+    font-size:14.5px;
+    font-family:inherit;
+    outline:none;
+    transition:border-color .15s;
+  }
+  select:focus, input:focus, textarea:focus{border-color:var(--border-focus);}
+  select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='9'><path d='M1 1l6 6 6-6' stroke='%238a8a8a' stroke-width='1.6' fill='none'/></svg>");background-repeat:no-repeat;background-position:right 14px center;padding-right:34px;}
+  textarea{resize:vertical;min-height:70px;}
+  .field{margin-bottom:20px;}
+  .toggles{display:flex;gap:10px;background:var(--field);border:1px solid var(--border);border-radius:9px;padding:8px;}
+  .toggle-btn{
+    flex:1;
+    background:transparent;
+    border:none;
+    color:var(--muted);
+    font-weight:700;
+    font-size:13px;
+    padding:9px 0;
+    border-radius:7px;
+    cursor:pointer;
+    transition:background .15s,color .15s;
+  }
+  .toggle-btn.active{background:var(--gold);color:var(--gold-text);}
+  .toggle-btn:hover:not(.active){color:var(--text);}
+  .mcq-row{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+  .mcq-tag{
+    width:28px;height:28px;flex-shrink:0;border-radius:7px;background:var(--field);
+    border:1px solid var(--border);display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:var(--muted);
+  }
+  .mcq-input-col{flex:1;min-width:200px;}
+  .actions-row{display:flex;justify-content:flex-end;gap:12px;margin-top:22px;}
+  .btn{border:none;border-radius:9px;padding:12px 22px;font-size:14px;font-weight:700;cursor:pointer;}
+  .btn-primary{background:var(--gold);color:var(--gold-text);}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
+  .btn-ghost:hover{color:var(--text);border-color:#3a3a3a;}
+  .list-item{
+    background:var(--field);border:1px solid var(--border);border-radius:10px;
+    padding:16px 18px;margin-bottom:12px;
+  }
+  .li-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+  .li-meta{font-size:11px;color:var(--muted);letter-spacing:.03em;margin-bottom:6px;}
+  .li-meta span{color:var(--gold);}
+  .li-q{font-size:14px;line-height:1.5;}
+  .li-opts{margin-top:8px;font-size:13px;color:#c9c9c9;line-height:1.8;}
+  .li-opts .correct{color:var(--ok);font-weight:700;}
+  .li-btns{display:flex;gap:8px;flex-shrink:0;}
+  .icon-btn{
+    background:transparent;border:1px solid var(--border);color:var(--muted);
+    border-radius:7px;width:32px;height:32px;cursor:pointer;font-size:14px;
+  }
+  .icon-btn:hover{color:var(--text);}
+  .icon-btn.del:hover{color:var(--danger);border-color:var(--danger);}
+  .tag-pill{
+    display:inline-block;background:#1c1c1c;border:1px solid var(--border);
+    color:var(--muted);font-size:10.5px;padding:2px 8px;border-radius:20px;margin-right:6px;
+  }
+  .empty-state{text-align:center;color:var(--muted);padding:40px 0;font-size:14px;}
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:var(--ok);color:#04220f;font-weight:700;padding:12px 22px;border-radius:10px;
+    font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+  .filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .filters select{width:auto;min-width:140px;padding:8px 30px 8px 12px;font-size:13px;}
+  .count-line{color:var(--muted);font-size:12.5px;margin-bottom:14px;}
+  .li-preview{font-size:14px;line-height:1.5;}
+  .li-preview .eq-img-remove{display:none;}
+  .li-preview .eq-chip{cursor:default;}
+  .li-preview img{max-width:160px;max-height:120px;}
+  .li-combo{font-size:13px;color:#c9c9c9;margin-top:4px;}
+  .li-combo .correct{color:var(--ok);font-weight:700;}
+  .latex-preview{
+    background:#0d0d0d;border:1px dashed var(--border);border-radius:8px;
+    padding:9px 12px;margin-top:6px;font-size:14.5px;min-height:18px;color:#d8d8d8;
+    overflow-x:auto;
+  }
+  .latex-preview:empty{display:none;}
+  .latex-preview .katex-error{color:var(--danger);font-family:monospace;font-size:12px;}
+  .li-q .katex, .li-opts .katex{font-size:1em;}
+  .eq-field{
+    width:100%;min-height:44px;background:var(--field);border:1px solid var(--border);
+    border-radius:9px;padding:11px 14px;font-size:14.5px;outline:none;
+    white-space:pre-wrap;word-break:break-word;line-height:1.6;
+  }
+  .eq-field.multiline{min-height:70px;}
+  .eq-field:focus{border-color:var(--border-focus);}
+  .eq-field:empty:before{content:attr(data-placeholder);color:#5c5c5c;}
+  .eq-chip{display:inline-block;padding:1px 4px;border-radius:4px;cursor:pointer;}
+  .eq-chip:hover{outline:1px dashed var(--gold);}
+  .eq-chip .katex-error{color:var(--danger);font-family:monospace;font-size:12px;}
+  .eq-hint{font-size:11px;color:#666;margin-top:5px;}
+  .predef{
+    background:var(--field);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:14px 16px;
+    margin-top:4px;
+    margin-bottom:20px;
+    font-size:13px;
+    color:#c9c9c9;
+    line-height:1.7;
+  }
+  .predef .ptitle{color:var(--gold);font-weight:700;margin-bottom:4px;}
+  .predef b{color:var(--gold);}
+  .eq-wrap{position:relative;}
+  .eq-wrap .eq-field{padding-right:38px;}
+  .img-link-btn{
+    position:absolute; top:6px; right:6px; z-index:2;
+    background:var(--field); border:1px solid var(--border); color:var(--gold);
+    border-radius:6px; width:26px; height:24px; font-size:13px; cursor:pointer; line-height:1;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .img-link-btn:hover{border-color:var(--border-focus);}
+  .eq-field img{max-width:100%;max-height:220px;border-radius:6px;display:inline-block;vertical-align:middle;margin:2px 0;}
+  .tbtn{
+    background:var(--field);border:1px solid var(--border);color:var(--gold);
+    border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;
+  }
+  .tbtn:hover{border-color:var(--border-focus);}
+  .match-row-input{margin-bottom:10px;}
+  .combo-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+  .combo-tag{
+    width:28px;height:28px;flex-shrink:0;border-radius:50%;background:var(--field);
+    border:1px solid var(--border);display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:var(--muted);
+  }
+  .combo-row .eq-field{flex:1;}
+  .label-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .label-row .field-label{margin-bottom:0;}
+  .attach-btn{
+    background:var(--field);border:1px solid var(--border);color:var(--gold);
+    border-radius:7px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  }
+  .attach-btn:hover{border-color:var(--border-focus);}
+  .row-item{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .row-item .eq-field{flex:1;margin-bottom:0;}
+  .row-remove-btn{
+    background:transparent;border:1px solid var(--border);color:var(--muted);
+    border-radius:6px;width:26px;height:26px;flex-shrink:0;cursor:pointer;font-size:12px;
+    display:flex;align-items:center;justify-content:center;padding:0;
+  }
+  .row-remove-btn:hover{color:var(--danger);border-color:var(--danger);}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:4px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <div class="header-row">
+      <div>
+        <h1 id="formTitle">Add New Question</h1>
+        <p class="sub">Question Entry Form &nbsp;•&nbsp; Press Ctrl+Enter to Save</p>
+      </div>
+    </div>
+    <hr>
+
+    <div class="grid2">
+      <div class="field">
+        <label class="field-label">Subject <span class="req">*</span></label>
+        <select id="subject"><option value="">Select Subject</option></select>
+      </div>
+      <div class="field">
+        <label class="field-label">Class <span class="req">*</span></label>
+        <select id="klass"><option value="">Select Class</option></select>
+      </div>
+      <div class="field">
+        <label class="field-label">Chapter <span class="req">*</span></label>
+        <select id="chapter"><option value="">Select Chapter</option></select>
+      </div>
+      <div class="field">
+        <label class="field-label">Topic <span class="req">*</span></label>
+        <input type="text" id="topic" placeholder="Enter topic">
+      </div>
+      <div class="field">
+        <label class="field-label">Exam Category <span class="req">*</span></label>
+        <div class="toggles" id="examToggles"></div>
+      </div>
+      <div class="field">
+        <label class="field-label">Question Type <span class="req">*</span></label>
+        <select id="qType">
+          <option value="">Select Type</option>
+          <option value="mcq_single">MCQ (Single Correct)</option>
+          <option value="assertion_reason">Assertion &amp; Reason</option>
+          <option value="match">Match the Following</option>
+          <option value="numerical">Numerical / Integer Type</option>
+          <option value="true_false">True / False</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="mcqBlock">
+      <div class="field">
+        <div class="label-row">
+          <label class="field-label">Question <span class="req">*</span></label>
+          <button type="button" class="attach-btn img-link-btn-flat" data-target="question">📎 Attach Image</button>
+        </div>
+        <div class="eq-field multiline" id="question" data-placeholder="Type the question..." contenteditable="true" spellcheck="false"></div>
+      </div>
+
+      <label class="field-label">Options <span class="req">*</span></label>
+      <div class="grid2">
+        <div class="mcq-row" style="margin:0;">
+          <div class="mcq-tag">A</div>
+          <div class="mcq-input-col">
+            <div class="eq-wrap">
+              <div class="eq-field" id="optA" data-placeholder="Option A" contenteditable="true" spellcheck="false"></div>
+              <button type="button" class="img-link-btn" data-target="optA" title="Attach Image">📎</button>
+            </div>
+          </div>
+        </div>
+        <div class="mcq-row" style="margin:0;">
+          <div class="mcq-tag">B</div>
+          <div class="mcq-input-col">
+            <div class="eq-wrap">
+              <div class="eq-field" id="optB" data-placeholder="Option B" contenteditable="true" spellcheck="false"></div>
+              <button type="button" class="img-link-btn" data-target="optB" title="Attach Image">📎</button>
+            </div>
+          </div>
+        </div>
+        <div class="mcq-row" style="margin:0;">
+          <div class="mcq-tag">C</div>
+          <div class="mcq-input-col">
+            <div class="eq-wrap">
+              <div class="eq-field" id="optC" data-placeholder="Option C" contenteditable="true" spellcheck="false"></div>
+              <button type="button" class="img-link-btn" data-target="optC" title="Attach Image">📎</button>
+            </div>
+          </div>
+        </div>
+        <div class="mcq-row" style="margin:0;">
+          <div class="mcq-tag">D</div>
+          <div class="mcq-input-col">
+            <div class="eq-wrap">
+              <div class="eq-field" id="optD" data-placeholder="Option D" contenteditable="true" spellcheck="false"></div>
+              <button type="button" class="img-link-btn" data-target="optD" title="Attach Image">📎</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="arBlock" style="display:none;">
+      <div class="field">
+        <div class="label-row">
+          <label class="field-label">Assertion (A) <span class="req">*</span></label>
+          <button type="button" class="attach-btn img-link-btn-flat" data-target="assertion">📎 Attach Image</button>
+        </div>
+        <div class="eq-field multiline" id="assertion" data-placeholder="Type Assertion (A)..." contenteditable="true" spellcheck="false"></div>
+      </div>
+      <div class="field">
+        <div class="label-row">
+          <label class="field-label">Reason (R) <span class="req">*</span></label>
+          <button type="button" class="attach-btn img-link-btn-flat" data-target="reason">📎 Attach Image</button>
+        </div>
+        <div class="eq-field multiline" id="reason" data-placeholder="Type Reason (R)..." contenteditable="true" spellcheck="false"></div>
+      </div>
+      <div class="field">
+        <label class="field-label">Predefined Options</label>
+        <div class="eq-field multiline" id="predefOptions" contenteditable="true" spellcheck="false" data-placeholder="Predefined options text (editable)"></div>
+      </div>
+    </div>
+
+    <div id="matchBlock" style="display:none;">
+      <div class="grid2">
+        <div class="field">
+          <label class="field-label">Column A <span class="req">*</span></label>
+          <div id="columnARows"></div>
+          <button type="button" class="tbtn wide" id="addColumnARow">+ Add Row</button>
+        </div>
+        <div class="field">
+          <label class="field-label">Column B <span class="req">*</span></label>
+          <div id="columnBRows"></div>
+          <button type="button" class="tbtn wide" id="addColumnBRow">+ Add Row</button>
+        </div>
+      </div>
+      <div class="field" style="margin-top:6px;">
+        <label class="field-label">Option Combinations <span class="req">*</span></label>
+        <div id="matchOptionsRows"></div>
+      </div>
+    </div>
+
+    <div id="numBlock" style="display:none;">
+      <div class="field">
+        <div class="label-row">
+          <label class="field-label">Numerical Question <span class="req">*</span></label>
+          <button type="button" class="attach-btn img-link-btn-flat" data-target="numQuestion">📎 Attach Image</button>
+        </div>
+        <div class="eq-field multiline" id="numQuestion" data-placeholder="Type the question..." contenteditable="true" spellcheck="false"></div>
+      </div>
+      <div class="field">
+        <label class="field-label">Correct Numerical Value <span class="req">*</span></label>
+        <div class="eq-field" id="numAnswer" data-placeholder="e.g. 9.8 or -5" contenteditable="true" spellcheck="false"></div>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:20px;" id="correctOptionWrap">
+      <label class="field-label">Correct Option <span class="req">*</span></label>
+      <select id="correctOption">
+        <option value="">Select Correct Option</option>
+        <option value="A">Option A</option>
+        <option value="B">Option B</option>
+        <option value="C">Option C</option>
+        <option value="D">Option D</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <div class="label-row">
+        <label class="field-label">Solution / Explanation</label>
+        <button type="button" class="attach-btn img-link-btn-flat" data-target="solutionText">📎 Attach Image</button>
+      </div>
+      <div class="eq-field multiline" id="solutionText" data-placeholder="Type the solution..." contenteditable="true" spellcheck="false"></div>
+    </div>
+
+    <div class="actions-row">
+      <button class="btn btn-ghost" id="resetBtn">Clear Form</button>
+      <button class="btn btn-primary" id="saveBtn">Save Question</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="header-row" style="margin-bottom:14px;">
+      <h1 style="font-size:18px;">Saved Questions</h1>
+    </div>
+    <div class="filters">
+      <select id="fSubject"><option value="">All Subjects</option></select>
+      <select id="fType">
+        <option value="">All Types</option>
+        <option value="mcq_single">MCQ (Single Correct)</option>
+        <option value="assertion_reason">Assertion &amp; Reason</option>
+        <option value="match">Match the Following</option>
+        <option value="numerical">Numerical / Integer Type</option>
+        <option value="true_false">True / False</option>
+      </select>
+    </div>
+    <div class="count-line" id="countLine"></div>
+    <div id="listContainer"></div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+<input type="file" id="hiddenImageInput" accept="image/*" style="display:none;">
+
+<script>
+(function(){
+
+const SUBJECTS = ["Physics","Chemistry","Biology","Maths"];
+const CLASSES = ["11","12"];
+// standard NCERT chapter names, keyed by "Subject-Class"
+const NCERT_CHAPTERS = {
+  "Physics-11": [
+    "Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane",
+    "Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation",
+    "Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter",
+    "Thermodynamics","Kinetic Theory","Oscillations","Waves"
+  ],
+  "Physics-12": [
+    "Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity",
+    "Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current",
+    "Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics",
+    "Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"
+  ],
+  "Chemistry-11": [
+    "Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties",
+    "Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions",
+    "Organic Chemistry: Some Basic Principles and Techniques","Hydrocarbons"
+  ],
+  "Chemistry-12": [
+    "Solutions","Electrochemistry","Chemical Kinetics","d- and f-Block Elements","Coordination Compounds",
+    "Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids",
+    "Amines","Biomolecules"
+  ],
+  "Biology-11": [
+    "The Living World","Biological Classification","Plant Kingdom","Animal Kingdom",
+    "Morphology of Flowering Plants","Anatomy of Flowering Plants","Structural Organisation in Animals",
+    "Cell: The Unit of Life","Biomolecules","Cell Cycle and Cell Division","Transport in Plants",
+    "Mineral Nutrition","Photosynthesis in Higher Plants","Respiration in Plants",
+    "Plant Growth and Development","Digestion and Absorption","Breathing and Exchange of Gases",
+    "Body Fluids and Circulation","Excretory Products and their Elimination","Locomotion and Movement",
+    "Neural Control and Coordination","Chemical Coordination and Integration"
+  ],
+  "Biology-12": [
+    "Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health",
+    "Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution",
+    "Human Health and Disease","Microbes in Human Welfare","Biotechnology: Principles and Processes",
+    "Biotechnology and its Applications","Organisms and Populations","Ecosystem",
+    "Biodiversity and Conservation"
+  ],
+  "Maths-11": [
+    "Sets","Relations and Functions","Trigonometric Functions","Principle of Mathematical Induction",
+    "Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations",
+    "Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections",
+    "Introduction to Three Dimensional Geometry","Limits and Derivatives","Statistics","Probability"
+  ],
+  "Maths-12": [
+    "Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants",
+    "Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals",
+    "Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"
+  ]
+};
+const EXAMS = ["NEET","JEE","KCET"];
+const QTYPE_LABELS = {
+  mcq_single:"MCQ (Single Correct)",
+  assertion_reason:"Assertion & Reason", match:"Match the Following",
+  numerical:"Numerical / Integer Type", true_false:"True / False"
+};
+
+let selectedExams = new Set();
+let editingId = null;
+let allQuestions = [];
+
+// ---------- LaTeX rendering ----------
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// Converts stray literal Unicode math symbols (e.g. a pasted "√2") into
+// proper LaTeX commands before KaTeX sees them. Without this, KaTeX's
+// strict mode throws "Unrecognized Unicode character" warnings/errors
+// for symbols like √ that it doesn't accept as raw input.
+function normalizeLatexExpr(expr){
+  if(!expr) return expr;
+  // √(...) or √x or √2.5 -> \sqrt{...}
+  expr = expr.replace(/√\s*\(([^()]+)\)/g, '\\sqrt{$1}');
+  expr = expr.replace(/√\s*([0-9]+(?:\.[0-9]+)?|[a-zA-Z]+)/g, '\\sqrt{$1}');
+  expr = expr.replace(/√/g, '\\surd '); // any leftover bare √ with no clear argument
+  // other common literal Unicode symbols KaTeX doesn't accept raw
+  expr = expr
+    .replace(/×/g, '\\times ')
+    .replace(/÷/g, '\\div ')
+    .replace(/°/g, '^{\\circ}')
+    .replace(/″/g, "''")   // double prime (U+2033), e.g. f″ -> f''
+    .replace(/′/g, "'");   // prime (U+2032), e.g. v1′ -> v1' (KaTeX renders ' natively)
+  return expr;
+}
+function renderMathMixed(raw){
+  if(!raw) return '';
+  let out = '';
+  let i = 0;
+  const n = raw.length;
+  while(i < n){
+    if(raw[i] === '$'){
+      const isDisplay = raw[i+1] === '$';
+      const delim = isDisplay ? '$$' : '$';
+      const start = i + delim.length;
+      const end = raw.indexOf(delim, start);
+      if(end === -1){ out += escapeHtml(raw.slice(i)); break; }
+      const expr = normalizeLatexExpr(raw.slice(start, end));
+      try{
+        out += window.katex.renderToString(expr, { throwOnError:false, displayMode:isDisplay });
+      }catch(e){
+        out += `<span class="katex-error">${escapeHtml(expr)}</span>`;
+      }
+      i = end + delim.length;
+    } else {
+      const next = raw.indexOf('$', i);
+      const chunk = next === -1 ? raw.slice(i) : raw.slice(i, next);
+      out += escapeHtml(chunk).replace(/\n/g,'<br>');
+      i = next === -1 ? n : next;
+    }
+  }
+  return out;
+}
+
+// ---------- inline equation fields (Word-style: type $latex$, press Enter to render) ----------
+function onEquationClick(e){
+  const span = e.currentTarget;
+  const field = span.closest('.eq-field');
+  if(!field) return; // read-only preview (e.g. saved questions list) — not editable
+  const isDisplay = span.dataset.display === '1';
+  const d = isDisplay ? '$$' : '$';
+  const textNode = document.createTextNode(d + span.dataset.latex + d);
+  span.parentNode.replaceChild(textNode, span);
+  field.focus();
+  const range = document.createRange();
+  range.setStartAfter(textNode);
+  range.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+function buildImageChip(src){
+  const wrap = document.createElement('span');
+  wrap.className = 'eq-img-chip';
+  wrap.contentEditable = 'false';
+  const img = document.createElement('img');
+  img.src = src;
+  wrap.appendChild(img);
+  const rm = document.createElement('span');
+  rm.className = 'eq-img-remove';
+  rm.textContent = '✕';
+  rm.title = 'Remove image';
+  rm.addEventListener('click', (ev)=>{ ev.stopPropagation(); wrap.remove(); });
+  wrap.appendChild(rm);
+  return wrap;
+}
+function insertImageChipAtCursor(el, src){
+  el.focus();
+  const sel = window.getSelection();
+  let range;
+  if(sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).commonAncestorContainer)){
+    range = sel.getRangeAt(0);
+  } else {
+    range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+  }
+  range.deleteContents();
+  const chip = buildImageChip(src);
+  range.insertNode(chip);
+  const newRange = document.createRange();
+  newRange.setStartAfter(chip);
+  newRange.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+}
+function buildEquationFragment(raw){
+  const frag = document.createDocumentFragment();
+  let i = 0;
+  const n = raw.length;
+  while(i < n){
+    if(raw.startsWith('{{IMG::', i)){
+      const closeIdx = raw.indexOf('}}', i + 7);
+      if(closeIdx === -1){ appendTextWithBreaks(frag, raw.slice(i)); break; }
+      const src = raw.slice(i + 7, closeIdx);
+      frag.appendChild(buildImageChip(src));
+      i = closeIdx + 2;
+      continue;
+    }
+    if(raw[i] === '$'){
+      const isDisplay = raw[i+1] === '$';
+      const delim = isDisplay ? '$$' : '$';
+      const start = i + delim.length;
+      const end = raw.indexOf(delim, start);
+      if(end === -1){ appendTextWithBreaks(frag, raw.slice(i)); break; }
+      const expr = normalizeLatexExpr(raw.slice(start, end));
+      const span = document.createElement('span');
+      span.className = 'eq-chip';
+      span.contentEditable = 'false';
+      span.dataset.latex = expr;
+      span.dataset.display = isDisplay ? '1' : '0';
+      try{
+        span.innerHTML = window.katex.renderToString(expr, { throwOnError:false, displayMode:isDisplay });
+      }catch(err){
+        span.innerHTML = `<span class="katex-error">${escapeHtml(expr)}</span>`;
+      }
+      span.addEventListener('click', onEquationClick);
+      frag.appendChild(span);
+      i = end + delim.length;
+      continue;
+    }
+    const nextDollar = raw.indexOf('$', i);
+    const nextImg = raw.indexOf('{{IMG::', i);
+    let next;
+    if(nextDollar === -1) next = nextImg;
+    else if(nextImg === -1) next = nextDollar;
+    else next = Math.min(nextDollar, nextImg);
+    if(next === -1){ appendTextWithBreaks(frag, raw.slice(i)); break; }
+    appendTextWithBreaks(frag, raw.slice(i, next));
+    i = next;
+  }
+  return frag;
+}
+function appendTextWithBreaks(frag, text){
+  const parts = text.split('\n');
+  parts.forEach((p, idx)=>{
+    if(p) frag.appendChild(document.createTextNode(p));
+    if(idx < parts.length - 1) frag.appendChild(document.createElement('br'));
+  });
+}
+const BLOCK_TAGS = new Set(['DIV','P','LI','TR','H1','H2','H3','H4','H5','H6']);
+function serializeFieldNode(el){
+  let raw = '';
+  el.childNodes.forEach(node=>{
+    if(node.nodeType === Node.TEXT_NODE){
+      raw += node.textContent;
+    } else if(node.nodeType === Node.ELEMENT_NODE){
+      if(node.classList && node.classList.contains('eq-chip')){
+        const d = node.dataset.display === '1' ? '$$' : '$';
+        raw += d + node.dataset.latex + d;
+      } else if(node.classList && node.classList.contains('eq-img-chip')){
+        const img = node.querySelector('img');
+        const src = img ? img.getAttribute('src') : '';
+        raw += '{{IMG::' + src + '}}';
+      } else if(node.tagName === 'BR'){
+        raw += '\n';
+      } else if(BLOCK_TAGS.has(node.tagName)){
+        // pasted multi-line text is often wrapped one <div>/<p> per line by the
+        // browser — insert a newline boundary so lines don't run together
+        if(raw.length && !raw.endsWith('\n')) raw += '\n';
+        raw += serializeFieldNode(node);
+        if(!raw.endsWith('\n')) raw += '\n';
+      } else {
+        raw += serializeFieldNode(node);
+      }
+    }
+  });
+  return raw;
+}
+function getFieldRaw(el){
+  return serializeFieldNode(el).replace(/\n+$/,''); // trim trailing newline browsers often add
+}
+function placeCursorAtEnd(el){
+  el.focus();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+// ============================================================
+// Smart Math Input System: auto-detects math-like plain-text
+// patterns (fractions, exponents, subscripts, chemical formulas,
+// charges, roots, Greek letters, operators, trig/calculus notation)
+// and converts them to LaTeX, wrapping only the math portion in
+// $...$. Genuine plain English words are left completely untouched.
+// Text already inside $...$ or {{IMG::}} markers is never touched.
+// ============================================================
+const GREEK_WORDS = {
+  alpha:'\\alpha', beta:'\\beta', gamma:'\\gamma', theta:'\\theta',
+  lambda:'\\lambda', omega:'\\omega', pi:'\\pi', mu:'\\mu',
+  sigma:'\\sigma', phi:'\\phi', delta:'\\delta', epsilon:'\\epsilon'
+};
+const TRIG_WORDS = {
+  sin:'\\sin', cos:'\\cos', tan:'\\tan', cot:'\\cot',
+  sec:'\\sec', cosec:'\\csc', csc:'\\csc', log:'\\log', ln:'\\ln'
+};
+const GREEK_LIST = Object.keys(GREEK_WORDS).sort((a,b)=>b.length-a.length);
+// maps for normalizing pasted Unicode superscript/subscript digits (², ₁, etc.)
+const UNICODE_SUPERSCRIPTS = {'\u2070':'0','\u00b9':'1','\u00b2':'2','\u00b3':'3','\u2074':'4','\u2075':'5','\u2076':'6','\u2077':'7','\u2078':'8','\u2079':'9','\u207a':'+','\u207b':'-'};
+const UNICODE_SUBSCRIPTS = {'\u2080':'0','\u2081':'1','\u2082':'2','\u2083':'3','\u2084':'4','\u2085':'5','\u2086':'6','\u2087':'7','\u2088':'8','\u2089':'9','\u208a':'+','\u208b':'-'};
+
+// finds greek words even when glued directly to digits (mu0 -> \mu_{0})
+// or embedded inside a larger chunk (e.g. "mu0i"), while leaving normal
+// English words that merely CONTAIN a greek word as a substring alone
+// (e.g. "pick" contains "pi" but must not be touched)
+function greekify(str){
+  let result = str;
+  GREEK_LIST.forEach(word=>{
+    const re = new RegExp('(^|[^A-Za-z\\\\])(' + word + ')(\\d*)', 'gi');
+    result = result.replace(re, (m, pre, w, digits, offset, full) => {
+      if(!digits){
+        const nextChar = full[offset + m.length];
+        if(nextChar && /[A-Za-z]/.test(nextChar)) return m; // part of a longer English word
+      }
+      return pre + GREEK_WORDS[w.toLowerCase()] + (digits ? '_{' + digits + '}' : '');
+    });
+  });
+  return result;
+}
+
+// splits raw text into segments that are already-final ($...$ math or
+// {{IMG::}} image markers) vs plain-text zones that still need scanning
+function splitFinalSegments(raw){
+  const segments = [];
+  let i = 0; const n = raw.length; let buf = '';
+  while(i < n){
+    if(raw.startsWith('{{IMG::', i)){
+      const close = raw.indexOf('}}', i + 7);
+      if(close === -1){ buf += raw.slice(i); break; }
+      if(buf){ segments.push({type:'final', value:buf}); buf=''; }
+      segments.push({type:'final', value: raw.slice(i, close+2)});
+      i = close + 2; continue;
+    }
+    if(raw[i] === '$'){
+      const isDisplay = raw[i+1] === '$';
+      const delim = isDisplay ? '$$' : '$';
+      const end = raw.indexOf(delim, i + delim.length);
+      if(end === -1){ buf += raw.slice(i); break; }
+      if(buf){ segments.push({type:'final', value:buf}); buf=''; }
+      segments.push({type:'final', value: raw.slice(i, end+delim.length)});
+      i = end + delim.length; continue;
+    }
+    buf += raw[i]; i++;
+  }
+  if(buf) segments.push({type:'final', value:buf});
+  return segments;
+}
+
+function wrapMath(latex){ return '$' + latex + '$'; }
+
+// converts a balanced a/b, (a+b)/c, (a+b)/(c+d) fraction, supporting
+// one level of nesting like (a/b)/(c/d)
+function convertFraction(str){
+  const m = str.match(/^(\(.+\)|[^\/()]+)\/(\(.+\)|[^\/()]+)$/);
+  if(!m) return str;
+  let num = m[1], den = m[2];
+  if(num.startsWith('(') && num.endsWith(')')) num = num.slice(1,-1);
+  if(den.startsWith('(') && den.endsWith(')')) den = den.slice(1,-1);
+  const numConv = convertIdentifierSubscripts(greekify(convertFraction(num)));
+  const denConv = convertIdentifierSubscripts(greekify(convertFraction(den)));
+  return '\\frac{' + numConv + '}{' + denConv + '}';
+}
+
+// H2O -> H_{2}O, CO2 -> CO_{2}, Fe2O3 -> Fe_{2}O_{3}, NH4Cl -> NH_{4}Cl
+// only fires when the ENTIRE token decomposes into Element+digits groups
+function convertChemSubscripts(str){
+  if(!/^([A-Z][a-z]?\d*)+$/.test(str)) return str;
+  if(!/\d/.test(str)) return str; // require at least one digit to bother
+  return str.replace(/([A-Z][a-z]?)(\d+)/g, (m, el, num) => el + '_{' + num + '}');
+}
+
+// generic identifier+digits -> subscript, e.g. R1 -> R_{1}, x2 -> x_{2},
+// mu0 (already-normalized \mu word) is handled separately; safe to reapply
+// since already-braced subscripts (letter followed by "_{") won't re-match
+function convertIdentifierSubscripts(str){
+  return str.replace(/([A-Za-z])(\d+)/g, (m, letter, digits) => letter + '_{' + digits + '}');
+}
+
+// true if the raw text has more \begin{...} than \end{...} — i.e. the
+// user is midway through typing a multi-row environment like a matrix
+// (\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}) and hasn't finished it yet
+function hasUnclosedLatexEnvironment(raw){
+  const begins = (raw.match(/\\begin\{/g) || []).length;
+  const ends = (raw.match(/\\end\{/g) || []).length;
+  return begins > ends;
+}
+// commands that require exactly two {..}{..} argument groups
+const TWO_ARG_LATEX_COMMANDS = ['frac','dfrac','tfrac','binom','dbinom','tbinom'];
+// true if the raw hand-typed LaTeX is structurally unfinished — mid-argument,
+// a command with no argument opened yet, or a two-arg command (\frac etc.)
+// that only has its first {..} so far. Used both to stop Enter from
+// rendering a broken fragment, and to stop the tokenizer below from
+// splitting a still-incomplete command across a line break.
+function looksIncompleteLatex(raw){
+  if(!/\\[a-zA-Z]/.test(raw)) return false; // only applies to hand-typed LaTeX
+
+  let depth = 0;
+  for(const ch of raw){
+    if(ch === '{') depth++;
+    else if(ch === '}') depth = Math.max(0, depth-1);
+  }
+  if(depth > 0) return true; // mid-argument, braces not yet closed
+
+  const trimmed = raw.replace(/\s+$/,'');
+  if(/\\[a-zA-Z]+$/.test(trimmed)) return true; // command typed, no argument opened yet
+
+  if(endsWithOneArgOfTwoArgCommand(trimmed)) return true; // e.g. "\frac{\sum_{i=1}^{n}...}" — still needs its 2nd argument
+
+  return hasUnclosedLatexEnvironment(raw);
+}
+// true if the LAST top-level two-arg command (e.g. \frac) in `trimmed`
+// only has one of its required two {...} arguments so far, with nothing
+// after it. Scans left-to-right, jumping over each command's already-
+// consumed argument groups (via real brace-depth matching) so nested
+// cases like "\frac{\frac{a+b}{c+d}}" are resolved against the OUTER
+// \frac (still missing its 2nd arg) rather than the inner one (complete).
+function endsWithOneArgOfTwoArgCommand(trimmed){
+  const n = trimmed.length;
+  let i = 0, lastDeficient = false;
+  while(i < n){
+    const m = trimmed.slice(i).match(/^\\([a-zA-Z]+)/);
+    if(m && TWO_ARG_LATEX_COMMANDS.includes(m[1])){
+      let end = i + m[0].length, got = 0;
+      for(let a = 0; a < 2; a++){
+        let j = end;
+        while(j < n && /\s/.test(trimmed[j])) j++;
+        if(trimmed[j] !== '{') break;
+        let depth = 1, k = j + 1;
+        while(k < n && depth > 0){
+          if(trimmed[k] === '{') depth++;
+          else if(trimmed[k] === '}') depth--;
+          k++;
+        }
+        if(depth !== 0){ end = n; got++; break; }
+        end = k; got++;
+      }
+      lastDeficient = (got < 2 && end === n);
+      i = end;
+      continue;
+    }
+    i++;
+  }
+  return lastDeficient;
+}
+
+// splits text into whitespace runs and "word" runs, where a word run is
+// allowed to contain internal spaces as long as it's still inside an
+// unbalanced/open ( [ or { — this keeps compound expressions like
+// "(a/b)(c − d)" together, AND keeps raw hand-typed LaTeX like
+// "\frac{\sin x}{x}" together even though it has a space inside {...}.
+// It also keeps extending past whitespace/newlines whenever the text so
+// far is a structurally-incomplete command (e.g. "\frac{a}" still waiting
+// on its 2nd argument), so a line break placed between \frac's two
+// argument groups doesn't tear them apart.
+function groupBalancedTokens(text){
+  const tokens = [];
+  let i = 0; const n = text.length;
+  while(i < n){
+    if(/\s/.test(text[i])){
+      const start = i;
+      while(i < n && /\s/.test(text[i])) i++;
+      tokens.push({type:'space', value:text.slice(start,i)});
+      continue;
+    }
+    const start = i;
+    let depth = 0;
+    while(i < n){
+      const ch = text[i];
+      if(ch === '(' || ch === '[' || ch === '{') depth++;
+      else if(ch === ')' || ch === ']' || ch === '}') depth = Math.max(0, depth-1);
+      if(/\s/.test(ch) && depth === 0){
+        if(looksIncompleteLatex(text.slice(start, i))){ i++; continue; }
+        break;
+      }
+      i++;
+    }
+    tokens.push({type:'word', value:text.slice(start,i)});
+  }
+  return tokens;
+}
+
+// recursively converts a compound expression containing one or more
+// (...) or [...] groups, e.g. "(mu0i/4)(1/R1 - 1/R2)" or
+// "[2h/m(f1-f2)]^(1/2)" — each group is processed independently
+// (fractions, subscripts) and wrapped in \left...\right, and an exponent
+// immediately following a closing bracket is attached correctly instead
+// of being left as a stray "^" plus a separate unrelated group
+function convertGeneralExpression(str){
+  let changed = false;
+  let result = '';
+  let i = 0; const n = str.length;
+  while(i < n){
+    const ch = str[i];
+    if(ch === '(' || ch === '['){
+      const closeCh = ch === '(' ? ')' : ']';
+      let depth = 1, j = i+1;
+      while(j < n && depth > 0){
+        if(str[j] === ch) depth++;
+        else if(str[j] === closeCh) depth--;
+        j++;
+      }
+      const hasClose = depth === 0;
+      const inner = hasClose ? str.slice(i+1, j-1) : str.slice(i+1);
+      const innerConv = convertGeneralExpression(inner);
+      if(innerConv.changed) changed = true;
+
+      let groupLatex;
+      // a literal √ (Unicode radical, from pasted "pretty" math text)
+      // immediately before this "(" means the group is its argument —
+      // e.g. "√(I1)" -> "\sqrt{I_{1}}" — not a normal grouped multiplication
+      if(ch === '(' && hasClose && /√\s*$/.test(result)){
+        result = result.replace(/√\s*$/, '');
+        groupLatex = '\\sqrt{' + innerConv.latex + '}';
+        changed = true;
+      } else {
+        const leftDelim = ch === '(' ? '\\left(' : '\\left[';
+        const rightDelim = ch === '(' ? '\\right)' : '\\right]';
+        groupLatex = hasClose ? (leftDelim + innerConv.latex + rightDelim) : (ch + innerConv.latex);
+      }
+      i = hasClose ? j : n;
+
+      // attach a following exponent directly, e.g. "]^(1/2)", ")^2", "]^{1/2}"
+      if(hasClose && i < n && str[i] === '^'){
+        let k = i + 1, expLatex = '';
+        if(str[k] === '('){
+          let ed = 1, m2 = k+1;
+          while(m2 < n && ed > 0){
+            if(str[m2] === '(') ed++; else if(str[m2] === ')') ed--;
+            m2++;
+          }
+          expLatex = convertGeneralExpression(str.slice(k+1, m2-1)).latex;
+          k = m2;
+        } else if(str[k] === '{'){
+          const close = str.indexOf('}', k);
+          if(close !== -1){ expLatex = str.slice(k+1, close); k = close+1; }
+        } else {
+          const dm = str.slice(k).match(/^-?\d+/);
+          if(dm){ expLatex = dm[0]; k += dm[0].length; }
+        }
+        if(expLatex){ groupLatex += '^{' + expLatex + '}'; changed = true; i = k; }
+      }
+
+      result += groupLatex;
+      continue;
+    }
+    let j = i;
+    while(j < n && str[j] !== '(' && str[j] !== '[') j++;
+    const chunk = str.slice(i, j);
+    const chunkConv = convertSimpleChunk(chunk);
+    if(chunkConv.changed) changed = true;
+    result += chunkConv.latex;
+    i = j;
+  }
+  return {latex: result, changed};
+}
+
+// converts a paren-free chunk: fractions (a/b), identifier subscripts
+// (R1 -> R_{1}), operators. Splits on top-level +/- first so multi-term
+// chunks like "1/R1 - 1/R2" convert each fraction independently instead
+// of failing to match as one big fraction.
+// splits on top-level "+"/"-" like the old naive regex did, but correctly
+// skips: (a) signs inside {...} groups (e.g. the "-" in "10^{-6}"), and
+// (b) a "-"/"+" directly after "^" even with no braces (e.g. "10^-6"),
+// which is an exponent's sign, not a separate term
+function splitTopLevelTerms(str){
+  const parts = [];
+  let depth = 0, start = 0;
+  for(let i = 0; i < str.length; i++){
+    const ch = str[i];
+    if(ch === '{') depth++;
+    else if(ch === '}') depth = Math.max(0, depth-1);
+    else if((ch === '+' || ch === '-') && depth === 0){
+      if(i === 0) continue; // leading sign, not a separator between two terms
+      const prevNonSpace = str.slice(0, i).replace(/\s+$/,'').slice(-1);
+      if(prevNonSpace === '^') continue; // exponent sign, e.g. "10^-6"
+      let opStart = i;
+      while(opStart > start && /\s/.test(str[opStart-1])) opStart--;
+      let opEnd = i + 1;
+      while(opEnd < str.length && /\s/.test(str[opEnd])) opEnd++;
+      parts.push(str.slice(start, opStart));
+      parts.push(str.slice(opStart, opEnd));
+      start = opEnd;
+      i = opEnd - 1;
+    }
+  }
+  parts.push(str.slice(start));
+  return parts;
+}
+// splits on top-level "=" for chained equalities like "a/b=c/d=e/f", each
+// side converted independently then rejoined. Skips "=" that's actually
+// part of <=, >=, or != so those operators aren't torn apart.
+function splitTopLevelEquals(str){
+  const parts = [];
+  let depth = 0, start = 0;
+  for(let i = 0; i < str.length; i++){
+    const ch = str[i];
+    if(ch === '{') depth++;
+    else if(ch === '}') depth = Math.max(0, depth-1);
+    else if(ch === '=' && depth === 0){
+      const prev = str[i-1];
+      if(prev === '<' || prev === '>' || prev === '!') continue;
+      parts.push(str.slice(start, i));
+      parts.push('=');
+      start = i + 1;
+    }
+  }
+  parts.push(str.slice(start));
+  return parts;
+}
+function convertSimpleChunk(chunk){
+  let changed = false;
+  let work = greekify(chunk);
+  if(work !== chunk) changed = true;
+
+  // bare radical with no parens, e.g. "√I" or "√4" -> "\sqrt{I}"/"\sqrt{4}"
+  // ("√(...)" with parens is handled one level up in convertGeneralExpression,
+  // since it needs balanced-paren matching this chunk-local function can't do)
+  if(work.includes('√')){
+    const withRadical = work.replace(/√\s*([0-9]+(?:\.[0-9]+)?|[a-zA-Z][a-zA-Z0-9_{}]*)/g, '\\sqrt{$1}');
+    if(withRadical !== work){ work = withRadical; changed = true; }
+  }
+
+  // chained equalities: "n_{1}/n_{2}=5600/4000=7/5" — convert each side
+  // independently, then rejoin with "="
+  const eqParts = splitTopLevelEquals(work);
+  if(eqParts.length > 1){
+    work = eqParts.map(part=>{
+      if(part === '=') return part;
+      const r = convertOneEqualitySide(part);
+      if(r.changed) changed = true;
+      return r.latex;
+    }).join('');
+  } else {
+    const r = convertOneEqualitySide(work);
+    if(r.changed) changed = true;
+    work = r.latex;
+  }
+
+  return {latex: work, changed};
+}
+function convertOneEqualitySide(work){
+  let changed = false;
+
+  const termSplit = splitTopLevelTerms(work);
+  if(termSplit.length > 1){
+    work = termSplit.map(part=>{
+      if(/^\s*[+\-]\s*$/.test(part)) return part; // separator, keep as-is
+      const f = convertFraction(part);
+      if(f !== part) changed = true;
+      const s = convertIdentifierSubscripts(f);
+      if(s !== f) changed = true;
+      return s;
+    }).join('');
+  } else {
+    const f = convertFraction(work);
+    if(f !== work){ work = f; changed = true; }
+    const withSub = convertIdentifierSubscripts(work);
+    if(withSub !== work){ work = withSub; changed = true; }
+  }
+
+  // already-valid subscript/superscript notation the user typed directly,
+  // e.g. "n_{1}" or "x^{2}" — no text change needed, just needs to be
+  // recognized as math so the whole expression gets wrapped in $...$
+  if(/[A-Za-z0-9]_\{?[A-Za-z0-9+\-]+\}?/.test(work)) changed = true;
+  if(/[A-Za-z0-9)\]]\^\{?[A-Za-z0-9+\-]+\}?/.test(work)) changed = true;
+
+  // superscript, bare or already braced (e.g. "x^2" or "x^{2}") — normalize
+  // to braced form and flag as needing math wrapping. Matches either a full
+  // "{...}" group (already correct, left as-is) or a bare unbraced run —
+  // never partially, which would wrongly eat an unrelated closing brace
+  // from an enclosing structure like \frac{...}'s own argument brace.
+  const supFixed = work.replace(/([A-Za-z0-9)\]])\^(\{[^{}]*\}|-?[A-Za-z0-9]+)/g, (m, base, exp) => {
+    if(exp.startsWith('{')) return m;
+    return base + '^{' + exp + '}';
+  });
+  if(supFixed !== work){ work = supFixed; changed = true; }
+
+  // operators
+  [[/<=/g,'\\le{}'],[/>=/g,'\\ge{}'],[/!=/g,'\\ne{}']].forEach(([re,rep])=>{
+    if(re.test(work)){ work = work.replace(re, rep); changed = true; }
+  });
+
+  return {latex: work, changed};
+}
+
+// things that must NEVER be converted even though they contain "/":
+// URLs, file paths, dates, common unit-rate fractions, markdown links, inline code
+const UNIT_FRACTIONS = new Set([
+  'km/h','km/hr','m/s','kg/s','cm/s','ft/s','mi/h','mph','rad/s','g/l','mg/ml','g/ml'
+]);
+function isNonMathToken(str){
+  if(/^https?:\/\//i.test(str)) return true;                 // URL
+  if(/^www\./i.test(str)) return true;                        // URL without scheme
+  if(/^[A-Za-z]:\\/.test(str)) return true;                   // Windows path
+  if(/^\.{1,2}\//.test(str)) return true;                     // relative file path
+  if(/^\d{1,4}\/\d{1,2}(\/\d{1,4})?$/.test(str)) return true; // date, e.g. 12/08/2026
+  if(/^\[.*\]\(.*\)$/.test(str)) return true;                 // markdown link
+  if(/^`.*`$/.test(str)) return true;                         // inline code
+  if(UNIT_FRACTIONS.has(str.toLowerCase())) return true;      // km/h, m/s, kg/s, ...
+  return false;
+}
+
+function convertToken(tokRaw){
+  const m0 = tokRaw.match(/^(.*?)([.,;:!?]*)$/s);
+  const core = m0[1], trailing = m0[2];
+  if(!core) return {converted:false};
+
+  // already valid LaTeX (e.g. \frac{a}{b} typed without $) -> render as-is
+  if(/\\[a-zA-Z]/.test(core)) return {converted:true, latex:core, trailing};
+
+  const lower = core.toLowerCase();
+  if(lower === 'infinity') return {converted:true, latex:'\\infty', trailing};
+  if(core === '+-') return {converted:true, latex:'\\pm{}', trailing};
+
+  if(isNonMathToken(core)) return {converted:false};
+
+  // parenthesized expressions: try a single top-level fraction match FIRST.
+  // This correctly resolves nested cases like "(a/b)/(c/d)" into one
+  // \frac{\frac{a}{b}}{\frac{c}{d}} instead of falling into the general
+  // multi-group expander (which is only for implicit-multiplication cases
+  // like "(a)(b)" that have no single top-level "/").
+  if(core.includes('(') || core.includes(')') || core.includes('[') || core.includes(']')){
+    const f = convertFraction(core);
+    if(f !== core) return {converted:true, latex:f, trailing};
+    const g = convertGeneralExpression(core);
+    if(g.changed) return {converted:true, latex:g.latex, trailing};
+  }
+
+  let work = core, changed = false;
+
+  // sqrt(...) / root(n,...)
+  let m;
+  if(!changed && (m = work.match(/^sqrt\((.+)\)$/i))){
+    work = '\\sqrt{' + convertFraction(m[1]) + '}'; changed = true;
+  } else if(!changed && (m = work.match(/^root\((\d+),(.+)\)$/i))){
+    work = '\\sqrt[' + m[1] + ']{' + convertFraction(m[2]) + '}'; changed = true;
+  }
+
+  // chemical charges: Na+, Ca2+, SO4^2-
+  if(!changed && (m = work.match(/^([A-Za-z0-9]+?)(\^?)(\d*)([+-])$/))){
+    const base = convertChemSubscripts(m[1]);
+    const supPart = (m[3] ? m[3] : '') + m[4];
+    work = base + '^{' + supPart + '}'; changed = true;
+  }
+
+  // trig / log / ln, optionally with an attached ^power
+  if(!changed){
+    for(const key in TRIG_WORDS){
+      const re = new RegExp('^' + key + '(\\^\\{?\\d+\\}?)?$', 'i');
+      if(re.test(work)){
+        work = work.replace(new RegExp('^'+key,'i'), TRIG_WORDS[key]);
+        work = work.replace(/\^\{?(\d+)\}?$/, '^{$1}');
+        changed = true; break;
+      }
+    }
+  }
+
+  // fraction chains (a/b, a/b+c/d, 1/R1-1/R2+x/y), generic identifier
+  // subscripts (R1 -> R_{1}, H2O -> H_{2}O), Greek words, <= >= != operators
+  if(!changed){
+    const sc = convertSimpleChunk(work);
+    if(sc.changed){ work = sc.latex; changed = true; }
+  }
+
+  // superscript: x^2, x^{2}, x^10 (only if nothing above already handled it)
+  if(!changed && work.includes('^')){
+    const s = work.replace(/\^\{?(-?\d+)\}?/g, '^{$1}');
+    if(s !== work){ work = s; changed = true; }
+  }
+
+  if(changed) return {converted:true, latex:work, trailing};
+  return {converted:false};
+}
+
+function smartConvertZone(text){
+  // Strip/convert common LaTeX DOCUMENT-structuring commands (from pasted
+  // exam sources) that KaTeX — a math-only renderer — can never understand,
+  // no matter how "complete" they look. These must never reach KaTeX.
+  text = text
+    .replace(/\\item\s*\[([^\]]*)\]\s*/g, '$1 ')   // \item[3.] -> "3. "
+    .replace(/\\item\b\s*/g, '\u2022 ')             // bare \item -> bullet
+    .replace(/\\(?:begin|end)\{(?:itemize|enumerate)\*?\}\s*/g, '') // list wrappers, just strip
+    .replace(/\\(?:textbf|textit|emph|text)\{([^{}]*)\}/g, '$1')    // keep inner text, drop styling
+    .replace(/\\section\*?\{([^{}]*)\}/g, '$1\n');
+
+  // normalize the Unicode "minus sign" (U+2212) — commonly produced by
+  // autocorrect/paste — to a plain ASCII hyphen so the fraction/term
+  // splitter recognizes it as an operator. Safe: U+2212 is unambiguously
+  // a math symbol and never appears in ordinary prose.
+  text = text.replace(/\u2212/g, '-');
+
+  // normalize Unicode superscript/subscript digit characters (², ₁, etc. —
+  // common when pasting from formatted sources) into plain ASCII ^{...}
+  // and _{...} notation, so the existing superscript/subscript detection
+  // logic below can recognize and properly render them
+  text = text.replace(/([\u2070\u00b9\u00b2\u00b3\u2074-\u2079\u207a\u207b]+)/g, m =>
+    '^{' + m.split('').map(c => UNICODE_SUPERSCRIPTS[c] || c).join('') + '}');
+  text = text.replace(/([\u2080-\u2089\u208a\u208b]+)/g, m =>
+    '_{' + m.split('').map(c => UNICODE_SUBSCRIPTS[c] || c).join('') + '}');
+
+  // LaTeX environments (matrices, cases, aligned equations, etc.) must
+  // render as ONE atomic block. Wrap the whole \begin{...}...\end{...}
+  // span in $...$ now, before any whitespace-based tokenization below
+  // gets a chance to fragment it row-by-row.
+  text = text.replace(/\\begin\{([a-zA-Z*]+)\}[\s\S]*?\\end\{\1\}/g, m => wrapMath(m));
+
+  // phrase-level calculus patterns first (span multiple words)
+  text = text.replace(/\bint\s+(\S.*?)\s+dx\b/g, (m, expr) => wrapMath('\\int ' + expr.trim() + '\\,dx'));
+  text = text.replace(/\bsum\s+i\s*=\s*(\S+)\s+to\s+(\S+)/gi, (m, a, b) => wrapMath('\\sum_{i=' + a + '}^{' + b + '}'));
+  text = text.replace(/\blim\s+([a-zA-Z])\s*->\s*(\S+)/gi, (m, v, to) => wrapMath('\\lim_{' + v + '\\to ' + to + '}'));
+
+  // don't re-process the $...$ chunks the phrase pass just created
+  const parts = text.split(/(\$[^$]*\$)/g);
+  return parts.map(part=>{
+    if(part.startsWith('$') && part.endsWith('$') && part.length > 1) return part;
+    // paren-aware tokenization: keeps "(a/b)(c − d)" together as one unit
+    return groupBalancedTokens(part).map(t=>{
+      if(t.type === 'space') return t.value;
+      const r = convertToken(t.value);
+      return r.converted ? wrapMath(r.latex) + r.trailing : t.value;
+    }).join('');
+  }).join('');
+}
+
+// applies smartConvertZone only to the plain-text portions of raw,
+// leaving existing $...$ math and {{IMG::}} image markers untouched
+function smartConvertRaw(raw){
+  return splitFinalSegments(raw).map(seg=>{
+    // re-split: 'final' segments from splitFinalSegments already include both
+    // math/img AND the plain runs between them (see buf handling above) — so
+    // detect which is which by re-testing the segment shape
+    if(seg.value.startsWith('$') || seg.value.startsWith('{{IMG::')) return seg.value;
+    return smartConvertZone(seg.value);
+  }).join('');
+}
+
+function convertField(el, refocus){
+  if(refocus === undefined) refocus = true;
+  // Text explicitly wrapped in $...$ always renders as LaTeX.
+  // Plain text is scanned by the smart parser: recognizable math
+  // patterns (fractions, exponents, chemical formulas, charges,
+  // roots, Greek letters, operators, trig/calculus) auto-convert;
+  // everything else is left exactly as typed.
+  let raw = getFieldRaw(el);
+  raw = smartConvertRaw(raw);
+  const frag = buildEquationFragment(raw);
+  el.innerHTML = '';
+  el.appendChild(frag);
+  if(refocus) placeCursorAtEnd(el); // only needed when triggered by Enter (keep typing); NEVER on blur — calling .focus() there would trap focus and break Tab navigation
+}
+function attachEquationField(idOrEl){
+  const el = typeof idOrEl === 'string' ? document.getElementById(idOrEl) : idOrEl;
+  const multiline = el.classList.contains('multiline');
+  el.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){
+      if(e.shiftKey && multiline){
+        e.preventDefault();
+        document.execCommand('insertLineBreak');
+        return;
+      }
+      if(multiline && looksIncompleteLatex(getFieldRaw(el))){
+        // the LaTeX typed so far is structurally unfinished (open brace,
+        // dangling command, or a \frac/\binom missing its 2nd argument) —
+        // treat Enter as a plain newline instead of rendering a broken
+        // fragment, so the whole expression stays together until complete
+        e.preventDefault();
+        document.execCommand('insertLineBreak');
+        return;
+      }
+      e.preventDefault();
+      convertField(el);
+    }
+  });
+  // also render on blur (losing focus) — short fields like Options are
+  // often filled in and then tabbed/clicked away from without ever
+  // pressing Enter, so without this the LaTeX in them never renders.
+  // Pass refocus=false — re-focusing here would trap the user in this
+  // field and break Tab/click navigation to the next field.
+  el.addEventListener('blur', ()=>{
+    if(!multiline && looksIncompleteLatex(getFieldRaw(el))) return; // still mid-argument, don't cut it off
+    convertField(el, false);
+  });
+  el.addEventListener('paste', (e)=>{
+    const items = e.clipboardData && e.clipboardData.items;
+    if(items){
+      for(const item of items){
+        if(item.type && item.type.indexOf('image') === 0){
+          e.preventDefault();
+          const file = item.getAsFile();
+          const reader = new FileReader();
+          reader.onload = (ev)=>{ insertImageChipAtCursor(el, ev.target.result); };
+          reader.readAsDataURL(file);
+          return;
+        }
+      }
+    }
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+}
+let pendingImageTarget = null;
+const hiddenImageInput = document.getElementById('hiddenImageInput');
+document.querySelectorAll('.img-link-btn, .img-link-btn-flat').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    pendingImageTarget = btn.dataset.target;
+    hiddenImageInput.click();
+  });
+});
+hiddenImageInput.addEventListener('change', (e)=>{
+  const file = e.target.files && e.target.files[0];
+  if(file && pendingImageTarget){
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      const el = document.getElementById(pendingImageTarget);
+      insertImageChipAtCursor(el, ev.target.result);
+    };
+    reader.readAsDataURL(file);
+  }
+  e.target.value = '';
+  pendingImageTarget = null;
+});
+
+// ---------- Supabase backend API ----------
+// For local development, keep the backend running with `npm start`.
+// When deploying, define window.QUESTION_BANK_API_URL before this script.
+const API_BASE_URL =
+  window.QUESTION_BANK_API_URL || '/api/questions';
+
+async function apiRequest(path = '', options = {}){
+  const response = await fetch(API_BASE_URL + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  const body = contentType.includes('application/json')
+    ? await response.json()
+    : await response.text();
+
+  if(!response.ok){
+    const details =
+      body && typeof body === 'object'
+        ? (body.details || body.error)
+        : body;
+    throw new Error(details || `Request failed with status ${response.status}`);
+  }
+
+  return body;
+}
+
+async function loadQuestions(){
+  try{
+    allQuestions = await apiRequest();
+  }catch(e){
+    allQuestions = [];
+    console.error('Could not load questions:', e);
+    showToast(
+      'Could not connect to the backend. Make sure npm start is running.',
+      true
+    );
+  }
+  renderFilterSubjects();
+  renderList();
+}
+
+// ---------- static selects ----------
+function fillSelect(sel, items, placeholder){
+  sel.innerHTML = `<option value="">${placeholder}</option>` + items.map(i=>`<option value="${i}">${i}</option>`).join('');
+}
+const subjectSel = document.getElementById('subject');
+const klassSel = document.getElementById('klass');
+const chapterSel = document.getElementById('chapter');
+fillSelect(subjectSel, SUBJECTS, 'Select Subject');
+fillSelect(klassSel, CLASSES, 'Select Class');
+
+function updateChapterOptions(){
+  const key = subjectSel.value + '-' + klassSel.value;
+  const chapters = NCERT_CHAPTERS[key];
+  const current = chapterSel.value;
+  if(chapters && chapters.length){
+    fillSelect(chapterSel, chapters, 'Select Chapter');
+    chapterSel.disabled = false;
+  } else {
+    chapterSel.innerHTML = '<option value="">Select Subject &amp; Class first</option>';
+    chapterSel.disabled = true;
+  }
+  if(chapters && chapters.includes(current)) chapterSel.value = current;
+}
+subjectSel.addEventListener('change', updateChapterOptions);
+klassSel.addEventListener('change', updateChapterOptions);
+updateChapterOptions();
+
+const examTogglesEl = document.getElementById('examToggles');
+const examButtons = {};
+EXAMS.forEach(ex=>{
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'toggle-btn'; b.textContent = ex;
+  b.addEventListener('click', ()=>{
+    if(selectedExams.has(ex)){
+      selectedExams.delete(ex);
+      b.classList.remove('active');
+    } else {
+      selectedExams.clear();
+      EXAMS.forEach(other=>examButtons[other].classList.remove('active'));
+      selectedExams.add(ex);
+      b.classList.add('active');
+    }
+  });
+  examButtons[ex] = b;
+  examTogglesEl.appendChild(b);
+});
+
+['question','optA','optB','optC','optD','solutionText','assertion','reason','predefOptions','numQuestion','numAnswer'].forEach(attachEquationField);
+
+const DEFAULT_PREDEF_TEXT =
+"A: A and R are true and R is the correct explanation.\n" +
+"B: A and R are true but R is not the correct explanation.\n" +
+"C: A is true but R is false.\n" +
+"D: A is false but R is true.";
+function fillDefaultPredef(){
+  const el = document.getElementById('predefOptions');
+  el.innerHTML = '';
+  el.appendChild(buildEquationFragment(DEFAULT_PREDEF_TEXT));
+}
+fillDefaultPredef();
+
+const qTypeSel = document.getElementById('qType');
+const mcqBlock = document.getElementById('mcqBlock');
+const arBlock = document.getElementById('arBlock');
+const matchBlock = document.getElementById('matchBlock');
+const numBlock = document.getElementById('numBlock');
+const correctOptionWrap = document.getElementById('correctOptionWrap');
+function updateTypeVisibility(){
+  const type = qTypeSel.value;
+  const isAR = type === 'assertion_reason';
+  const isMatch = type === 'match';
+  const isNum = type === 'numerical';
+  mcqBlock.style.display = (isAR || isMatch || isNum) ? 'none' : '';
+  arBlock.style.display = isAR ? '' : 'none';
+  matchBlock.style.display = isMatch ? '' : 'none';
+  numBlock.style.display = isNum ? '' : 'none';
+  correctOptionWrap.style.display = isNum ? 'none' : '';
+  updateCorrectOptionChoices();
+}
+qTypeSel.addEventListener('change', updateTypeVisibility);
+updateTypeVisibility();
+
+function columnALabel(idx){
+  const num = idx + 1;
+  return num <= 2 ? `Row ${num} *` : `Row ${num} (Optional)`;
+}
+function columnBLabel(idx){
+  const letter = String.fromCharCode(80 + idx);
+  return idx < 2 ? `Row ${letter} *` : `Row ${letter} (Optional)`;
+}
+function relabelRows(containerId, labelFn){
+  Array.from(document.getElementById(containerId).children).forEach((wrap, idx)=>{
+    wrap.querySelector('.eq-field').setAttribute('data-placeholder', labelFn(idx));
+  });
+}
+function addColumnRow(containerId, labelFn){
+  const container = document.getElementById(containerId);
+  const idx = container.children.length;
+  const wrap = document.createElement('div');
+  wrap.className = 'row-item';
+  const field = document.createElement('div');
+  field.className = 'eq-field match-row-input';
+  field.contentEditable = 'true';
+  field.spellcheck = false;
+  field.setAttribute('data-placeholder', labelFn(idx));
+  wrap.appendChild(field);
+  attachEquationField(field);
+  if(idx >= 2){
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'row-remove-btn';
+    rm.title = 'Remove row';
+    rm.textContent = '✕';
+    rm.addEventListener('click', ()=>{
+      wrap.remove();
+      relabelRows(containerId, labelFn);
+    });
+    wrap.appendChild(rm);
+  }
+  container.appendChild(wrap);
+}
+function getRowValues(containerId){
+  return Array.from(document.getElementById(containerId).children).map(wrap=>getFieldRaw(wrap.querySelector('.eq-field')).trim());
+}
+function resetColumnRows(containerId, labelFn, count){
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  for(let i=0;i<count;i++) addColumnRow(containerId, labelFn);
+}
+resetColumnRows('columnARows', columnALabel, 4);
+resetColumnRows('columnBRows', columnBLabel, 4);
+document.getElementById('addColumnARow').addEventListener('click', ()=>addColumnRow('columnARows', columnALabel));
+document.getElementById('addColumnBRow').addEventListener('click', ()=>addColumnRow('columnBRows', columnBLabel));
+
+function comboLabel(idx){ return String.fromCharCode(65 + idx); }
+function relabelCombos(){
+  Array.from(document.getElementById('matchOptionsRows').children).forEach((wrap, idx)=>{
+    const letter = comboLabel(idx);
+    wrap.querySelector('.combo-tag').textContent = letter;
+    wrap.querySelector('.eq-field').setAttribute('data-placeholder', `Option ${letter}`);
+  });
+  updateCorrectOptionChoices();
+}
+function addComboRow(){
+  const container = document.getElementById('matchOptionsRows');
+  const idx = container.children.length;
+  const letter = comboLabel(idx);
+  const wrap = document.createElement('div');
+  wrap.className = 'combo-row';
+  const tag = document.createElement('div');
+  tag.className = 'combo-tag';
+  tag.textContent = letter;
+  const field = document.createElement('div');
+  field.className = 'eq-field';
+  field.id = 'matchOpt' + letter;
+  field.contentEditable = 'true';
+  field.spellcheck = false;
+  field.setAttribute('data-placeholder', `Option ${letter}`);
+  wrap.appendChild(tag);
+  wrap.appendChild(field);
+  attachEquationField(field);
+  if(idx >= 4){
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'row-remove-btn';
+    rm.title = 'Remove option';
+    rm.textContent = '✕';
+    rm.addEventListener('click', ()=>{
+      wrap.remove();
+      relabelCombos();
+    });
+    wrap.appendChild(rm);
+  }
+  container.appendChild(wrap);
+  updateCorrectOptionChoices();
+}
+function getComboValues(){
+  return Array.from(document.getElementById('matchOptionsRows').children).map(wrap=>getFieldRaw(wrap.querySelector('.eq-field')).trim());
+}
+function resetCombos(count){
+  const container = document.getElementById('matchOptionsRows');
+  container.innerHTML = '';
+  for(let i=0;i<count;i++) addComboRow();
+}
+resetCombos(4);
+
+function updateCorrectOptionChoices(){
+  const sel = document.getElementById('correctOption');
+  const isMatch = qTypeSel.value === 'match';
+  const count = isMatch ? document.getElementById('matchOptionsRows').children.length : 4;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Select Correct Option</option>' +
+    Array.from({length: count}, (_,i)=>{
+      const letter = comboLabel(i);
+      return `<option value="${letter}">Option ${letter}</option>`;
+    }).join('');
+  if(Array.from(sel.options).some(o=>o.value===current)) sel.value = current;
+}
+
+function val(id){ const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function eqVal(id){ return getFieldRaw(document.getElementById(id)).trim(); }
+
+function validate(){
+  if(!subjectSel.value) return 'Please select a Subject.';
+  if(!klassSel.value) return 'Please select a Class.';
+  if(!val('chapter')) return 'Please select a Chapter.';
+  if(!val('topic')) return 'Please enter a Topic.';
+  if(selectedExams.size === 0) return 'Please select an Exam Category.';
+  const qType = document.getElementById('qType').value;
+  if(!qType) return 'Please select a Question Type.';
+  if(qType === 'assertion_reason'){
+    if(!eqVal('assertion')) return 'Please enter the Assertion (A).';
+    if(!eqVal('reason')) return 'Please enter the Reason (R).';
+  } else if(qType === 'match'){
+    const rowsA = getRowValues('columnARows');
+    const rowsB = getRowValues('columnBRows');
+    if(!rowsA[0] || !rowsA[1]) return 'Please fill both required rows in Column A.';
+    if(!rowsB[0] || !rowsB[1]) return 'Please fill both required rows in Column B.';
+    if(!eqVal('matchOptA') || !eqVal('matchOptB') || !eqVal('matchOptC') || !eqVal('matchOptD')) return 'All four option combinations are required.';
+  } else if(qType === 'numerical'){
+    if(!eqVal('numQuestion')) return 'Please enter the Numerical Question.';
+    if(!eqVal('numAnswer')) return 'Please enter the Correct Numerical Value.';
+  } else {
+    if(!eqVal('question')) return 'Please enter the Question.';
+    if(!eqVal('optA') || !eqVal('optB') || !eqVal('optC') || !eqVal('optD')) return 'All four options are required.';
+  }
+  if(qType !== 'numerical' && !document.getElementById('correctOption').value) return 'Please select the Correct Option.';
+  return null;
+}
+
+function showToast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? 'var(--danger)' : 'var(--ok)';
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+async function saveQuestion(){
+  const err = validate();
+  if(err){ showToast(err, true); return; }
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = editingId ? 'Updating…' : 'Saving…';
+
+  const qType = document.getElementById('qType').value;
+  const isAR = qType === 'assertion_reason';
+  const isMatch = qType === 'match';
+  const isNum = qType === 'numerical';
+
+  const record = {
+    subject: subjectSel.value,
+    klass: klassSel.value,
+    chapter: val('chapter'),
+    topic: val('topic'),
+    exams: Array.from(selectedExams),
+    qType: qType,
+    question: isNum ? eqVal('numQuestion') : (isAR || isMatch) ? '' : eqVal('question'),
+    optA: (isAR || isMatch || isNum) ? '' : eqVal('optA'),
+    optB: (isAR || isMatch || isNum) ? '' : eqVal('optB'),
+    optC: (isAR || isMatch || isNum) ? '' : eqVal('optC'),
+    optD: (isAR || isMatch || isNum) ? '' : eqVal('optD'),
+    assertion: isAR ? eqVal('assertion') : '',
+    reason: isAR ? eqVal('reason') : '',
+    predefOptions: isAR ? eqVal('predefOptions') : '',
+    columnA: isMatch ? getRowValues('columnARows').filter(v=>v) : [],
+    columnB: isMatch ? getRowValues('columnBRows').filter(v=>v) : [],
+    matchOptions: isMatch ? { A: eqVal('matchOptA'), B: eqVal('matchOptB'), C: eqVal('matchOptC'), D: eqVal('matchOptD') } : {},
+    numAnswer: isNum ? eqVal('numAnswer') : '',
+    correctOption: isNum ? '' : document.getElementById('correctOption').value,
+    solutionText: eqVal('solutionText')
+  };
+
+  try{
+    const wasEditing = Boolean(editingId);
+    const saved = wasEditing
+      ? await apiRequest('/' + encodeURIComponent(editingId), {
+          method: 'PUT',
+          body: JSON.stringify(record)
+        })
+      : await apiRequest('', {
+          method: 'POST',
+          body: JSON.stringify(record)
+        });
+
+    if(wasEditing){
+      const idx = allQuestions.findIndex(q=>q.id===editingId);
+      if(idx > -1) allQuestions[idx] = saved;
+    } else {
+      allQuestions.unshift(saved);
+    }
+
+    renderFilterSubjects();
+    renderList();
+    showToast(wasEditing ? 'Question updated in Supabase.' : 'Question saved to Supabase.');
+    resetForm();
+  }catch(e){
+    console.error('Save failed:', e);
+    showToast('Save failed: ' + e.message, true);
+    saveBtn.textContent = editingId ? 'Update Question' : 'Save Question';
+  }finally{
+    saveBtn.disabled = false;
+  }
+}
+
+function resetForm(){
+  editingId = null;
+  document.getElementById('formTitle').textContent = 'Add New Question';
+  document.getElementById('saveBtn').textContent = 'Save Question';
+  subjectSel.value=''; klassSel.value='';
+  updateChapterOptions();
+  document.getElementById('topic').value='';
+  selectedExams.clear();
+  examTogglesEl.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('qType').value='';
+  ['question','optA','optB','optC','optD','solutionText','assertion','reason','numQuestion','numAnswer'].forEach(id=>{
+    document.getElementById(id).innerHTML='';
+  });
+  fillDefaultPredef();
+  resetColumnRows('columnARows', columnALabel, 4);
+  resetColumnRows('columnBRows', columnBLabel, 4);
+  resetCombos(4);
+  document.getElementById('correctOption').value='';
+  updateTypeVisibility();
+}
+
+document.getElementById('saveBtn').addEventListener('click', saveQuestion);
+document.getElementById('resetBtn').addEventListener('click', resetForm);
+document.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); saveQuestion(); }
+});
+
+const listContainer = document.getElementById('listContainer');
+const fSubject = document.getElementById('fSubject');
+const fType = document.getElementById('fType');
+fSubject.addEventListener('change', renderList);
+fType.addEventListener('change', renderList);
+
+function renderFilterSubjects(){
+  const subs = Array.from(new Set(allQuestions.map(q=>q.subject))).filter(Boolean);
+  const cur = fSubject.value;
+  fSubject.innerHTML = '<option value="">All Subjects</option>' + subs.map(s=>`<option value="${s}">${s}</option>`).join('');
+  fSubject.value = subs.includes(cur) ? cur : '';
+}
+
+function renderStaticPreview(raw){
+  const span = document.createElement('span');
+  span.className = 'li-preview';
+  span.appendChild(buildEquationFragment(raw || ''));
+  return span;
+}
+
+function renderList(){
+  const subjF = fSubject.value, typeF = fType.value;
+  const filtered = allQuestions.filter(q=>(!subjF||q.subject===subjF) && (!typeF||q.qType===typeF));
+  document.getElementById('countLine').textContent = filtered.length + ' question' + (filtered.length===1?'':'s');
+
+  listContainer.innerHTML = '';
+  if(filtered.length===0){
+    listContainer.innerHTML = '<div class="empty-state">No questions saved yet. Add one above.</div>';
+    return;
+  }
+
+  filtered.forEach(q=>{
+    const item = document.createElement('div');
+    item.className = 'list-item';
+    item.dataset.id = q.id;
+
+    const top = document.createElement('div');
+    top.className = 'li-top';
+
+    const main = document.createElement('div');
+    main.style.flex = '1';
+
+    const meta = document.createElement('div');
+    meta.className = 'li-meta';
+    meta.innerHTML = `<span>${escapeHtml(q.subject)}</span> · Class ${escapeHtml(q.klass)} · ${escapeHtml(q.chapter||'')} &nbsp;›&nbsp; ${escapeHtml(q.topic)} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType}`;
+    main.appendChild(meta);
+
+    if(q.qType === 'assertion_reason'){
+      const aLine = document.createElement('div'); aLine.appendChild(document.createTextNode('A: '));
+      aLine.appendChild(renderStaticPreview(q.assertion)); main.appendChild(aLine);
+      const rLine = document.createElement('div'); rLine.style.marginTop='4px'; rLine.appendChild(document.createTextNode('R: '));
+      rLine.appendChild(renderStaticPreview(q.reason)); main.appendChild(rLine);
+      const combo = document.createElement('div');
+      combo.className = 'li-combo';
+      combo.textContent = 'Correct: Option ' + (q.correctOption||'—');
+      main.appendChild(combo);
+    } else if(q.qType === 'match'){
+      const colWrap = document.createElement('div');
+      colWrap.className = 'li-combo';
+      colWrap.appendChild(document.createTextNode('Column A: '));
+      (q.columnA||[]).forEach((v,i)=>{
+        if(i>0) colWrap.appendChild(document.createTextNode(' | '));
+        colWrap.appendChild(renderStaticPreview(v));
+      });
+      colWrap.appendChild(document.createTextNode('   ·   Column B: '));
+      (q.columnB||[]).forEach((v,i)=>{
+        if(i>0) colWrap.appendChild(document.createTextNode(' | '));
+        colWrap.appendChild(renderStaticPreview(v));
+      });
+      main.appendChild(colWrap);
+      const mo = q.matchOptions || {};
+      const optsLine = document.createElement('div');
+      optsLine.className = 'li-combo';
+      ['A','B','C','D'].forEach(l=>{
+        const isCorrect = q.correctOption === l;
+        const span = document.createElement('span');
+        if(isCorrect) span.className = 'correct';
+        span.appendChild(document.createTextNode(l + ': '));
+        span.appendChild(renderStaticPreview(mo[l]||''));
+        if(isCorrect) span.appendChild(document.createTextNode(' ✓'));
+        optsLine.appendChild(span);
+        optsLine.appendChild(document.createTextNode('  '));
+      });
+      main.appendChild(optsLine);
+    } else if(q.qType === 'numerical'){
+      const qLine = document.createElement('div');
+      qLine.appendChild(renderStaticPreview(q.question));
+      main.appendChild(qLine);
+      const ansLine = document.createElement('div');
+      ansLine.className = 'li-combo correct';
+      ansLine.appendChild(document.createTextNode('Correct Value: '));
+      ansLine.appendChild(q.numAnswer ? renderStaticPreview(q.numAnswer) : document.createTextNode('—'));
+      main.appendChild(ansLine);
+    } else {
+      const qLine = document.createElement('div');
+      qLine.appendChild(renderStaticPreview(q.question));
+      main.appendChild(qLine);
+      const optsLine = document.createElement('div');
+      optsLine.className = 'li-combo';
+      ['A','B','C','D'].forEach(l=>{
+        const row = document.createElement('span');
+        row.style.display = 'block';
+        const isCorrect = q.correctOption === l;
+        if(isCorrect) row.className = 'correct';
+        row.appendChild(document.createTextNode(l + ': '));
+        row.appendChild(renderStaticPreview(q['opt'+l]));
+        if(isCorrect) row.appendChild(document.createTextNode(' ✓'));
+        optsLine.appendChild(row);
+      });
+      main.appendChild(optsLine);
+    }
+
+    const examsLine = document.createElement('div');
+    examsLine.style.marginTop = '8px';
+    (q.exams||[]).forEach(ex=>{
+      const pill = document.createElement('span');
+      pill.className = 'tag-pill';
+      pill.textContent = ex;
+      examsLine.appendChild(pill);
+    });
+    main.appendChild(examsLine);
+
+    const btns = document.createElement('div');
+    btns.className = 'li-btns';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'icon-btn'; editBtn.title = 'Edit'; editBtn.textContent = '✎';
+    editBtn.addEventListener('click', ()=>QP.edit(q.id));
+    const delBtn = document.createElement('button');
+    delBtn.className = 'icon-btn del'; delBtn.title = 'Delete'; delBtn.textContent = '✕';
+    delBtn.addEventListener('click', ()=>QP.remove(q.id));
+    btns.appendChild(editBtn); btns.appendChild(delBtn);
+
+    top.appendChild(main);
+    top.appendChild(btns);
+    item.appendChild(top);
+    listContainer.appendChild(item);
+  });
+}
+
+function setFieldFromRaw(id, raw){
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  el.appendChild(buildEquationFragment(raw || ''));
+}
+function setEqFieldElFromRaw(el, raw){
+  el.innerHTML = '';
+  el.appendChild(buildEquationFragment(raw || ''));
+}
+
+window.QP = {
+  edit: function(id){
+    const q = allQuestions.find(x=>x.id===id);
+    if(!q) return;
+    editingId = id;
+    document.getElementById('formTitle').textContent = 'Edit Question';
+    document.getElementById('saveBtn').textContent = 'Update Question';
+
+    subjectSel.value = q.subject; klassSel.value = q.klass;
+    updateChapterOptions();
+    document.getElementById('chapter').value = q.chapter || '';
+    document.getElementById('topic').value = q.topic || '';
+
+    selectedExams = new Set(q.exams||[]);
+    examTogglesEl.querySelectorAll('.toggle-btn').forEach(b=>{
+      b.classList.toggle('active', selectedExams.has(b.textContent));
+    });
+
+    qTypeSel.value = q.qType;
+    updateTypeVisibility();
+
+    if(q.qType === 'assertion_reason'){
+      setFieldFromRaw('assertion', q.assertion);
+      setFieldFromRaw('reason', q.reason);
+      if(q.predefOptions) setFieldFromRaw('predefOptions', q.predefOptions);
+    } else if(q.qType === 'match'){
+      const colA = (q.columnA && q.columnA.length) ? q.columnA : ['','','',''];
+      const colB = (q.columnB && q.columnB.length) ? q.columnB : ['','','',''];
+      resetColumnRows('columnARows', columnALabel, colA.length);
+      resetColumnRows('columnBRows', columnBLabel, colB.length);
+      Array.from(document.getElementById('columnARows').children).forEach((wrap,i)=>setEqFieldElFromRaw(wrap.querySelector('.eq-field'), colA[i]||''));
+      Array.from(document.getElementById('columnBRows').children).forEach((wrap,i)=>setEqFieldElFromRaw(wrap.querySelector('.eq-field'), colB[i]||''));
+      const mo = q.matchOptions || {};
+      const moKeys = ['A','B','C','D'];
+      resetCombos(Math.max(4, moKeys.length));
+      setFieldFromRaw('matchOptA', mo.A || '');
+      setFieldFromRaw('matchOptB', mo.B || '');
+      setFieldFromRaw('matchOptC', mo.C || '');
+      setFieldFromRaw('matchOptD', mo.D || '');
+    } else if(q.qType === 'numerical'){
+      setFieldFromRaw('numQuestion', q.question);
+      setFieldFromRaw('numAnswer', q.numAnswer || '');
+    } else {
+      setFieldFromRaw('question', q.question);
+      setFieldFromRaw('optA', q.optA);
+      setFieldFromRaw('optB', q.optB);
+      setFieldFromRaw('optC', q.optC);
+      setFieldFromRaw('optD', q.optD);
+    }
+
+    document.getElementById('correctOption').value = q.correctOption || '';
+    setFieldFromRaw('solutionText', q.solutionText);
+
+    window.scrollTo({top:0, behavior:'smooth'});
+  },
+  remove: async function(id){
+    if(!confirm('Delete this question? This cannot be undone.')) return;
+    try{
+      await apiRequest('/' + encodeURIComponent(id), { method: 'DELETE' });
+      allQuestions = allQuestions.filter(x=>x.id!==id);
+      renderFilterSubjects();
+      renderList();
+      showToast('Question deleted from Supabase.');
+    }catch(e){
+      console.error('Delete failed:', e);
+      showToast('Delete failed: ' + e.message, true);
+    }
+  }
+};
+
+loadQuestions();
+
+})();
+</script>
+</body>
+</html>
