@@ -652,7 +652,7 @@ textarea{resize:vertical;min-height:70px;}
           <div class="user-card-email" id="sbUserEmail">—</div>
           <span class="user-card-role" id="sbUserRole">—</span>
         </div>
-        <button class="logout-btn" onclick="doLogout()">⏻ &nbsp;Sign Out</button>
+        <button type="button" class="logout-btn" id="logoutBtn" onclick="doLogout()">⏻ &nbsp;Sign Out</button>
       </div>
     </aside>
 
@@ -1217,14 +1217,22 @@ async function doLogin() {
 }
 
 async function doLogout() {
+  Auth.clearAuth();
+  showLoginPage();
   try {
     await apiReq('/api/auth/logout', { method: 'POST' });
   } catch (_) { /* ignore */ }
-  Auth.clearAuth();
-  showLoginPage();
 }
 
-window.doLogin = doLogin;
+window.doLogin  = doLogin;
+window.doLogout = doLogout;
+
+// Event listener delegation for Sign Out button
+document.addEventListener('click', function(e) {
+  if (e.target && (e.target.closest('#logoutBtn') || e.target.closest('.logout-btn'))) {
+    doLogout();
+  }
+});
 
 // Allow Enter key and button click on login form
 document.getElementById('loginBtn').addEventListener('click', doLogin);
