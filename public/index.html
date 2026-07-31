@@ -1811,7 +1811,52 @@ function convertSimpleChunk(chunk){let changed=false;let work=greekify(chunk);if
 function convertOneEqualitySide(work){let changed=false;const termSplit=splitTopLevelTerms(work);if(termSplit.length>1){work=termSplit.map(part=>{if(/^\s*[+\-]\s*$/.test(part))return part;const f=convertFraction(part);if(f!==part)changed=true;const s=convertIdentifierSubscripts(f);if(s!==f)changed=true;return s;}).join('');}else{const f=convertFraction(work);if(f!==work){work=f;changed=true;}const withSub=convertIdentifierSubscripts(work);if(withSub!==work){work=withSub;changed=true;}}if(/[A-Za-z0-9]_\{?[A-Za-z0-9+\-]+\}?/.test(work))changed=true;if(/[A-Za-z0-9)\]]^\{?[A-Za-z0-9+\-]+\}?/.test(work))changed=true;const supFixed=work.replace(/([A-Za-z0-9)\]])\^(\{[^{}]*\}|-?[A-Za-z0-9]+)/g,(m,base,exp)=>{if(exp.startsWith('{'))return m;return base+'^{'+exp+'}';});if(supFixed!==work){work=supFixed;changed=true;}[[/<=/g,'\\le{}'],[/>=/g,'\\ge{}'],[/!=/g,'\\ne{}']].forEach(([re,rep])=>{if(re.test(work)){work=work.replace(re,rep);changed=true;}});return{latex:work,changed};}
 const UNIT_FRACTIONS=new Set(['km/h','km/hr','m/s','kg/s','cm/s','ft/s','mi/h','mph','rad/s','g/l','mg/ml','g/ml']);
 function isNonMathToken(str){if(/^https?:\/\//i.test(str))return true;if(/^www\./i.test(str))return true;if(/^[A-Za-z]:\\/.test(str))return true;if(/^\.{1,2}\//.test(str))return true;if(/^\d{1,4}\/\d{1,2}(\/\d{1,4})?$/.test(str))return true;if(/^\[.*\]\(.*\)$/.test(str))return true;if(/^`.*`$/.test(str))return true;if(UNIT_FRACTIONS.has(str.toLowerCase()))return true;return false;}
-function convertToken(tokRaw){const m0=tokRaw.match(/^(.*?)([.,;:!?]*)$/s);const core=m0[1],trailing=m0[2];if(!core)return{converted:false};if(/\\[a-zA-Z]/.test(core))return{converted:true,latex:core,trailing};const lower=core.toLowerCase();if(lower==='infinity')return{converted:true,latex:'\\infty',trailing};if(core==='+-')return{converted:true,latex:'\\pm{}',trailing};if(isNonMathToken(core))return{converted:false};if(core.includes('(')||core.includes(')')||core.includes('[')||core.includes(']')){const f=convertFraction(core);if(f!==core)return{converted:true,latex:f,trailing};const g=convertGeneralExpression(core);if(g.changed)return{converted:true,latex:g.latex,trailing};}let work=core,changed=false;let m;if(!changed&&(m=work.match(/^sqrt\((.+)\)$/i))){work='\\sqrt{'+convertFraction(m[1])+'}';changed=true;}else if(!changed&&(m=work.match(/^root\((\d+),(.+)\)$/i))){work='\\sqrt['+m[1]+']{'+convertFraction(m[2])+'}';changed=true;}if(!changed&&(m=work.match(/^([A-Za-z0-9]+?)(\^?)(\d*)([+-])$/))){const base=convertChemSubscripts(m[1]);const supPart=(m[3]?m[3]:'')+m[4];work=base+'^{'+supPart+'}';changed=true;}if(!changed){for(const key in TRIG_WORDS){const re=new RegExp('^'+key+'(\\^\\{?\\d+\\}?)?$','i');if(re.test(work)){work=work.replace(new RegExp('^'+key,'i'),TRIG_WORDS[key]);work=work.replace(/\^\{?(\d+)\}?$/,'^{$1}');changed=true;break;}}}if(!changed){const sc=convertSimpleChunk(work);if(sc.changed){work=sc.latex;changed=true;}}if(!changed&&work.includes('^')){const s=work.replace(/\^\{?(-?\d+)\}?/g,'^{$1}');if(s!==work){work=s;changed=true;}}if(changed)return{converted:true,latex:work,trailing};return{converted:false};}
+function convertToken(tokRaw){
+  const m0=tokRaw.match(/^(.*?)([.,;:!?]*)$/s);
+  const core=m0[1],trailing=m0[2];
+  if(!core)return{converted:false};
+  if(/\\[a-zA-Z]/.test(core))return{converted:true,latex:core,trailing};
+  const lower=core.toLowerCase();
+  if(lower==='infinity')return{converted:true,latex:'\\infty',trailing};
+  if(core==='+-')return{converted:true,latex:'\\pm{}',trailing};
+  if(isNonMathToken(core))return{converted:false};
+
+  // 1. Caret superscripts (e.g. Zn^{(2+)}, Ni^{(2+)}, Co^{(2+)}, Cu^{(2+)}, Fe^3+, x^{n+1}, 10^-3)
+  if(core.includes('^')){
+    let work = core;
+    work = work.replace(/\^\s*\{?\s*\(\s*([^()]+)\s*\)\s*\}?/g, '^{($1)}');
+    work = work.replace(/\^\s*\{?\s*([a-zA-Z0-9+\-]+)\s*\}?/g, '^{$1}');
+    return { converted: true, latex: work, trailing };
+  }
+
+  // 2. Underscore subscripts (e.g. TiF_6, H_2O, v_0)
+  if(core.includes('_')){
+    let work = core.replace(/_\s*\{?\s*([a-zA-Z0-9+\-]+)\s*\}?/g, '_{$1}');
+    return { converted: true, latex: work, trailing };
+  }
+
+  // 3. Chemical formulas (e.g. H2O, H2SO4, Cu2Cl2)
+  if(/^([A-Z][a-z]?\d+)+([A-Z][a-z]?\d*)*$/.test(core)){
+    let work = core.replace(/([A-Z][a-z]?)(\d+)/g, '$1_{$2}');
+    return { converted: true, latex: work, trailing };
+  }
+
+  if(core.includes('(')||core.includes(')')||core.includes('[')||core.includes(']')){
+    const f=convertFraction(core);
+    if(f!==core)return{converted:true,latex:f,trailing};
+    const g=convertGeneralExpression(core);
+    if(g.changed)return{converted:true,latex:g.latex,trailing};
+  }
+  let work=core,changed=false;
+  let m;
+  if(!changed&&(m=work.match(/^sqrt\((.+)\)$/i))){work='\\sqrt{'+convertFraction(m[1])+'}';changed=true;}
+  else if(!changed&&(m=work.match(/^root\((\d+),(.+)\)$/i))){work='\\sqrt['+m[1]+']{'+convertFraction(m[2])+'}';changed=true;}
+  if(!changed&&(m=work.match(/^([A-Za-z0-9]+?)(\^?)(\d*)([+-])$/))){const base=convertChemSubscripts(m[1]);const supPart=(m[3]?m[3]:'')+m[4];work=base+'^{'+supPart+'}';changed=true;}
+  if(!changed){for(const key in TRIG_WORDS){const re=new RegExp('^'+key+'(\\^\\{?\\d+\\}?)?$','i');if(re.test(work)){work=work.replace(new RegExp('^'+key,'i'),TRIG_WORDS[key]);work=work.replace(/\^\{?(\d+)\}?$/,'^{$1}');changed=true;break;}}}
+  if(!changed){const sc=convertSimpleChunk(work);if(sc.changed){work=sc.latex;changed=true;}}
+  if(changed)return{converted:true,latex:work,trailing};
+  return{converted:false};
+}
 function smartConvertZone(text){
   if(!text) return '';
   text = text.replace(/([A-Za-z0-9_{}\)\]\\]+)\s+\^/g, '$1^');
