@@ -13,20 +13,23 @@ const JWT_EXPIRES  = process.env.JWT_EXPIRES_IN || '8h';
 // ── helpers ────────────────────────────────────────────────────────────────
 
 async function logLogin(userId, req, status) {
-  const ua = req.headers['user-agent'] || '';
-  const { data } = await supabase
-    .from('login_history')
-    .insert({
-      user_id:    userId || null,
-      ip_address: (req.ip || req.connection?.remoteAddress || '').substring(0, 100),
-      browser:    ua.substring(0, 255),
-      device:     /Mobile|Android|iPhone|iPad/i.test(ua) ? 'Mobile' : 'Desktop',
-      status,
-    })
-    .select('id')
-    .single()
-    .catch(() => ({ data: null }));
-  return data;
+  try {
+    const ua = req.headers['user-agent'] || '';
+    const { data } = await supabase
+      .from('login_history')
+      .insert({
+        user_id:    userId || null,
+        ip_address: (req.ip || req.connection?.remoteAddress || '').substring(0, 100),
+        browser:    ua.substring(0, 255),
+        device:     /Mobile|Android|iPhone|iPad/i.test(ua) ? 'Mobile' : 'Desktop',
+        status,
+      })
+      .select('id')
+      .maybeSingle();
+    return data;
+  } catch (err) {
+    return null;
+  }
 }
 
 // ── POST /api/auth/login ───────────────────────────────────────────────────
