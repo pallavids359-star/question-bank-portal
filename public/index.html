@@ -1815,6 +1815,10 @@ function convertToken(tokRaw){
   const m0=tokRaw.match(/^(.*?)([.,;:!?]*)$/s);
   const core=m0[1],trailing=m0[2];
   if(!core)return{converted:false};
+
+  // Reject multi-word English text sentences (e.g. "from the phasor addition...")
+  if(/[a-zA-Z]{2,}\s+[a-zA-Z]{2,}/.test(core)) return {converted:false};
+
   if(/\\[a-zA-Z]/.test(core))return{converted:true,latex:core,trailing};
   const lower=core.toLowerCase();
   if(lower==='infinity')return{converted:true,latex:'\\infty',trailing};
