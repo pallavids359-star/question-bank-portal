@@ -1061,7 +1061,7 @@ async function apiReq(url, options = {}) {
     },
   });
 
-  if (resp.status === 401) {
+  if (resp.status === 401 && !url.includes('/auth/login')) {
     Auth.clearAuth();
     showLoginPage();
     throw new Error('Session expired. Please log in again.');
