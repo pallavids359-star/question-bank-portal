@@ -1010,7 +1010,7 @@ textarea{resize:vertical;min-height:70px;}
      JAVASCRIPT
      ══════════════════════════════════════════════════════════ -->
 <script>
-(function(){
+/* All functions are in global scope so HTML onclick= attributes work */
 
 // ============================================================
 // ── AUTH MANAGER ────────────────────────────────────────────
@@ -2083,7 +2083,24 @@ if(Auth.isLoggedIn()){
   showLoginPage();
 }
 
-})();
+// ── Expose to global scope for HTML onclick= and oninput= attributes ──────
+window.doLogin              = doLogin;
+window.doLogout             = doLogout;
+window.openCreateUserModal  = openCreateUserModal;
+window.openEditUserModal    = openEditUserModal;
+window.closeCreateUserModal = closeCreateUserModal;
+window.saveUser             = saveUser;
+window.toggleUserStatus     = toggleUserStatus;
+window.deleteUser           = deleteUser;
+window.openResetPwModal     = openResetPwModal;
+window.closeResetPwModal    = closeResetPwModal;
+window.submitResetPassword  = submitResetPassword;
+window.onDiffSlider         = onDiffSlider;
+window.saveDifficulty       = saveDifficulty;
+window.changePassword       = changePassword;
+window.showPage             = showPage;
+window.Auth                 = Auth;   // useful for console debugging
+window.QP                   = QP;     // already assigned above
 </script>
 </body>
 </html>
