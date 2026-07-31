@@ -1680,6 +1680,12 @@ let allQuestions   = [];
 // ---------- LaTeX rendering ----------
 function normalizeLatexExpr(expr){
   if(!expr) return expr;
+  expr = expr.replace(/\^\\left\((.*?)\\right\)/g, '^{($1)}');
+  expr = expr.replace(/\^\\left\[(.*?)\\right\]/g, '^{[$1]}');
+  expr = expr.replace(/\^\(([^()]+)\)/g, '^{($1)}');
+  expr = expr.replace(/\^([0-9]+[+-]|[+-][0-9]+)/g, '^{$1}');
+  expr = expr.replace(/(\^\{[^}]*)\\left[\(\[]/g, '$1(');
+  expr = expr.replace(/(\^\{[^}]*)\\right[\)\]]/g, '$1)');
   expr = expr.replace(/√\s*\(([^()]+)\)/g,'\\sqrt{$1}');
   expr = expr.replace(/√\s*([0-9]+(?:\.[0-9]+)?|[a-zA-Z]+)/g,'\\sqrt{$1}');
   expr = expr.replace(/√/g,'\\surd ');
