@@ -874,42 +874,24 @@ textarea{resize:vertical;min-height:70px;}
           <p>Import hundreds or thousands of LaTeX questions at once by pasting standard formatted text.</p>
         </div>
 
-        <!-- SECTION 1: QUESTION METADATA -->
-        <div class="bulk-meta-card">
-          <div class="bulk-meta-title">⚙️ Question Metadata</div>
-          <p class="bulk-meta-sub">Every imported question automatically inherits these field values.</p>
-          <div class="bulk-grid-4">
-            <div class="field">
-              <label class="field-label">Subject <span class="req">*</span></label>
-              <select id="bulkMeta_subject"><option value="">Select Subject</option></select>
-            </div>
-            <div class="field">
-              <label class="field-label">Class <span class="req">*</span></label>
-              <select id="bulkMeta_klass"><option value="">Select Class</option></select>
-            </div>
-            <div class="field">
-              <label class="field-label">Chapter <span class="req">*</span></label>
-              <select id="bulkMeta_chapter" disabled><option value="">Select Subject &amp; Class first</option></select>
-            </div>
-            <div class="field">
-              <label class="field-label">Topic / Default Concept</label>
-              <input type="text" id="bulkMeta_topic" placeholder="e.g. Chemical Bonding">
-            </div>
-            <div class="field">
-              <label class="field-label">Exam Category <span class="req">*</span></label>
-              <div class="toggles" id="bulkExamToggles"></div>
-            </div>
-            <div class="field">
-              <label class="field-label">Question Type <span class="req">*</span></label>
-              <select id="bulkMeta_qType">
-                <option value="mcq_single">MCQ (Single Correct)</option>
-                <option value="assertion_reason">Assertion &amp; Reason</option>
-                <option value="match">Match the Following</option>
-                <option value="numerical">Numerical / Integer Type</option>
-                <option value="true_false">True / False</option>
-              </select>
-            </div>
-          </div>
+        <!-- SECTION 1: QUICK FORMAT GUIDE -->
+        <div class="bulk-meta-card" style="padding: 16px 22px;">
+          <div class="bulk-meta-title" style="font-size: 15px;">💡 LaTeX Import Format Tags</div>
+          <p class="bulk-meta-sub" style="margin-bottom: 0;">
+            All question metadata is parsed directly from tags in the editor:
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@subject</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@class</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@chapter</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@concept</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@exam</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@type</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@question</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@optionA..D</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@answer</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@solution</code>,
+            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@end</code>.
+            Tags persist for all subsequent questions until overridden by a new tag.
+          </p>
         </div>
 
         <!-- SECTION 2: BULK LATEX EDITOR & LIVE PREVIEW -->

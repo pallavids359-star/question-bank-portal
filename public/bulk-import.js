@@ -15,7 +15,6 @@
     historyIndex: -1,
     autoSaveTimer: null,
     debouncedParseTimer: null,
-    currentConcept: '',
     wordWrap: true,
     filterSearch: '',
     filterConcept: '',
@@ -25,8 +24,20 @@
     editingIndex: null,
   };
 
-  // Standard Format Sample Text
-  const DEFAULT_SAMPLE_FORMAT = `@concept
+  // Standard Format Sample Text with metadata tags
+  const DEFAULT_SAMPLE_FORMAT = `@subject
+Chemistry
+
+@class
+11
+
+@chapter
+Chemical Bonding and Molecular Structure
+
+@exam
+NEET
+
+@concept
 Chemical Bonding
 
 @question
@@ -90,21 +101,82 @@ Medium
   function parseBulkText(text) {
     const lines = text.split('\n');
     const questions = [];
-    const errors = [];
 
+    let currentSubject = '';
+    let currentClass = '';
+    let currentChapter = '';
+    let currentExams = ['NEET'];
     let currentConcept = '';
+    let currentType = 'mcq_single';
+    let currentDifficulty = 'Medium';
+
     let currentQ = null;
     let currentTag = null;
     let currentTagContent = [];
 
     function flushTag() {
-      if (!currentQ || !currentTag) return;
+      if (!currentTag) return;
       const content = currentTagContent.join('\n').trim();
       currentTagContent = [];
 
+      if (!currentQ) {
+        // Global metadata tag processing outside question body
+        switch (currentTag) {
+          case 'subject':
+          case 'subj':
+            if (content) currentSubject = content;
+            break;
+          case 'class':
+          case 'klass':
+            if (content) currentClass = content;
+            break;
+          case 'chapter':
+          case 'chap':
+            if (content) currentChapter = content;
+            break;
+          case 'exam':
+          case 'category':
+            if (content) currentExams = [content];
+            break;
+          case 'concept':
+          case 'topic':
+            if (content) currentConcept = content;
+            break;
+          case 'type':
+          case 'qtype':
+            if (content) currentType = parseQTypeString(content);
+            break;
+          case 'difficulty':
+          case 'diff':
+            if (content) currentDifficulty = capitalize(content);
+            break;
+        }
+        return;
+      }
+
+      // Question body tags
       switch (currentTag) {
+        case 'subject':
+        case 'subj':
+          currentQ.subject = content;
+          break;
+        case 'class':
+        case 'klass':
+          currentQ.klass = content;
+          break;
+        case 'chapter':
+        case 'chap':
+          currentQ.chapter = content;
+          break;
+        case 'exam':
+        case 'category':
+          currentQ.exams = [content];
+          break;
+        case 'concept':
+        case 'topic':
+          currentQ.concept = content;
+          break;
         case 'question':
-          // Strip leading numbering e.g. "1.", "Q1", "Question 1", "(1)"
           currentQ.question = cleanQuestionText(content);
           break;
         case 'optiona':
@@ -141,12 +213,7 @@ Medium
           break;
         case 'type':
         case 'qtype':
-          const tVal = content.toLowerCase();
-          if (tVal.includes('assertion')) currentQ.qType = 'assertion_reason';
-          else if (tVal.includes('match')) currentQ.qType = 'match';
-          else if (tVal.includes('num') || tVal.includes('integer')) currentQ.qType = 'numerical';
-          else if (tVal.includes('true') || tVal.includes('false')) currentQ.qType = 'true_false';
-          else currentQ.qType = 'mcq_single';
+          currentQ.qType = parseQTypeString(content);
           break;
       }
     }
@@ -156,16 +223,19 @@ Medium
       flushTag();
       currentQ.endLine = endLineNum;
 
-      // Infer concept if missing
-      if (!currentQ.concept) {
-        currentQ.concept = currentConcept || getMetadataValue('topic') || 'General';
-      }
+      // Attach active persistent metadata if not set on question
+      currentQ.subject = currentQ.subject || currentSubject;
+      currentQ.klass = currentQ.klass || currentClass;
+      currentQ.chapter = currentQ.chapter || currentChapter;
+      currentQ.exams = currentQ.exams && currentQ.exams.length ? currentQ.exams : currentExams;
+      currentQ.concept = currentQ.concept || currentConcept || 'General';
+      currentQ.difficulty = currentQ.difficulty || currentDifficulty || 'Medium';
 
       // Infer qType if missing
       if (!currentQ.qType) {
         if (currentQ.assertion && currentQ.reason) currentQ.qType = 'assertion_reason';
         else if (currentQ.numAnswer) currentQ.qType = 'numerical';
-        else currentQ.qType = 'mcq_single';
+        else currentQ.qType = currentType || 'mcq_single';
       }
 
       questions.push(currentQ);
@@ -187,21 +257,25 @@ Medium
       if (tagMatch) {
         const tagName = tagMatch[1].toLowerCase();
 
-        if (tagName === 'concept') {
-          if (currentQ) flushQuestion(lineNum - 1);
-          // Inline concept value or next lines
-          const conceptValue = trimmed.replace(/^@concept\s*/i, '').trim();
-          if (conceptValue) {
-            currentConcept = conceptValue;
-          } else {
-            currentTag = 'concept_next';
+        // 1. Metadata tags (can appear anywhere)
+        if (['subject', 'subj', 'class', 'klass', 'chapter', 'chap', 'exam', 'category', 'concept', 'topic'].includes(tagName)) {
+          if (currentQ && tagName === 'concept') {
+            // inside question body concept update
+            flushTag();
+            currentTag = 'concept';
+            const rest = trimmed.replace(/^@concept\s*/i, '').trim();
+            if (rest) currentTagContent.push(rest);
+            continue;
           }
-          continue;
-        }
 
-        if (currentTag === 'concept_next') {
-          currentConcept = trimmed;
-          currentTag = null;
+          if (currentQ) flushQuestion(lineNum - 1);
+          flushTag();
+          currentTag = tagName;
+          const rest = trimmed.replace(new RegExp('^@' + tagName + '\\s*', 'i'), '').trim();
+          if (rest) {
+            currentTagContent.push(rest);
+            flushTag();
+          }
           continue;
         }
 
@@ -215,7 +289,12 @@ Medium
           currentQ = {
             id: 'import_' + (questions.length + 1),
             startLine: lineNum,
+            subject: currentSubject,
+            klass: currentClass,
+            chapter: currentChapter,
+            exams: [...currentExams],
             concept: currentConcept,
+            qType: currentType,
             question: '',
             optA: '',
             optB: '',
@@ -223,10 +302,10 @@ Medium
             optD: '',
             answer: '',
             solutionText: '',
-            difficulty: '',
+            difficulty: currentDifficulty,
             isValid: true,
             isDuplicate: false,
-            dupAction: 'skip', // skip, overwrite, keep_both
+            dupAction: 'skip',
             ignored: false,
             collapsed: false,
             errors: [],
@@ -237,18 +316,24 @@ Medium
           continue;
         }
 
-        // Option / Answer / Solution / Difficulty tags
+        // Option / Answer / Solution / Difficulty / Type tags
         if (currentQ) {
           flushTag();
           currentTag = tagName;
           const rest = trimmed.replace(new RegExp('^@' + tagName + '\\s*', 'i'), '').trim();
           if (rest) currentTagContent.push(rest);
+        } else {
+          // Global tag outside question
+          flushTag();
+          currentTag = tagName;
+          const rest = trimmed.replace(new RegExp('^@' + tagName + '\\s*', 'i'), '').trim();
+          if (rest) {
+            currentTagContent.push(rest);
+            flushTag();
+          }
         }
       } else {
-        if (currentTag === 'concept_next') {
-          currentConcept = trimmed;
-          currentTag = null;
-        } else if (currentQ && currentTag) {
+        if (currentTag) {
           currentTagContent.push(rawLine);
         }
       }
@@ -261,10 +346,19 @@ Medium
     return questions;
   }
 
+  function parseQTypeString(str) {
+    if (!str) return 'mcq_single';
+    const s = str.toLowerCase();
+    if (s.includes('assertion')) return 'assertion_reason';
+    if (s.includes('match')) return 'match';
+    if (s.includes('num') || s.includes('integer')) return 'numerical';
+    if (s.includes('true') || s.includes('false')) return 'true_false';
+    return 'mcq_single';
+  }
+
   // Helper: clean question numbering
   function cleanQuestionText(text) {
     if (!text) return '';
-    // Strip "1.", "Q1.", "Question 1:", "(1)", etc.
     let cleaned = text.replace(/^\s*(?:(?:Q|Question)\s*\d+[\.\:\)\-]?|\d+[\.\:\)\-]?|\(\d+\))\s*/i, '');
     return processImageInText(cleaned);
   }
@@ -272,7 +366,6 @@ Medium
   // Helper: process base64 images inside text into {{IMG::...}} chips
   function processImageInText(text) {
     if (!text) return '';
-    // Check for base64 data URI pattern
     const base64Regex = /(data:image\/(?:png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+)/g;
     return text.replace(base64Regex, (match) => {
       if (match.startsWith('{{IMG::')) return match;
@@ -294,27 +387,32 @@ Medium
     questions.forEach((q, idx) => {
       q.errors = [];
       q.isValid = true;
-
       const qNum = idx + 1;
+
+      // 0. Metadata validations
+      if (!q.subject) addErr(q, q.startLine, `Question #${qNum}: Subject is missing. Specify @subject in LaTeX.`);
+      if (!q.klass) addErr(q, q.startLine, `Question #${qNum}: Class is missing. Specify @class (e.g. 11 or 12) in LaTeX.`);
+      if (!q.chapter) addErr(q, q.startLine, `Question #${qNum}: Chapter is missing. Specify @chapter in LaTeX.`);
 
       // 1. Question Text
       if (!q.question) {
         addErr(q, q.startLine, `Question #${qNum}: Question text is missing.`);
       }
 
-      // 2. Options A-D
-      if (!q.optA) addErr(q, q.startLine, `Question #${qNum}: Option A is missing.`);
-      if (!q.optB) addErr(q, q.startLine, `Question #${qNum}: Option B is missing.`);
-      if (!q.optC) addErr(q, q.startLine, `Question #${qNum}: Option C is missing.`);
-      if (!q.optD) addErr(q, q.startLine, `Question #${qNum}: Option D is missing.`);
+      // 2. Options A-D (for MCQ)
+      if (q.qType === 'mcq_single' || !q.qType) {
+        if (!q.optA) addErr(q, q.startLine, `Question #${qNum}: Option A is missing.`);
+        if (!q.optB) addErr(q, q.startLine, `Question #${qNum}: Option B is missing.`);
+        if (!q.optC) addErr(q, q.startLine, `Question #${qNum}: Option C is missing.`);
+        if (!q.optD) addErr(q, q.startLine, `Question #${qNum}: Option D is missing.`);
 
-      // Duplicate options check
-      if (q.optA && q.optB && q.optA === q.optB) addErr(q, q.startLine, `Question #${qNum}: Option A and Option B are identical.`);
-      if (q.optA && q.optC && q.optA === q.optC) addErr(q, q.startLine, `Question #${qNum}: Option A and Option C are identical.`);
-      if (q.optA && q.optD && q.optA === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option A and Option D are identical.`);
-      if (q.optB && q.optC && q.optB === q.optC) addErr(q, q.startLine, `Question #${qNum}: Option B and Option C are identical.`);
-      if (q.optB && q.optD && q.optB === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option B and Option D are identical.`);
-      if (q.optC && q.optD && q.optC === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option C and Option D are identical.`);
+        if (q.optA && q.optB && q.optA === q.optB) addErr(q, q.startLine, `Question #${qNum}: Option A and Option B are identical.`);
+        if (q.optA && q.optC && q.optA === q.optC) addErr(q, q.startLine, `Question #${qNum}: Option A and Option C are identical.`);
+        if (q.optA && q.optD && q.optA === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option A and Option D are identical.`);
+        if (q.optB && q.optC && q.optB === q.optC) addErr(q, q.startLine, `Question #${qNum}: Option B and Option C are identical.`);
+        if (q.optB && q.optD && q.optB === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option B and Option D are identical.`);
+        if (q.optC && q.optD && q.optC === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option C and Option D are identical.`);
+      }
 
       // 3. Answer
       if (!q.answer) {
@@ -323,7 +421,6 @@ Medium
         const normAns = q.answer.trim().toUpperCase();
         const validAnswers = ['A', 'B', 'C', 'D', '1', '2', '3', '4'];
         if (!validAnswers.includes(normAns)) {
-          // Normalize 1->A, 2->B, etc.
           if (normAns === '1') q.answer = 'A';
           else if (normAns === '2') q.answer = 'B';
           else if (normAns === '3') q.answer = 'C';
@@ -339,12 +436,12 @@ Medium
 
       // 5. Difficulty
       if (!q.difficulty) {
-        q.difficulty = getMetadataValue('difficulty') || 'Medium';
+        q.difficulty = 'Medium';
       }
 
       // 6. Concept
       if (!q.concept) {
-        q.concept = getMetadataValue('topic') || 'General';
+        q.concept = 'General';
       }
 
       // 7. KaTeX Compilation Check
@@ -373,7 +470,6 @@ Medium
     const raw = q[fieldName];
     if (!raw || typeof window.katex === 'undefined') return;
 
-    // Test KaTeX dollars
     const regex = /\$([^$]+)\$/g;
     let match;
     while ((match = regex.exec(raw)) !== null) {
@@ -392,16 +488,13 @@ Medium
   function checkDuplicates(parsedList, dbList) {
     if (!dbList || !dbList.length) return;
 
-    const normSubject = getMetadataValue('subject');
-    const normChapter = getMetadataValue('chapter');
-
     parsedList.forEach((pq) => {
       const normText = normalizeForComparison(pq.question);
       if (!normText) return;
 
       const dup = dbList.find((dbq) => {
-        if (normSubject && dbq.subject !== normSubject) return false;
-        if (normChapter && dbq.chapter !== normChapter) return false;
+        if (pq.subject && dbq.subject !== pq.subject) return false;
+        if (pq.chapter && dbq.chapter !== pq.chapter) return false;
         const dbNorm = normalizeForComparison(dbq.question);
         return dbNorm && dbNorm === normText;
       });
@@ -432,7 +525,6 @@ Medium
     const lineNumEl = document.getElementById('bulkLineNumbers');
     if (!textarea || !lineNumEl) return;
 
-    // Load initial draft or default sample
     const savedDraft = localStorage.getItem('bulk_import_draft');
     textarea.value = savedDraft && savedDraft.trim() ? savedDraft : DEFAULT_SAMPLE_FORMAT;
 
@@ -450,7 +542,6 @@ Medium
       lineNumEl.scrollTop = textarea.scrollTop;
     });
 
-    // Support tab indenting
     textarea.addEventListener('keydown', (e) => {
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -478,8 +569,6 @@ Medium
 
     const lines = textarea.value.split('\n');
     const count = Math.max(lines.length, 1);
-
-    // Get error line numbers set
     const errorLines = new Set((state.errors || []).map((e) => e.line));
 
     let html = '';
@@ -499,14 +588,13 @@ Medium
     let charCount = 0;
 
     for (let i = 0; i < Math.min(lineNum - 1, lines.length); i++) {
-      charCount += lines[i].length + 1; // +1 for newline
+      charCount += lines[i].length + 1;
     }
 
     textarea.focus();
     textarea.selectionStart = charCount;
     textarea.selectionEnd = charCount + (lines[lineNum - 1] ? lines[lineNum - 1].length : 0);
 
-    // Scroll to position
     const lineHeight = 19.5;
     textarea.scrollTop = Math.max(0, (lineNum - 5) * lineHeight);
   }
@@ -540,7 +628,6 @@ Medium
     }
   }
 
-  // History stack (Undo/Redo)
   function pushHistory(val) {
     if (state.historyStack[state.historyIndex] === val) return;
     state.historyStack = state.historyStack.slice(0, state.historyIndex + 1);
@@ -610,28 +697,14 @@ Medium
 
     state.rawText = textarea.value;
 
-    // 1. Parse
     state.parsedQuestions = parseBulkText(state.rawText);
-
-    // 2. Validate
     state.errors = validateQuestions(state.parsedQuestions);
-
-    // 3. Duplicate Check against existing DB questions
     checkDuplicates(state.parsedQuestions, state.existingQuestions);
 
-    // 4. Update Line numbers error highlight
     updateLineNumbers();
-
-    // 5. Render Live Preview Cards
     renderPreviewCards();
-
-    // 6. Render Error Panel
     renderErrorPanel();
-
-    // 7. Render Import Summary & Stats
     renderSummaryBar();
-
-    // 8. Update Concept Filter Dropdown
     updateConceptFilterDropdown();
   }
 
@@ -643,23 +716,17 @@ Medium
     if (!container) return;
 
     let filtered = state.parsedQuestions.filter((q) => {
-      // Search
       if (state.filterSearch) {
         const term = state.filterSearch.toLowerCase();
-        const text = (q.question + ' ' + q.concept + ' ' + q.optA + ' ' + q.optB + ' ' + q.optC + ' ' + q.optD + ' ' + q.solutionText).toLowerCase();
+        const text = (q.question + ' ' + q.concept + ' ' + q.subject + ' ' + q.chapter + ' ' + q.optA + ' ' + q.optB + ' ' + q.optC + ' ' + q.optD + ' ' + q.solutionText).toLowerCase();
         if (!text.includes(term)) return false;
       }
-      // Concept
       if (state.filterConcept && q.concept !== state.filterConcept) return false;
-      // Difficulty
-      if (state.filterDifficulty && q.difficulty.toLowerCase() !== state.filterDifficulty.toLowerCase()) return false;
-      // Status
+      if (state.filterDifficulty && (q.difficulty || '').toLowerCase() !== state.filterDifficulty.toLowerCase()) return false;
       if (state.filterStatus === 'valid' && !q.isValid) return false;
       if (state.filterStatus === 'invalid' && q.isValid) return false;
-      // Duplicate
       if (state.filterDuplicate === 'duplicate' && !q.isDuplicate) return false;
       if (state.filterDuplicate === 'unique' && q.isDuplicate) return false;
-
       return true;
     });
 
@@ -682,7 +749,6 @@ Medium
 
       card.className = `bulk-q-card ${cardClass}`;
 
-      // Header row
       const topRow = document.createElement('div');
       topRow.className = 'bulk-card-top';
 
@@ -692,6 +758,24 @@ Medium
       const numBadge = document.createElement('span');
       numBadge.className = 'bulk-card-num-tag';
       numBadge.textContent = `#${idx + 1}`;
+
+      if (q.subject) {
+        const subjPill = document.createElement('span');
+        subjPill.className = 'bulk-pill';
+        subjPill.style.background = 'rgba(201,162,39,0.15)';
+        subjPill.style.color = 'var(--gold)';
+        subjPill.textContent = q.subject;
+        pillsRow.appendChild(subjPill);
+      }
+
+      if (q.klass) {
+        const klassPill = document.createElement('span');
+        klassPill.className = 'bulk-pill';
+        klassPill.style.background = 'rgba(255,255,255,0.08)';
+        klassPill.style.color = '#ccc';
+        klassPill.textContent = `Class ${q.klass}`;
+        pillsRow.appendChild(klassPill);
+      }
 
       const conceptPill = document.createElement('span');
       conceptPill.className = 'bulk-pill bulk-pill-concept';
@@ -718,7 +802,6 @@ Medium
         pillsRow.appendChild(dupPill);
       }
 
-      // Actions row (Checkbox, Expand, Edit, Delete, Ignore)
       const actionsRow = document.createElement('div');
       actionsRow.className = 'bulk-card-actions';
 
@@ -742,13 +825,20 @@ Medium
       card.appendChild(topRow);
 
       if (!q.collapsed) {
-        // Question Body
+        if (q.chapter) {
+          const chapLine = document.createElement('div');
+          chapLine.style.fontSize = '12px';
+          chapLine.style.color = 'var(--muted)';
+          chapLine.style.marginBottom = '8px';
+          chapLine.textContent = `Chapter: ${q.chapter}`;
+          card.appendChild(chapLine);
+        }
+
         const qBody = document.createElement('div');
         qBody.className = 'bulk-card-qbody';
         qBody.appendChild(renderStaticPreviewNode(q.question || '(Empty question text)'));
         card.appendChild(qBody);
 
-        // Options A-D
         const optsGrid = document.createElement('div');
         optsGrid.className = 'bulk-card-options';
 
@@ -772,7 +862,6 @@ Medium
 
         card.appendChild(optsGrid);
 
-        // Detailed Solution
         if (q.solutionText) {
           const solBox = document.createElement('div');
           solBox.className = 'bulk-card-solution';
@@ -784,7 +873,6 @@ Medium
           card.appendChild(solBox);
         }
 
-        // Duplicate Action Bar
         if (q.isDuplicate) {
           const dupBar = document.createElement('div');
           dupBar.className = 'bulk-dup-actions';
@@ -996,6 +1084,9 @@ Medium
       let txt = '';
       let lastConcept = '';
       validQuestions.forEach((q) => {
+        if (q.subject) txt += `@subject\n${q.subject}\n\n`;
+        if (q.klass) txt += `@class\n${q.klass}\n\n`;
+        if (q.chapter) txt += `@chapter\n${q.chapter}\n\n`;
         if (q.concept !== lastConcept) {
           txt += `@concept\n${q.concept}\n\n`;
           lastConcept = q.concept;
@@ -1015,7 +1106,7 @@ Medium
     } else if (format === 'latex') {
       let latex = `\\documentclass{article}\n\\usepackage{amsmath,amssymb}\n\\begin{document}\n\n`;
       validQuestions.forEach((q, idx) => {
-        latex += `\\section*{Question ${idx + 1} (${q.concept})}\n`;
+        latex += `\\section*{Question ${idx + 1} (${q.subject || ''} - Class ${q.klass || ''} - ${q.concept || ''})}\n`;
         latex += `${q.question}\n\n`;
         latex += `\\begin{enumerate}[(A)]\n`;
         latex += `  \\item ${q.optA}\n  \\item ${q.optB}\n  \\item ${q.optC}\n  \\item ${q.optD}\n`;
@@ -1041,36 +1132,9 @@ Medium
   // ------------------------------------------------------------
   // 11. BATCH DATABASE IMPORT EXECUTION
   // ------------------------------------------------------------
-  async function executeBulkImport(selectedOnly = false) {
+  async function executeBulkImport() {
     if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('edit')) {
       if (typeof showToast === 'function') showToast('You do not have permission to import questions.', true);
-      return;
-    }
-
-    // Get top metadata
-    const meta = {
-      klass: getMetadataValue('klass'),
-      subject: getMetadataValue('subject'),
-      chapter: getMetadataValue('chapter'),
-      topic: getMetadataValue('topic'),
-      exams: getMetadataExams(),
-      qType: getMetadataValue('qType') || 'mcq_single',
-      difficulty: getMetadataValue('difficulty') || 'Medium',
-      marks: getMetadataValue('marks') || '4',
-      negMarks: getMetadataValue('negMarks') || '1',
-      language: getMetadataValue('language') || 'English',
-      source: getMetadataValue('source') || '',
-      author: getMetadataValue('author') || '',
-      referenceBook: getMetadataValue('referenceBook') || '',
-      status: getMetadataValue('status') || 'Published',
-      tags: getMetadataValue('tags') || '',
-      year: getMetadataValue('year') || '',
-      attemptLevel: getMetadataValue('attemptLevel') || '',
-      board: getMetadataValue('board') || '',
-    };
-
-    if (!meta.subject || !meta.klass || !meta.chapter) {
-      if (typeof showToast === 'function') showToast('Please select Subject, Class, and Chapter in Question Metadata first.', true);
       return;
     }
 
@@ -1083,7 +1147,7 @@ Medium
     });
 
     if (!importList.length) {
-      if (typeof showToast === 'function') showToast('No ready valid questions to import.', true);
+      if (typeof showToast === 'function') showToast('No ready valid questions to import. Check validation errors.', true);
       return;
     }
 
@@ -1098,38 +1162,38 @@ Medium
     // Map each parsed question into backend JSON contract
     const payloadArray = importList.map((q) => {
       return {
-        subject: meta.subject,
-        klass: meta.klass,
-        chapter: meta.chapter,
-        topic: q.concept || meta.topic || 'General',
-        exams: meta.exams,
-        qType: meta.qType,
+        subject: q.subject,
+        klass: q.klass,
+        chapter: q.chapter,
+        topic: q.concept || 'General',
+        exams: q.exams && q.exams.length ? q.exams : ['NEET'],
+        qType: q.qType || 'mcq_single',
         question: q.question,
         optA: q.optA,
         optB: q.optB,
         optC: q.optC,
         optD: q.optD,
-        assertion: '',
-        reason: '',
-        predefOptions: '',
-        columnA: [],
-        columnB: [],
-        matchOptions: {},
-        numAnswer: '',
+        assertion: q.assertion || '',
+        reason: q.reason || '',
+        predefOptions: q.predefOptions || '',
+        columnA: q.columnA || [],
+        columnB: q.columnB || [],
+        matchOptions: q.matchOptions || {},
+        numAnswer: q.numAnswer || '',
         correctOption: q.answer,
         solutionText: q.solutionText,
-        difficulty: q.difficulty || meta.difficulty,
-        marks: meta.marks,
-        negMarks: meta.negMarks,
-        language: meta.language,
-        source: meta.source,
-        author: meta.author,
-        referenceBook: meta.referenceBook,
-        status: meta.status,
-        tags: meta.tags,
-        year: meta.year,
-        attemptLevel: meta.attemptLevel,
-        board: meta.board,
+        difficulty: q.difficulty || 'Medium',
+        marks: '4',
+        negMarks: '1',
+        language: 'English',
+        source: '',
+        author: '',
+        referenceBook: '',
+        status: 'Published',
+        tags: '',
+        year: '',
+        attemptLevel: '',
+        board: '',
       };
     });
 
@@ -1169,88 +1233,6 @@ Medium
     }
   }
 
-  // ------------------------------------------------------------
-  // 12. METADATA HELPERS
-  // ------------------------------------------------------------
-  function getMetadataValue(id) {
-    const el = document.getElementById('bulkMeta_' + id);
-    return el ? el.value.trim() : '';
-  }
-
-  function getMetadataExams() {
-    const toggles = document.querySelectorAll('#bulkExamToggles .toggle-btn.active');
-    const exams = [];
-    toggles.forEach((t) => exams.push(t.textContent.trim()));
-    return exams.length ? exams : ['NEET'];
-  }
-
-  const LOCAL_SUBJECTS = ["Physics","Chemistry","Biology","Maths"];
-  const LOCAL_CLASSES  = ["11","12"];
-  const LOCAL_EXAMS    = ["NEET","JEE","KCET"];
-  const LOCAL_NCERT    = {
-    "Physics-11":["Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
-    "Physics-12":["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
-    "Chemistry-11":["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry: Some Basic Principles and Techniques","Hydrocarbons"],
-    "Chemistry-12":["Solutions","Electrochemistry","Chemical Kinetics","d- and f-Block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules"],
-    "Biology-11":["The Living World","Biological Classification","Plant Kingdom","Animal Kingdom","Morphology of Flowering Plants","Anatomy of Flowering Plants","Structural Organisation in Animals","Cell: The Unit of Life","Biomolecules","Cell Cycle and Cell Division","Transport in Plants","Mineral Nutrition","Photosynthesis in Higher Plants","Respiration in Plants","Plant Growth and Development","Digestion and Absorption","Breathing and Exchange of Gases","Body Fluids and Circulation","Excretory Products and their Elimination","Locomotion and Movement","Neural Control and Coordination","Chemical Coordination and Integration"],
-    "Biology-12":["Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health","Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution","Human Health and Disease","Microbes in Human Welfare","Biotechnology: Principles and Processes","Biotechnology and its Applications","Organisms and Populations","Ecosystem","Biodiversity and Conservation"],
-    "Maths-11":["Sets","Relations and Functions","Trigonometric Functions","Principle of Mathematical Induction","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three Dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
-    "Maths-12":["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"]
-  };
-
-  function fillSelectLocal(sel, items, placeholder) {
-    if (!sel) return;
-    sel.innerHTML = `<option value="">${placeholder}</option>` + items.map(i => `<option value="${i}">${i}</option>`).join('');
-  }
-
-  function initMetadataSelects() {
-    const subjSel = document.getElementById('bulkMeta_subject');
-    const klassSel = document.getElementById('bulkMeta_klass');
-    const chapSel = document.getElementById('bulkMeta_chapter');
-
-    if (!subjSel || !klassSel || !chapSel) return;
-
-    const subjects = (typeof window.SUBJECTS !== 'undefined') ? window.SUBJECTS : LOCAL_SUBJECTS;
-    const classes = (typeof window.CLASSES !== 'undefined') ? window.CLASSES : LOCAL_CLASSES;
-    const ncert = (typeof window.NCERT_CHAPTERS !== 'undefined') ? window.NCERT_CHAPTERS : LOCAL_NCERT;
-    const exams = (typeof window.EXAMS !== 'undefined') ? window.EXAMS : LOCAL_EXAMS;
-    const fillFn = (typeof window.fillSelect === 'function') ? window.fillSelect : fillSelectLocal;
-
-    fillFn(subjSel, subjects, 'Select Subject');
-    fillFn(klassSel, classes, 'Select Class');
-
-    function syncChapters() {
-      const key = subjSel.value + '-' + klassSel.value;
-      const chapters = ncert[key];
-      if (chapters && chapters.length) {
-        fillFn(chapSel, chapters, 'Select Chapter');
-        chapSel.disabled = false;
-      } else {
-        chapSel.innerHTML = '<option value="">Select Subject &amp; Class first</option>';
-        chapSel.disabled = true;
-      }
-    }
-
-    subjSel.removeEventListener('change', syncChapters);
-    klassSel.removeEventListener('change', syncChapters);
-    subjSel.addEventListener('change', syncChapters);
-    klassSel.addEventListener('change', syncChapters);
-
-    // Exam toggles
-    const examBox = document.getElementById('bulkExamToggles');
-    if (examBox) {
-      examBox.innerHTML = '';
-      exams.forEach((ex) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'toggle-btn' + (ex === 'NEET' ? ' active' : '');
-        btn.textContent = ex;
-        btn.onclick = () => btn.classList.toggle('active');
-        examBox.appendChild(btn);
-      });
-    }
-  }
-
   // Fetch existing DB questions for duplicate detection
   async function fetchExistingQuestions() {
     try {
@@ -1266,14 +1248,12 @@ Medium
   }
 
   // ------------------------------------------------------------
-  // 13. INITIALIZATION
+  // 12. INITIALIZATION
   // ------------------------------------------------------------
   function init() {
-    initMetadataSelects();
     initEditor();
     fetchExistingQuestions();
 
-    // Event listeners for filter controls
     const searchInput = document.getElementById('bulkSearchInput');
     const conceptFilter = document.getElementById('bulkFilterConcept');
     const diffFilter = document.getElementById('bulkFilterDiff');
