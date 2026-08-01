@@ -69,11 +69,12 @@ router.post('/login', async (req, res) => {
 
       if (passwordValid && activeUser.status !== 'disabled' && activeUser.is_active !== false) {
         const loginRecord = await logLogin(activeUser.id, req, 'success');
-        await supabase
-          .from('users')
-          .update({ last_login: new Date().toISOString() })
-          .eq('id', activeUser.id)
-          .catch(() => {});
+        try {
+          await supabase
+            .from('users')
+            .update({ last_login: new Date().toISOString() })
+            .eq('id', activeUser.id);
+        } catch (_) {}
 
         const payload = {
           userId:         activeUser.id,
@@ -83,11 +84,13 @@ router.post('/login', async (req, res) => {
           loginHistoryId: loginRecord?.id || null,
         };
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-        await writeAuditLog({
-          userId: activeUser.id, userName: activeUser.name,
-          action: 'LOGIN', resourceType: 'auth',
-          details: { ip: req.ip, device: /Mobile/i.test(req.headers['user-agent'] || '') ? 'Mobile' : 'Desktop' },
-        }).catch(() => {});
+        try {
+          await writeAuditLog({
+            userId: activeUser.id, userName: activeUser.name,
+            action: 'LOGIN', resourceType: 'auth',
+            details: { ip: req.ip, device: /Mobile/i.test(req.headers['user-agent'] || '') ? 'Mobile' : 'Desktop' },
+          });
+        } catch (_) {}
 
         return res.json({
           token,
