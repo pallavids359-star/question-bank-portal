@@ -851,6 +851,7 @@ textarea{resize:vertical;min-height:70px;}
             </div>
             <div class="filters">
               <select id="fSubject"><option value="">All Subjects</option></select>
+              <select id="fConcept"><option value="">All Concepts</option></select>
               <select id="fType">
                 <option value="">All Types</option>
                 <option value="mcq_single">MCQ (Single Correct)</option>
@@ -2483,19 +2484,53 @@ document.addEventListener('keydown',(e)=>{if((e.ctrlKey||e.metaKey)&&e.key==='En
 
 const listContainer=document.getElementById('listContainer');
 const fSubject=document.getElementById('fSubject');
+const fConcept=document.getElementById('fConcept');
 const fType=document.getElementById('fType');
-fSubject.addEventListener('change',renderList);fType.addEventListener('change',renderList);
+fSubject.addEventListener('change',renderList);
+if(fConcept) fConcept.addEventListener('change',renderList);
+fType.addEventListener('change',renderList);
 
 function renderFilterSubjects(){
   const subs=Array.from(new Set(allQuestions.map(q=>q.subject))).filter(Boolean);const cur=fSubject.value;
-  fSubject.innerHTML='<option value="">All Subjects</option>'+subs.map(s=>`<option value="${s}">${s}</option>`).join('');
+  fSubject.innerHTML='<option value="">All Subjects</option>'+subs.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
   fSubject.value=subs.includes(cur)?cur:'';
+
+  if(fConcept){
+    const concepts=Array.from(new Set(allQuestions.map(q=>q.topic))).filter(c => c && c !== 'General');
+    const curC = fConcept.value;
+    fConcept.innerHTML='<option value="">All Concepts</option>'+concepts.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    fConcept.value=concepts.includes(curC)?curC:'';
+  }
 }
+
+function filterByConcept(conceptName){
+  if(fConcept){
+    fConcept.value=conceptName;
+    renderList();
+    const listEl=document.getElementById('listContainer');
+    if(listEl) listEl.scrollIntoView({behavior:'smooth'});
+  }
+}
+
+function getCleanQuestionText(q){
+  if(!q || !q.question) return '';
+  let raw = q.question.trim();
+  if(q.topic && q.topic !== 'General'){
+    const lines = raw.split('\n');
+    if(lines.length > 1 && lines[0].trim().toLowerCase() === q.topic.trim().toLowerCase()){
+      return lines.slice(1).join('\n').trim();
+    }
+  }
+  return raw;
+}
+
 function renderStaticPreview(raw){const span=document.createElement('span');span.className='li-preview';span.appendChild(buildEquationFragment(raw||''));return span;}
 
 function renderList(){
-  const subjF=fSubject.value,typeF=fType.value;
-  const filtered=allQuestions.filter(q=>(!subjF||q.subject===subjF)&&(!typeF||q.qType===typeF));
+  const subjF=fSubject.value;
+  const conceptF=fConcept ? fConcept.value : '';
+  const typeF=fType.value;
+  const filtered=allQuestions.filter(q=>(!subjF||q.subject===subjF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
   document.getElementById('countLine').textContent=filtered.length+' question'+(filtered.length===1?'':'s');
   listContainer.innerHTML='';
   if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';return;}
@@ -2507,8 +2542,11 @@ function renderList(){
     const top=document.createElement('div');top.className='li-top';
     const main=document.createElement('div');main.style.flex='1';
     const meta=document.createElement('div');meta.className='li-meta';
-    meta.innerHTML=`<span>${escapeHtml(q.subject)}</span> · Class ${escapeHtml(q.klass)} · ${escapeHtml(q.chapter||'')} &nbsp;›&nbsp; ${escapeHtml(q.topic)} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType}`;
+    meta.innerHTML=`<span>${escapeHtml(q.subject)}</span> · Class ${escapeHtml(q.klass)} · ${escapeHtml(q.chapter||'')}${q.topic ? ' &nbsp;›&nbsp; ' + escapeHtml(q.topic) : ''} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType}`;
     main.appendChild(meta);
+
+    const cleanQText = getCleanQuestionText(q);
+
     if(q.qType==='assertion_reason'){
       const aLine=document.createElement('div');aLine.appendChild(document.createTextNode('A: '));aLine.appendChild(renderStaticPreview(q.assertion));main.appendChild(aLine);
       const rLine=document.createElement('div');rLine.style.marginTop='4px';rLine.appendChild(document.createTextNode('R: '));rLine.appendChild(renderStaticPreview(q.reason));main.appendChild(rLine);
@@ -2523,16 +2561,30 @@ function renderList(){
       ['A','B','C','D'].forEach(l=>{const isCorrect=q.correctOption===l;const span=document.createElement('span');if(isCorrect)span.className='correct';span.appendChild(document.createTextNode(l+': '));span.appendChild(renderStaticPreview(mo[l]||''));if(isCorrect)span.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(span);optsLine.appendChild(document.createTextNode('  '));});
       main.appendChild(optsLine);
     }else if(q.qType==='numerical'){
-      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(q.question));main.appendChild(qLine);
+      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText));main.appendChild(qLine);
       const ansLine=document.createElement('div');ansLine.className='li-combo correct';ansLine.appendChild(document.createTextNode('Correct Value: '));ansLine.appendChild(q.numAnswer?renderStaticPreview(q.numAnswer):document.createTextNode('—'));main.appendChild(ansLine);
     }else{
-      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(q.question));main.appendChild(qLine);
+      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText));main.appendChild(qLine);
       const optsLine=document.createElement('div');optsLine.className='li-combo';
       ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
       main.appendChild(optsLine);
     }
-    const examsLine=document.createElement('div');examsLine.style.marginTop='8px';
+    const examsLine=document.createElement('div');examsLine.style.marginTop='8px';examsLine.style.display='flex';examsLine.style.flexWrap='wrap';examsLine.style.gap='6px';
     (q.exams||[]).forEach(ex=>{const pill=document.createElement('span');pill.className='tag-pill';pill.textContent=ex;examsLine.appendChild(pill);});
+
+    if(q.topic && q.topic !== 'General'){
+      const cPill=document.createElement('span');
+      cPill.className='tag-pill';
+      cPill.style.cursor='pointer';
+      cPill.style.background='rgba(201,162,39,0.15)';
+      cPill.style.color='var(--gold)';
+      cPill.style.border='1px solid rgba(201,162,39,0.3)';
+      cPill.textContent='💡 ' + q.topic;
+      cPill.title='Click to view all questions for concept: ' + q.topic;
+      cPill.onclick=()=>filterByConcept(q.topic);
+      examsLine.appendChild(cPill);
+    }
+
     main.appendChild(examsLine);
     // Ownership info
     if(q.createdBy||q.updatedBy){
