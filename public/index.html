@@ -1249,6 +1249,30 @@ textarea{resize:vertical;min-height:70px;}
 /* All functions are in global scope so HTML onclick= attributes work */
 
 // ============================================================
+// ── GLOBAL STATE (declared first to avoid temporal dead zone)
+// ============================================================
+var allQuestions  = [];
+var selectedExams = new Set();
+var editingId     = null;
+
+// fillSelect: used by bulk-import.js
+function fillSelect(id, options, placeholder) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '';
+  if (placeholder) {
+    var ph = document.createElement('option');
+    ph.value = ''; ph.textContent = placeholder;
+    el.appendChild(ph);
+  }
+  (options || []).forEach(function(opt) {
+    var o = document.createElement('option');
+    o.value = opt; o.textContent = opt;
+    el.appendChild(o);
+  });
+}
+
+// ============================================================
 // ── AUTH MANAGER ────────────────────────────────────────────
 // ============================================================
 const Auth = {
@@ -1950,9 +1974,6 @@ const QTYPE_LABELS = {
   statement_based:"Statement Based Question"
 };
 
-let selectedExams  = new Set();
-let editingId      = null;
-let allQuestions   = [];
 
 // ---------- LaTeX rendering ----------
 function normalizeLatexExpr(expr){
