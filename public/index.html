@@ -656,20 +656,20 @@ textarea{resize:vertical;min-height:70px;}
       <div class="brand-sub">Question Bank Portal</div>
       <div class="brand-tagline">Empowering Education Through Intelligent Technology</div>
     </div>
-    <div class="login-form-panel">
+    <form class="login-form-panel" id="loginForm" onsubmit="doLogin(event)">
       <h2>Welcome back</h2>
       <p class="lf-sub">Sign in to your account to continue</p>
       <div class="lf-group">
         <label>Email Address</label>
-        <input type="email" id="loginEmail" placeholder="you@example.com" autocomplete="email">
+        <input type="email" id="loginEmail" placeholder="you@example.com" autocomplete="email" required>
       </div>
       <div class="lf-group">
         <label>Password</label>
-        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" required>
       </div>
-      <button type="button" class="login-btn" id="loginBtn" onclick="doLogin()">Sign In</button>
+      <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
       <div class="login-error" id="loginError"></div>
-    </div>
+    </form>
   </div>
 </div>
 
@@ -1420,13 +1420,21 @@ function applyRoleRestrictions() {
 // ============================================================
 // ── LOGIN / LOGOUT ───────────────────────────────────────────
 // ============================================================
-async function doLogin() {
-  const email    = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value;
-  const errEl    = document.getElementById('loginError');
-  const btn      = document.getElementById('loginBtn');
+async function doLogin(e) {
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
+  const emailEl    = document.getElementById('loginEmail');
+  const passwordEl = document.getElementById('loginPassword');
+  const errEl      = document.getElementById('loginError');
+  const btn        = document.getElementById('loginBtn');
+
+  if (!emailEl || !passwordEl || !errEl || !btn) return;
+
+  const email    = emailEl.value.trim();
+  const password = passwordEl.value;
 
   errEl.classList.remove('visible');
+  errEl.textContent = '';
+
   if (!email || !password) {
     errEl.textContent = 'Please enter your email and password.';
     errEl.classList.add('visible');
@@ -1441,12 +1449,18 @@ async function doLogin() {
       method: 'POST',
       body:   JSON.stringify({ email, password }),
     });
+
+    if (!data || !data.token) {
+      throw new Error((data && data.error) ? data.error : 'Invalid response from server.');
+    }
+
     Auth.setAuth(data.token, data.user);
     showAppPage();
-    document.getElementById('loginEmail').value    = '';
-    document.getElementById('loginPassword').value = '';
-  } catch (e) {
-    errEl.textContent = e.message || 'Login failed. Please try again.';
+    emailEl.value    = '';
+    passwordEl.value = '';
+  } catch (err) {
+    console.error('Login error:', err);
+    errEl.textContent = err.message || 'Login failed. Please try again.';
     errEl.classList.add('visible');
   } finally {
     btn.disabled    = false;
@@ -1472,10 +1486,10 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// Allow Enter key and button click on login form
-document.getElementById('loginBtn').addEventListener('click', doLogin);
-document.getElementById('loginEmail').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('loginPassword').focus(); });
-document.getElementById('loginPassword').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+const loginFormEl = document.getElementById('loginForm');
+if (loginFormEl) {
+  loginFormEl.addEventListener('submit', doLogin);
+}
 
 // ============================================================
 // ── TOAST (shared) ───────────────────────────────────────────
