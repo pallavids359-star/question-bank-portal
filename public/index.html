@@ -1285,6 +1285,7 @@ const Auth = {
 // ============================================================
 const API_QUESTIONS = '/api/questions';
 const API_BASE      = '/api';
+let _isLoggingIn    = false;
 
 async function apiReq(url, options = {}) {
   const token = Auth.getToken();
@@ -1298,8 +1299,10 @@ async function apiReq(url, options = {}) {
   });
 
   if (resp.status === 401 && !url.includes('/auth/login')) {
-    Auth.clearAuth();
-    showLoginPage();
+    if (!_isLoggingIn) {
+      Auth.clearAuth();
+      showLoginPage();
+    }
     throw new Error('Session expired. Please log in again.');
   }
 
@@ -1443,6 +1446,7 @@ async function doLogin(e) {
 
   btn.disabled    = true;
   btn.textContent = 'Signing in…';
+  _isLoggingIn    = true;
 
   try {
     const data = await apiReq('/api/auth/login', {
@@ -1463,6 +1467,7 @@ async function doLogin(e) {
     errEl.textContent = err.message || 'Login failed. Please try again.';
     errEl.classList.add('visible');
   } finally {
+    _isLoggingIn    = false;
     btn.disabled    = false;
     btn.textContent = 'Sign In';
   }
