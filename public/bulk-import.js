@@ -215,6 +215,18 @@ Medium
         case 'qtype':
           currentQ.qType = parseQTypeString(content);
           break;
+        case 'statement1':
+        case 'statementi':
+        case 'stmt1':
+        case 'stmti':
+          currentQ.statement1 = processImageInText(content);
+          break;
+        case 'statement2':
+        case 'statementii':
+        case 'stmt2':
+        case 'stmtii':
+          currentQ.statement2 = processImageInText(content);
+          break;
       }
     }
 
@@ -233,8 +245,10 @@ Medium
 
       // Infer qType if missing
       if (!currentQ.qType) {
-        if (currentQ.assertion && currentQ.reason) currentQ.qType = 'assertion_reason';
+        if (currentQ.statement1 && currentQ.statement2) currentQ.qType = 'statement_based';
+        else if (currentQ.assertion && currentQ.reason) currentQ.qType = 'assertion_reason';
         else if (currentQ.numAnswer) currentQ.qType = 'numerical';
+        else if (currentQ.question && currentQ.question.includes('{{IMG::')) currentQ.qType = 'diagram_based';
         else currentQ.qType = currentType || 'mcq_single';
       }
 
@@ -353,6 +367,8 @@ Medium
     if (s.includes('match')) return 'match';
     if (s.includes('num') || s.includes('integer')) return 'numerical';
     if (s.includes('true') || s.includes('false')) return 'true_false';
+    if (s.includes('diagram') || s.includes('image') || s.includes('figure')) return 'diagram_based';
+    if (s.includes('statement')) return 'statement_based';
     return 'mcq_single';
   }
 
@@ -1175,6 +1191,8 @@ Medium
         optD: q.optD,
         assertion: q.assertion || '',
         reason: q.reason || '',
+        statement1: q.statement1 || '',
+        statement2: q.statement2 || '',
         predefOptions: q.predefOptions || '',
         columnA: q.columnA || [],
         columnB: q.columnB || [],

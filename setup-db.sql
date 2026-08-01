@@ -20,7 +20,9 @@ create table if not exists public.questions (
       'assertion_reason',
       'match',
       'numerical',
-      'true_false'
+      'true_false',
+      'diagram_based',
+      'statement_based'
     )
   ),
   question text not null default '',
@@ -30,6 +32,8 @@ create table if not exists public.questions (
   opt_d text not null default '',
   assertion text not null default '',
   reason text not null default '',
+  statement1 text not null default '',
+  statement2 text not null default '',
   predef_options text not null default '',
   column_a text[] not null default '{}',
   column_b text[] not null default '{}',
@@ -174,5 +178,7 @@ alter table public.questions
   add column if not exists tags           text not null default '',
   add column if not exists year           text not null default '',
   add column if not exists attempt_level  text not null default '',
-  add column if not exists board          text not null default '';
+  add column if not exists board          text not null default '',
+  add column if not exists statement1     text not null default '',
+  add column if not exists statement2     text not null default '';
 

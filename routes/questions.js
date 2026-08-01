@@ -21,6 +21,8 @@ const fieldMap = {
   optD:          'opt_d',
   assertion:     'assertion',
   reason:        'reason',
+  statement1:    'statement1',
+  statement2:    'statement2',
   predefOptions: 'predef_options',
   columnA:       'column_a',
   columnB:       'column_b',
@@ -155,6 +157,7 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
   const CORE_FIELDS = [
     'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
     'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d', 'assertion', 'reason',
+    'statement1', 'statement2',
     'predef_options', 'column_a', 'column_b', 'match_options',
     'num_answer', 'correct_option', 'solution_text',
     'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
