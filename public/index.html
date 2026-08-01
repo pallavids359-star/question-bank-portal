@@ -2325,6 +2325,23 @@ document.addEventListener('paste', async (e) => {
   }
 
   // Only handle global paste if on the questions page
+  const pageQ = document.getElementById('pageQuestions');
+  if (!pageQ || !pageQ.classList.contains('active')) return;
+
+  let targetField = null;
+  const qType = document.getElementById('qType') ? document.getElementById('qType').value : '';
+  if (qType === 'assertion_reason') targetField = document.getElementById('assertion');
+  else if (qType === 'numerical') targetField = document.getElementById('numQuestion');
+  else targetField = document.getElementById('question');
+
+  if (targetField && targetField.offsetParent !== null) {
+    const handled = await handleClipboardPaste(e, targetField);
+    if (handled) {
+      targetField.focus();
+    }
+  }
+});
+
 const QTYPE_LABELS = {
   mcq_single:"MCQ (Single Correct)",
   assertion_reason:"Assertion & Reason",
