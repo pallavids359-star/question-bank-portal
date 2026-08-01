@@ -28,6 +28,18 @@ const fieldMap = {
   numAnswer:     'num_answer',
   correctOption: 'correct_option',
   solutionText:  'solution_text',
+  difficulty:    'difficulty',
+  marks:         'marks',
+  negMarks:      'neg_marks',
+  language:      'language',
+  source:        'source',
+  author:        'author',
+  referenceBook: 'reference_book',
+  status:        'status',
+  tags:          'tags',
+  year:          'year',
+  attemptLevel:  'attempt_level',
+  board:         'board',
 };
 
 function toDatabase(input) {
@@ -120,6 +132,64 @@ router.post('/', ...WRITE_ROLES, async (req, res) => {
 
   res.status(201).json(toApi(data));
 });
+
+// ── POST /api/questions/batch ──────────────────────────────────────────────
+router.post('/batch', ...WRITE_ROLES, async (req, res) => {
+  const items = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Payload must be a non-empty array of questions.' });
+  }
+
+  const userId = req.user.userId;
+  const userName = req.user.name;
+
+  const recordsToInsert = items.map(item => {
+    const payload = toDatabase(item);
+    payload.created_by      = userId;
+    payload.created_by_name = userName;
+    payload.updated_by      = userId;
+    payload.updated_by_name = userName;
+    return payload;
+  });
+
+  // Batch insert into Supabase in chunks of 50
+  const chunkSize = 50;
+  const insertedData = [];
+
+  for (let i = 0; i < recordsToInsert.length; i += chunkSize) {
+    const chunk = recordsToInsert.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from('questions')
+      .insert(chunk)
+      .select();
+
+    if (error) {
+      return res.status(400).json({
+        error: `Batch insert failed at item ${i + 1}`,
+        details: error.message,
+        insertedCount: insertedData.length
+      });
+    }
+
+    if (data) {
+      insertedData.push(...data);
+    }
+  }
+
+  await writeAuditLog({
+    userId, userName,
+    action: 'BULK_CREATE_QUESTIONS', resourceType: 'question',
+    resourceId: `batch_${insertedData.length}`,
+    details: { totalImported: insertedData.length },
+  });
+
+  res.status(201).json({
+    success: true,
+    count: insertedData.length,
+    data: insertedData.map(toApi)
+  });
+});
+
 
 // ── PUT /api/questions/:id ─────────────────────────────────────────────────
 router.put('/:id', ...WRITE_ROLES, async (req, res) => {

@@ -61,3 +61,18 @@ create index if not exists questions_subject_idx
 
 create index if not exists questions_q_type_idx
   on public.questions (q_type);
+
+alter table public.questions
+  add column if not exists difficulty     text not null default 'Medium',
+  add column if not exists marks          text not null default '4',
+  add column if not exists neg_marks      text not null default '1',
+  add column if not exists language       text not null default 'English',
+  add column if not exists source         text not null default '',
+  add column if not exists author         text not null default '',
+  add column if not exists reference_book text not null default '',
+  add column if not exists status         text not null default 'Published',
+  add column if not exists tags           text not null default '',
+  add column if not exists year           text not null default '',
+  add column if not exists attempt_level  text not null default '',
+  add column if not exists board          text not null default '';
+

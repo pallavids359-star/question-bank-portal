@@ -157,9 +157,22 @@ values ('difficulty', '{"easy":45,"medium":35,"hard":20}'::jsonb)
 on conflict (key) do nothing;
 
 
--- ── 6. ADD OWNERSHIP COLUMNS TO QUESTIONS ───────────────────
+-- ── 6. ADD OWNERSHIP & METADATA COLUMNS TO QUESTIONS ─────────
 alter table public.questions
   add column if not exists created_by      uuid references public.users(id) on delete set null,
   add column if not exists created_by_name text not null default '',
   add column if not exists updated_by      uuid references public.users(id) on delete set null,
-  add column if not exists updated_by_name text not null default '';
+  add column if not exists updated_by_name text not null default '',
+  add column if not exists difficulty     text not null default 'Medium',
+  add column if not exists marks          text not null default '4',
+  add column if not exists neg_marks      text not null default '1',
+  add column if not exists language       text not null default 'English',
+  add column if not exists source         text not null default '',
+  add column if not exists author         text not null default '',
+  add column if not exists reference_book text not null default '',
+  add column if not exists status         text not null default 'Published',
+  add column if not exists tags           text not null default '',
+  add column if not exists year           text not null default '',
+  add column if not exists attempt_level  text not null default '',
+  add column if not exists board          text not null default '';
+
