@@ -1339,7 +1339,7 @@ function showPage(id) {
   else if (id === 'pageSettings') loadSettings();
   else if (id === 'pageProfile')  loadProfile();
   else if (id === 'pageBulkImport') { if (window.BulkModule) window.BulkModule.init(); }
-  // pageQuestions auto-loads via existing loadQuestions() call below
+  else if (id === 'pageQuestions') { loadQuestions(); }
 }
 
 function showLoginPage() {
@@ -2351,6 +2351,331 @@ document.addEventListener('paste', async (e) => {
 
 
 
+
+const DEFAULT_PREDEF_TEXT=
+"A: A and R are true and R is the correct explanation.\n"+
+"B: A and R are true but R is not the correct explanation.\n"+
+"C: A is true but R is false.\n"+
+"D: A is false but R is true.";
+function fillDefaultPredef(){const el=document.getElementById('predefOptions');if(!el)return;el.innerHTML='';el.appendChild(buildEquationFragment(DEFAULT_PREDEF_TEXT));}
+fillDefaultPredef();
+
+const qTypeSel=document.getElementById('qType');
+const mcqBlock=document.getElementById('mcqBlock');
+const arBlock=document.getElementById('arBlock');
+const matchBlock=document.getElementById('matchBlock');
+const numBlock=document.getElementById('numBlock');
+const statementBlock=document.getElementById('statementBlock');
+const correctOptionWrap=document.getElementById('correctOptionWrap');
+
+function updateTypeVisibility(){
+  if(!qTypeSel) return;
+  const type=qTypeSel.value;
+  const isAR=type==='assertion_reason';
+  const isMatch=type==='match';
+  const isNum=type==='numerical';
+  const isStatement=type==='statement_based';
+
+  if(mcqBlock) mcqBlock.style.display=(isAR||isMatch||isNum)?'none':'';
+  if(arBlock) arBlock.style.display=isAR?'':'none';
+  if(matchBlock) matchBlock.style.display=isMatch?'':'none';
+  if(numBlock) numBlock.style.display=isNum?'':'none';
+  if(statementBlock) statementBlock.style.display=isStatement?'':'none';
+  if(correctOptionWrap) correctOptionWrap.style.display=isNum?'none':'';
+
+  if(isStatement){
+    const optA = document.getElementById('optA');
+    const optB = document.getElementById('optB');
+    const optC = document.getElementById('optC');
+    const optD = document.getElementById('optD');
+    if(optA && !getFieldRaw(optA)) setEqFieldElFromRaw(optA, 'Both Statement I and Statement II are correct');
+    if(optB && !getFieldRaw(optB)) setEqFieldElFromRaw(optB, 'Both Statement I and Statement II are incorrect');
+    if(optC && !getFieldRaw(optC)) setEqFieldElFromRaw(optC, 'Statement I is correct but Statement II is incorrect');
+    if(optD && !getFieldRaw(optD)) setEqFieldElFromRaw(optD, 'Statement I is incorrect but Statement II is correct');
+  }
+  updateCorrectOptionChoices();
+}
+if(qTypeSel){ qTypeSel.addEventListener('change',updateTypeVisibility); updateTypeVisibility(); }
+
+function columnALabel(idx){const num=idx+1;return num<=2?`Row ${num} *`:`Row ${num} (Optional)`;}
+function columnBLabel(idx){const letter=String.fromCharCode(80+idx);return idx<2?`Row ${letter} *`:`Row ${letter} (Optional)`;}
+function relabelRows(containerId,labelFn){const c=document.getElementById(containerId);if(!c)return;Array.from(c.children).forEach((wrap,idx)=>{wrap.querySelector('.eq-field').setAttribute('data-placeholder',labelFn(idx));});}
+function addColumnRow(containerId,labelFn){
+  const container=document.getElementById(containerId);if(!container)return;const idx=container.children.length;
+  const wrap=document.createElement('div');wrap.className='row-item';
+  const field=document.createElement('div');field.className='eq-field match-row-input';field.contentEditable='true';field.spellcheck=false;field.setAttribute('data-placeholder',labelFn(idx));
+  wrap.appendChild(field);attachEquationField(field);
+  if(idx>=2){const rm=document.createElement('button');rm.type='button';rm.className='row-remove-btn';rm.title='Remove row';rm.textContent='✕';rm.addEventListener('click',()=>{wrap.remove();relabelRows(containerId,labelFn);});wrap.appendChild(rm);}
+  container.appendChild(wrap);
+}
+function getRowValues(containerId){const c=document.getElementById(containerId);if(!c)return[];return Array.from(c.children).map(wrap=>getFieldRaw(wrap.querySelector('.eq-field')).trim());}
+function resetColumnRows(containerId,labelFn,count){const container=document.getElementById(containerId);if(!container)return;container.innerHTML='';for(let i=0;i<count;i++)addColumnRow(containerId,labelFn);}
+if(document.getElementById('columnARows')) { resetColumnRows('columnARows',columnALabel,4); resetColumnRows('columnBRows',columnBLabel,4); }
+if(document.getElementById('addColumnARow')) document.getElementById('addColumnARow').addEventListener('click',()=>addColumnRow('columnARows',columnALabel));
+if(document.getElementById('addColumnBRow')) document.getElementById('addColumnBRow').addEventListener('click',()=>addColumnRow('columnBRows',columnBLabel));
+
+function comboLabel(idx){return String.fromCharCode(65+idx);}
+function relabelCombos(){const c=document.getElementById('matchOptionsRows');if(!c)return;Array.from(c.children).forEach((wrap,idx)=>{const letter=comboLabel(idx);wrap.querySelector('.combo-tag').textContent=letter;wrap.querySelector('.eq-field').setAttribute('data-placeholder',`Option ${letter}`);});updateCorrectOptionChoices();}
+function addComboRow(){
+  const container=document.getElementById('matchOptionsRows');if(!container)return;const idx=container.children.length;const letter=comboLabel(idx);
+  const wrap=document.createElement('div');wrap.className='combo-row';
+  const tag=document.createElement('div');tag.className='combo-tag';tag.textContent=letter;
+  const field=document.createElement('div');field.className='eq-field';field.id='matchOpt'+letter;field.contentEditable='true';field.spellcheck=false;field.setAttribute('data-placeholder',`Option ${letter}`);
+  wrap.appendChild(tag);wrap.appendChild(field);attachEquationField(field);
+  if(idx>=4){const rm=document.createElement('button');rm.type='button';rm.className='row-remove-btn';rm.title='Remove option';rm.textContent='✕';rm.addEventListener('click',()=>{wrap.remove();relabelCombos();});wrap.appendChild(rm);}
+  container.appendChild(wrap);updateCorrectOptionChoices();
+}
+function getComboValues(){const c=document.getElementById('matchOptionsRows');if(!c)return[];return Array.from(c.children).map(wrap=>getFieldRaw(wrap.querySelector('.eq-field')).trim());}
+function resetCombos(count){const container=document.getElementById('matchOptionsRows');if(!container)return;container.innerHTML='';for(let i=0;i<count;i++)addComboRow();}
+if(document.getElementById('matchOptionsRows')) resetCombos(4);
+
+function updateCorrectOptionChoices(){
+  const sel=document.getElementById('correctOption');if(!sel)return;const isMatch=qTypeSel?qTypeSel.value==='match':false;
+  const matchContainer=document.getElementById('matchOptionsRows');
+  const count=(isMatch&&matchContainer)?matchContainer.children.length:4;const current=sel.value;
+  sel.innerHTML='<option value="">Select Correct Option</option>'+Array.from({length:count},(_,i)=>{const letter=comboLabel(i);return`<option value="${letter}">Option ${letter}</option>`;}).join('');
+  if(Array.from(sel.options).some(o=>o.value===current))sel.value=current;
+}
+
+function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
+function eqVal(id){const el=document.getElementById(id);return el?getFieldRaw(el).trim():'';}
+
+function validate(){
+  const subjectSel=document.getElementById('subject');
+  const klassSel=document.getElementById('klass');
+  if(!subjectSel||!subjectSel.value)return'Please select a Subject.';
+  if(!klassSel||!klassSel.value)return'Please select a Class.';
+  if(!val('chapter'))return'Please select a Chapter.';if(!val('topic'))return'Please enter a Topic.';
+  if(selectedExams.size===0)return'Please select an Exam Category.';
+  const qType=document.getElementById('qType').value;if(!qType)return'Please select a Question Type.';
+  if(qType==='assertion_reason'){if(!eqVal('assertion'))return'Please enter the Assertion (A).';if(!eqVal('reason'))return'Please enter the Reason (R).';
+  }else if(qType==='statement_based'){if(!eqVal('statement1'))return'Please enter Statement I.';if(!eqVal('statement2'))return'Please enter Statement II.';if(!eqVal('optA')||!eqVal('optB')||!eqVal('optC')||!eqVal('optD'))return'All four options are required.';
+  }else if(qType==='match'){const rowsA=getRowValues('columnARows');const rowsB=getRowValues('columnBRows');if(!rowsA[0]||!rowsA[1])return'Please fill both required rows in Column A.';if(!rowsB[0]||!rowsB[1])return'Please fill both required rows in Column B.';if(!eqVal('matchOptA')||!eqVal('matchOptB')||!eqVal('matchOptC')||!eqVal('matchOptD'))return'All four option combinations are required.';
+  }else if(qType==='numerical'){if(!eqVal('numQuestion'))return'Please enter the Numerical Question.';if(!eqVal('numAnswer'))return'Please enter the Correct Numerical Value.';
+  }else{if(!eqVal('question'))return'Please enter the Question.';if(!eqVal('optA')||!eqVal('optB')||!eqVal('optC')||!eqVal('optD'))return'All four options are required.';}
+  if(qType!=='numerical'&&!document.getElementById('correctOption').value)return'Please select the Correct Option.';
+  return null;
+}
+
+async function saveQuestion(){
+  if(!Auth.can('edit')){showToast('You do not have permission to add questions.',true);return;}
+  const err=validate();if(err){showToast(err,true);return;}
+  const saveBtn=document.getElementById('saveBtn');saveBtn.disabled=true;saveBtn.textContent=editingId?'Updating…':'Saving…';
+  const qType=document.getElementById('qType').value;const isAR=qType==='assertion_reason';const isMatch=qType==='match';const isNum=qType==='numerical';const isStatement=qType==='statement_based';
+  const subjectSel=document.getElementById('subject');const klassSel=document.getElementById('klass');
+  const record={subject:subjectSel.value,klass:klassSel.value,chapter:val('chapter'),topic:val('topic'),exams:Array.from(selectedExams),qType,
+    question:isNum?eqVal('numQuestion'):(isAR||isMatch||isStatement)?'':eqVal('question'),
+    statement1:isStatement?eqVal('statement1'):'',statement2:isStatement?eqVal('statement2'):'',
+    optA:(isAR||isMatch||isNum)?'':eqVal('optA'),optB:(isAR||isMatch||isNum)?'':eqVal('optB'),
+    optC:(isAR||isMatch||isNum)?'':eqVal('optC'),optD:(isAR||isMatch||isNum)?'':eqVal('optD'),
+    assertion:isAR?eqVal('assertion'):'',reason:isAR?eqVal('reason'):'',predefOptions:isAR?eqVal('predefOptions'):'',
+    columnA:isMatch?getRowValues('columnARows').filter(v=>v):[],columnB:isMatch?getRowValues('columnBRows').filter(v=>v):[],
+    matchOptions:isMatch?{A:eqVal('matchOptA'),B:eqVal('matchOptB'),C:eqVal('matchOptC'),D:eqVal('matchOptD')}:{},
+    numAnswer:isNum?eqVal('numAnswer'):'',correctOption:isNum?'':document.getElementById('correctOption').value,
+    solutionText:eqVal('solutionText')};
+  try{
+    const wasEditing=Boolean(editingId);
+    const saved=wasEditing?await apiRequest('/'+encodeURIComponent(editingId),{method:'PUT',body:JSON.stringify(record)}):await apiRequest('',{method:'POST',body:JSON.stringify(record)});
+    if(wasEditing){const idx=allQuestions.findIndex(q=>q.id===editingId);if(idx>-1)allQuestions[idx]=saved;}else{allQuestions.unshift(saved);}
+    renderFilterSubjects();renderList();showToast(wasEditing?'Question updated.':'Question saved.');resetForm();
+  }catch(e){console.error('Save failed:',e);showToast('Save failed: '+e.message,true);saveBtn.textContent=editingId?'Update Question':'Save Question';}
+  finally{saveBtn.disabled=false;}
+}
+
+function resetForm(){
+  editingId=null;
+  const ft=document.getElementById('formTitle');if(ft)ft.textContent='Add New Question';
+  const sb=document.getElementById('saveBtn');if(sb)sb.textContent='Save Question';
+  const subjectSel=document.getElementById('subject');if(subjectSel)subjectSel.value='';
+  const klassSel=document.getElementById('klass');if(klassSel)klassSel.value='';
+  if(typeof updateChapterOptions==='function') updateChapterOptions();
+  const topEl=document.getElementById('topic');if(topEl)topEl.value='';
+  selectedExams.clear();
+  const examTogglesEl=document.getElementById('examToggles');if(examTogglesEl)examTogglesEl.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'));
+  const qts=document.getElementById('qType');if(qts)qts.value='';
+  ['question','optA','optB','optC','optD','solutionText','assertion','reason','numQuestion','numAnswer','statement1','statement2'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
+  fillDefaultPredef();resetColumnRows('columnARows',columnALabel,4);resetColumnRows('columnBRows',columnBLabel,4);resetCombos(4);
+  const co=document.getElementById('correctOption');if(co)co.value='';updateTypeVisibility();
+}
+
+if(document.getElementById('saveBtn')) document.getElementById('saveBtn').addEventListener('click',saveQuestion);
+if(document.getElementById('resetBtn')) document.getElementById('resetBtn').addEventListener('click',resetForm);
+
+function renderFilterSubjects(){
+  const fSubject=document.getElementById('fSubject');
+  const fConcept=document.getElementById('fConcept');
+  if(!fSubject) return;
+  const subs=Array.from(new Set(allQuestions.map(q=>q.subject))).filter(Boolean);const cur=fSubject.value;
+  fSubject.innerHTML='<option value="">All Subjects</option>'+subs.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+  fSubject.value=subs.includes(cur)?cur:'';
+
+  if(fConcept){
+    const concepts=Array.from(new Set(allQuestions.map(q=>q.topic))).filter(c => c && c !== 'General');
+    const curC = fConcept.value;
+    fConcept.innerHTML='<option value="">All Concepts</option>'+concepts.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    fConcept.value=concepts.includes(curC)?curC:'';
+  }
+}
+
+function filterByConcept(conceptName){
+  const fConcept=document.getElementById('fConcept');
+  if(fConcept){
+    fConcept.value=conceptName;
+    renderList();
+    const listEl=document.getElementById('listContainer');
+    if(listEl) listEl.scrollIntoView({behavior:'smooth'});
+  }
+}
+
+function getCleanQuestionText(q){
+  if(!q || !q.question) return '';
+  let raw = q.question.trim();
+  if(q.topic && q.topic !== 'General'){
+    const lines = raw.split('\n');
+    if(lines.length > 1 && lines[0].trim().toLowerCase() === q.topic.trim().toLowerCase()){
+      return lines.slice(1).join('\n').trim();
+    }
+  }
+  return raw;
+}
+
+function renderStaticPreview(raw){const span=document.createElement('span');span.className='li-preview';span.appendChild(buildEquationFragment(raw||''));return span;}
+
+function renderList(){
+  const listContainer=document.getElementById('listContainer');
+  if(!listContainer) return;
+  const fSubject=document.getElementById('fSubject');
+  const fConcept=document.getElementById('fConcept');
+  const fType=document.getElementById('fType');
+  const subjF=fSubject ? fSubject.value : '';
+  const conceptF=fConcept ? fConcept.value : '';
+  const typeF=fType ? fType.value : '';
+  const filtered=allQuestions.filter(q=>(!subjF||q.subject===subjF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
+  const cl=document.getElementById('countLine');
+  if(cl) cl.textContent=filtered.length+' question'+(filtered.length===1?'':'s');
+  listContainer.innerHTML='';
+  if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';return;}
+
+  const canEdit = Auth.can('edit');
+
+  filtered.forEach(q=>{
+    const item=document.createElement('div');item.className='list-item';item.dataset.id=q.id;
+    const top=document.createElement('div');top.className='li-top';
+    const main=document.createElement('div');main.style.flex='1';
+    const meta=document.createElement('div');meta.className='li-meta';
+    meta.innerHTML=`<span>${escapeHtml(q.subject)}</span> · Class ${escapeHtml(q.klass)} · ${escapeHtml(q.chapter||'')} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType}`;
+    main.appendChild(meta);
+
+    const cleanQText = getCleanQuestionText(q);
+
+    if(q.qType==='assertion_reason'){
+      const aLine=document.createElement('div');aLine.appendChild(document.createTextNode('A: '));aLine.appendChild(renderStaticPreview(q.assertion));main.appendChild(aLine);
+      const rLine=document.createElement('div');rLine.style.marginTop='4px';rLine.appendChild(document.createTextNode('R: '));rLine.appendChild(renderStaticPreview(q.reason));main.appendChild(rLine);
+      const combo=document.createElement('div');combo.className='li-combo';combo.textContent='Correct: Option '+(q.correctOption||'—');main.appendChild(combo);
+    }else if(q.qType==='statement_based'){
+      if(cleanQText){const qL=document.createElement('div');qL.appendChild(renderStaticPreview(cleanQText));main.appendChild(qL);}
+      if(q.statement1){const s1L=document.createElement('div');s1L.style.marginTop='4px';s1L.appendChild(document.createTextNode('Statement I: '));s1L.appendChild(renderStaticPreview(q.statement1));main.appendChild(s1L);}
+      if(q.statement2){const s2L=document.createElement('div');s2L.style.marginTop='4px';s2L.appendChild(document.createTextNode('Statement II: '));s2L.appendChild(renderStaticPreview(q.statement2));main.appendChild(s2L);}
+      const optsLine=document.createElement('div');optsLine.className='li-combo';
+      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
+      main.appendChild(optsLine);
+    }else if(q.qType==='match'){
+      const colWrap=document.createElement('div');colWrap.className='li-combo';colWrap.appendChild(document.createTextNode('Column A: '));
+      (q.columnA||[]).forEach((v,i)=>{if(i>0)colWrap.appendChild(document.createTextNode(' | '));colWrap.appendChild(renderStaticPreview(v));});
+      colWrap.appendChild(document.createTextNode('   ·   Column B: '));
+      (q.columnB||[]).forEach((v,i)=>{if(i>0)colWrap.appendChild(document.createTextNode(' | '));colWrap.appendChild(renderStaticPreview(v));});
+      main.appendChild(colWrap);
+      const mo=q.matchOptions||{};const optsLine=document.createElement('div');optsLine.className='li-combo';
+      ['A','B','C','D'].forEach(l=>{const isCorrect=q.correctOption===l;const span=document.createElement('span');if(isCorrect)span.className='correct';span.appendChild(document.createTextNode(l+': '));span.appendChild(renderStaticPreview(mo[l]||''));if(isCorrect)span.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(span);optsLine.appendChild(document.createTextNode('  '));});
+      main.appendChild(optsLine);
+    }else if(q.qType==='numerical'){
+      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText));main.appendChild(qLine);
+      const ansLine=document.createElement('div');ansLine.className='li-combo correct';ansLine.appendChild(document.createTextNode('Correct Value: '));ansLine.appendChild(q.numAnswer?renderStaticPreview(q.numAnswer):document.createTextNode('—'));main.appendChild(ansLine);
+    }else{
+      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText));main.appendChild(qLine);
+      const optsLine=document.createElement('div');optsLine.className='li-combo';
+      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
+      main.appendChild(optsLine);
+    }
+    const examsLine=document.createElement('div');examsLine.style.marginTop='8px';examsLine.style.display='flex';examsLine.style.flexWrap='wrap';examsLine.style.gap='6px';
+    (q.exams||[]).forEach(ex=>{const pill=document.createElement('span');pill.className='tag-pill';pill.textContent=ex;examsLine.appendChild(pill);});
+
+    if(q.topic && q.topic !== 'General'){
+      const cPill=document.createElement('span');
+      cPill.className='tag-pill';
+      cPill.style.cursor='pointer';
+      cPill.style.background='rgba(201,162,39,0.15)';
+      cPill.style.color='var(--gold)';
+      cPill.style.border='1px solid rgba(201,162,39,0.3)';
+      cPill.textContent='💡 ' + q.topic;
+      cPill.title='Click to view all questions for concept: ' + q.topic;
+      cPill.onclick=()=>filterByConcept(q.topic);
+      examsLine.appendChild(cPill);
+    }
+
+    main.appendChild(examsLine);
+    // Ownership info
+    if(q.createdBy||q.updatedBy){
+      const ownerLine=document.createElement('div');ownerLine.className='li-owner';
+      if(q.createdBy)ownerLine.textContent='Added by '+q.createdBy;
+      if(q.updatedBy&&q.updatedBy!==q.createdBy)ownerLine.textContent+=' · Edited by '+q.updatedBy;
+      main.appendChild(ownerLine);
+    }
+    const btns=document.createElement('div');btns.className='li-btns';
+    if(canEdit){
+      const editBtn=document.createElement('button');editBtn.className='icon-btn';editBtn.title='Edit';editBtn.textContent='✎';editBtn.addEventListener('click',()=>QP.edit(q.id));btns.appendChild(editBtn);
+      const delBtn=document.createElement('button');delBtn.className='icon-btn del';delBtn.title='Delete';delBtn.textContent='✕';delBtn.addEventListener('click',()=>QP.remove(q.id));btns.appendChild(delBtn);
+    }
+    top.appendChild(main);top.appendChild(btns);item.appendChild(top);listContainer.appendChild(item);
+  });
+}
+
+function setFieldFromRaw(id,raw){const el=document.getElementById(id);if(!el)return;el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
+function setEqFieldElFromRaw(el,raw){el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
+
+window.QP={
+  edit:function(id){
+    if(!Auth.can('edit'))return;
+    const q=allQuestions.find(x=>x.id===id);if(!q)return;editingId=id;
+    document.getElementById('formTitle').textContent='Edit Question';document.getElementById('saveBtn').textContent='Update Question';
+    const subjectSel=document.getElementById('subject');
+    const klassSel=document.getElementById('klass');
+    const qTypeSel=document.getElementById('qType');
+    if(subjectSel) subjectSel.value=q.subject;
+    if(klassSel) klassSel.value=q.klass;
+    if(typeof updateChapterOptions==='function') updateChapterOptions();
+    if(document.getElementById('chapter')) document.getElementById('chapter').value=q.chapter||'';
+    if(document.getElementById('topic')) document.getElementById('topic').value=q.topic||'';
+    selectedExams=new Set(q.exams||[]);
+    const examTogglesEl=document.getElementById('examToggles');
+    if(examTogglesEl) examTogglesEl.querySelectorAll('.toggle-btn').forEach(b=>{b.classList.toggle('active',selectedExams.has(b.textContent));});
+    if(qTypeSel) qTypeSel.value=q.qType;
+    updateTypeVisibility();
+    if(q.qType==='assertion_reason'){setFieldFromRaw('assertion',q.assertion);setFieldFromRaw('reason',q.reason);if(q.predefOptions)setFieldFromRaw('predefOptions',q.predefOptions);}
+    else if(q.qType==='match'){
+      const colA=(q.columnA&&q.columnA.length)?q.columnA:['','','',''];const colB=(q.columnB&&q.columnB.length)?q.columnB:['','','',''];
+      resetColumnRows('columnARows',columnALabel,colA.length);resetColumnRows('columnBRows',columnBLabel,colB.length);
+      Array.from(document.getElementById('columnARows').children).forEach((wrap,i)=>setEqFieldElFromRaw(wrap.querySelector('.eq-field'),colA[i]||''));
+      Array.from(document.getElementById('columnBRows').children).forEach((wrap,i)=>setEqFieldElFromRaw(wrap.querySelector('.eq-field'),colB[i]||''));
+      const mo=q.matchOptions||{};resetCombos(Math.max(4,Object.keys(mo).length));
+      ['A','B','C','D'].forEach(l=>setFieldFromRaw('matchOpt'+l,mo[l]||''));
+    }else if(q.qType==='numerical'){setFieldFromRaw('numQuestion',q.question);setFieldFromRaw('numAnswer',q.numAnswer||'');}
+    else{setFieldFromRaw('question',q.question);setFieldFromRaw('optA',q.optA);setFieldFromRaw('optB',q.optB);setFieldFromRaw('optC',q.optC);setFieldFromRaw('optD',q.optD);}
+    if(document.getElementById('correctOption')) document.getElementById('correctOption').value=q.correctOption||'';
+    setFieldFromRaw('solutionText',q.solutionText);
+    // Scroll questions card into view
+    const qFormCard=document.getElementById('questionFormCard');
+    if(qFormCard) qFormCard.scrollIntoView({behavior:'smooth'});
+  },
+  remove:async function(id){
+    if(!Auth.can('delete'))return;
+    if(!confirm('Delete this question? This cannot be undone.'))return;
+    try{
+      await apiRequest('/'+encodeURIComponent(id),{method:'DELETE'});
+      allQuestions=allQuestions.filter(x=>x.id!==id);renderFilterSubjects();renderList();showToast('Question deleted.');
+    }catch(e){console.error('Delete failed:',e);showToast('Delete failed: '+e.message,true);}
+  }
+};
 
 async function loadQuestions(){
   try{allQuestions=await apiRequest();}
