@@ -139,6 +139,15 @@ Medium
         case 'diff':
           currentQ.difficulty = capitalize(content);
           break;
+        case 'type':
+        case 'qtype':
+          const tVal = content.toLowerCase();
+          if (tVal.includes('assertion')) currentQ.qType = 'assertion_reason';
+          else if (tVal.includes('match')) currentQ.qType = 'match';
+          else if (tVal.includes('num') || tVal.includes('integer')) currentQ.qType = 'numerical';
+          else if (tVal.includes('true') || tVal.includes('false')) currentQ.qType = 'true_false';
+          else currentQ.qType = 'mcq_single';
+          break;
       }
     }
 
@@ -150,6 +159,13 @@ Medium
       // Infer concept if missing
       if (!currentQ.concept) {
         currentQ.concept = currentConcept || getMetadataValue('topic') || 'General';
+      }
+
+      // Infer qType if missing
+      if (!currentQ.qType) {
+        if (currentQ.assertion && currentQ.reason) currentQ.qType = 'assertion_reason';
+        else if (currentQ.numAnswer) currentQ.qType = 'numerical';
+        else currentQ.qType = 'mcq_single';
       }
 
       questions.push(currentQ);
@@ -1168,6 +1184,25 @@ Medium
     return exams.length ? exams : ['NEET'];
   }
 
+  const LOCAL_SUBJECTS = ["Physics","Chemistry","Biology","Maths"];
+  const LOCAL_CLASSES  = ["11","12"];
+  const LOCAL_EXAMS    = ["NEET","JEE","KCET"];
+  const LOCAL_NCERT    = {
+    "Physics-11":["Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
+    "Physics-12":["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
+    "Chemistry-11":["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry: Some Basic Principles and Techniques","Hydrocarbons"],
+    "Chemistry-12":["Solutions","Electrochemistry","Chemical Kinetics","d- and f-Block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules"],
+    "Biology-11":["The Living World","Biological Classification","Plant Kingdom","Animal Kingdom","Morphology of Flowering Plants","Anatomy of Flowering Plants","Structural Organisation in Animals","Cell: The Unit of Life","Biomolecules","Cell Cycle and Cell Division","Transport in Plants","Mineral Nutrition","Photosynthesis in Higher Plants","Respiration in Plants","Plant Growth and Development","Digestion and Absorption","Breathing and Exchange of Gases","Body Fluids and Circulation","Excretory Products and their Elimination","Locomotion and Movement","Neural Control and Coordination","Chemical Coordination and Integration"],
+    "Biology-12":["Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health","Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution","Human Health and Disease","Microbes in Human Welfare","Biotechnology: Principles and Processes","Biotechnology and its Applications","Organisms and Populations","Ecosystem","Biodiversity and Conservation"],
+    "Maths-11":["Sets","Relations and Functions","Trigonometric Functions","Principle of Mathematical Induction","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three Dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
+    "Maths-12":["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"]
+  };
+
+  function fillSelectLocal(sel, items, placeholder) {
+    if (!sel) return;
+    sel.innerHTML = `<option value="">${placeholder}</option>` + items.map(i => `<option value="${i}">${i}</option>`).join('');
+  }
+
   function initMetadataSelects() {
     const subjSel = document.getElementById('bulkMeta_subject');
     const klassSel = document.getElementById('bulkMeta_klass');
@@ -1175,16 +1210,20 @@ Medium
 
     if (!subjSel || !klassSel || !chapSel) return;
 
-    if (typeof window.SUBJECTS !== 'undefined' && typeof window.fillSelect === 'function') {
-      window.fillSelect(subjSel, window.SUBJECTS, 'Select Subject');
-      window.fillSelect(klassSel, window.CLASSES, 'Select Class');
-    }
+    const subjects = (typeof window.SUBJECTS !== 'undefined') ? window.SUBJECTS : LOCAL_SUBJECTS;
+    const classes = (typeof window.CLASSES !== 'undefined') ? window.CLASSES : LOCAL_CLASSES;
+    const ncert = (typeof window.NCERT_CHAPTERS !== 'undefined') ? window.NCERT_CHAPTERS : LOCAL_NCERT;
+    const exams = (typeof window.EXAMS !== 'undefined') ? window.EXAMS : LOCAL_EXAMS;
+    const fillFn = (typeof window.fillSelect === 'function') ? window.fillSelect : fillSelectLocal;
+
+    fillFn(subjSel, subjects, 'Select Subject');
+    fillFn(klassSel, classes, 'Select Class');
 
     function syncChapters() {
       const key = subjSel.value + '-' + klassSel.value;
-      const chapters = window.NCERT_CHAPTERS ? window.NCERT_CHAPTERS[key] : null;
-      if (chapters && chapters.length && typeof window.fillSelect === 'function') {
-        window.fillSelect(chapSel, chapters, 'Select Chapter');
+      const chapters = ncert[key];
+      if (chapters && chapters.length) {
+        fillFn(chapSel, chapters, 'Select Chapter');
         chapSel.disabled = false;
       } else {
         chapSel.innerHTML = '<option value="">Select Subject &amp; Class first</option>';
@@ -1192,14 +1231,16 @@ Medium
       }
     }
 
+    subjSel.removeEventListener('change', syncChapters);
+    klassSel.removeEventListener('change', syncChapters);
     subjSel.addEventListener('change', syncChapters);
     klassSel.addEventListener('change', syncChapters);
 
     // Exam toggles
     const examBox = document.getElementById('bulkExamToggles');
-    if (examBox && typeof window.EXAMS !== 'undefined') {
+    if (examBox) {
       examBox.innerHTML = '';
-      window.EXAMS.forEach((ex) => {
+      exams.forEach((ex) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'toggle-btn' + (ex === 'NEET' ? ' active' : '');
