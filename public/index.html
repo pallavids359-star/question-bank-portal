@@ -1287,9 +1287,19 @@ const API_QUESTIONS = '/api/questions';
 const API_BASE      = '/api';
 let _isLoggingIn    = false;
 
+function resolveApiUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const isProd = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && window.location.protocol !== 'file:';
+  const isPort4000 = window.location.port === '4000';
+  if (isProd || isPort4000) return url;
+  return 'http://localhost:4000' + url;
+}
+
 async function apiReq(url, options = {}) {
+  const fullUrl = resolveApiUrl(url);
   const token = Auth.getToken();
-  const resp  = await fetch(url, {
+  const resp  = await fetch(fullUrl, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
