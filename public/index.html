@@ -2570,43 +2570,45 @@ function renderList(){
 
   const canEdit = Auth.can('edit');
 
+  let renderErrors = 0;
   filtered.forEach(q=>{
+    try {
     const item=document.createElement('div');item.className='list-item';item.dataset.id=q.id;
     const top=document.createElement('div');top.className='li-top';
     const main=document.createElement('div');main.style.flex='1';
     const meta=document.createElement('div');meta.className='li-meta';
-    meta.innerHTML=`<span>${escapeHtml(q.subject)}</span> · Class ${escapeHtml(q.klass)} · ${escapeHtml(q.chapter||'')} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType}`;
+    meta.innerHTML=`<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(q.chapter||'')} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'}`;
     main.appendChild(meta);
 
     const cleanQText = getCleanQuestionText(q);
 
     if(q.qType==='assertion_reason'){
-      const aLine=document.createElement('div');aLine.appendChild(document.createTextNode('A: '));aLine.appendChild(renderStaticPreview(q.assertion));main.appendChild(aLine);
-      const rLine=document.createElement('div');rLine.style.marginTop='4px';rLine.appendChild(document.createTextNode('R: '));rLine.appendChild(renderStaticPreview(q.reason));main.appendChild(rLine);
+      const aLine=document.createElement('div');aLine.appendChild(document.createTextNode('A: '));aLine.appendChild(renderStaticPreview(q.assertion||''));main.appendChild(aLine);
+      const rLine=document.createElement('div');rLine.style.marginTop='4px';rLine.appendChild(document.createTextNode('R: '));rLine.appendChild(renderStaticPreview(q.reason||''));main.appendChild(rLine);
       const combo=document.createElement('div');combo.className='li-combo';combo.textContent='Correct: Option '+(q.correctOption||'—');main.appendChild(combo);
     }else if(q.qType==='statement_based'){
       if(cleanQText){const qL=document.createElement('div');qL.appendChild(renderStaticPreview(cleanQText));main.appendChild(qL);}
       if(q.statement1){const s1L=document.createElement('div');s1L.style.marginTop='4px';s1L.appendChild(document.createTextNode('Statement I: '));s1L.appendChild(renderStaticPreview(q.statement1));main.appendChild(s1L);}
       if(q.statement2){const s2L=document.createElement('div');s2L.style.marginTop='4px';s2L.appendChild(document.createTextNode('Statement II: '));s2L.appendChild(renderStaticPreview(q.statement2));main.appendChild(s2L);}
       const optsLine=document.createElement('div');optsLine.className='li-combo';
-      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
+      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]||''));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
       main.appendChild(optsLine);
     }else if(q.qType==='match'){
       const colWrap=document.createElement('div');colWrap.className='li-combo';colWrap.appendChild(document.createTextNode('Column A: '));
-      (q.columnA||[]).forEach((v,i)=>{if(i>0)colWrap.appendChild(document.createTextNode(' | '));colWrap.appendChild(renderStaticPreview(v));});
+      (q.columnA||[]).forEach((v,i)=>{if(i>0)colWrap.appendChild(document.createTextNode(' | '));colWrap.appendChild(renderStaticPreview(v||''));});
       colWrap.appendChild(document.createTextNode('   ·   Column B: '));
-      (q.columnB||[]).forEach((v,i)=>{if(i>0)colWrap.appendChild(document.createTextNode(' | '));colWrap.appendChild(renderStaticPreview(v));});
+      (q.columnB||[]).forEach((v,i)=>{if(i>0)colWrap.appendChild(document.createTextNode(' | '));colWrap.appendChild(renderStaticPreview(v||''));});
       main.appendChild(colWrap);
       const mo=q.matchOptions||{};const optsLine=document.createElement('div');optsLine.className='li-combo';
       ['A','B','C','D'].forEach(l=>{const isCorrect=q.correctOption===l;const span=document.createElement('span');if(isCorrect)span.className='correct';span.appendChild(document.createTextNode(l+': '));span.appendChild(renderStaticPreview(mo[l]||''));if(isCorrect)span.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(span);optsLine.appendChild(document.createTextNode('  '));});
       main.appendChild(optsLine);
     }else if(q.qType==='numerical'){
-      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText));main.appendChild(qLine);
+      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
       const ansLine=document.createElement('div');ansLine.className='li-combo correct';ansLine.appendChild(document.createTextNode('Correct Value: '));ansLine.appendChild(q.numAnswer?renderStaticPreview(q.numAnswer):document.createTextNode('—'));main.appendChild(ansLine);
     }else{
-      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText));main.appendChild(qLine);
+      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
       const optsLine=document.createElement('div');optsLine.className='li-combo';
-      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
+      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]||''));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
       main.appendChild(optsLine);
     }
     const examsLine=document.createElement('div');examsLine.style.marginTop='8px';examsLine.style.display='flex';examsLine.style.flexWrap='wrap';examsLine.style.gap='6px';
@@ -2626,7 +2628,6 @@ function renderList(){
     }
 
     main.appendChild(examsLine);
-    // Ownership info
     if(q.createdBy||q.updatedBy){
       const ownerLine=document.createElement('div');ownerLine.className='li-owner';
       if(q.createdBy)ownerLine.textContent='Added by '+q.createdBy;
@@ -2639,7 +2640,12 @@ function renderList(){
       const delBtn=document.createElement('button');delBtn.className='icon-btn del';delBtn.title='Delete';delBtn.textContent='✕';delBtn.addEventListener('click',()=>QP.remove(q.id));btns.appendChild(delBtn);
     }
     top.appendChild(main);top.appendChild(btns);item.appendChild(top);listContainer.appendChild(item);
+    } catch(renderErr) {
+      renderErrors++;
+      console.error('[QBP] Failed to render question id='+q.id+' qType='+q.qType+':', renderErr.message, renderErr);
+    }
   });
+  if(renderErrors>0) console.warn('[QBP] '+renderErrors+' question(s) failed to render. Check errors above.');
 }
 
 function setFieldFromRaw(id,raw){const el=document.getElementById(id);if(!el)return;el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
@@ -2692,9 +2698,15 @@ window.QP={
 async function loadQuestions(){
   try{
     const data = await apiRequest();
+    console.log('[QBP] loadQuestions raw response:', typeof data, Array.isArray(data) ? data.length + ' items' : JSON.stringify(data).slice(0,200));
     allQuestions = Array.isArray(data) ? data : [];
+    if(!Array.isArray(data)){
+      console.error('[QBP] /api/questions did NOT return an array! Got:', typeof data, data);
+      showToast('Questions loaded but data format unexpected. Check console.', true);
+    }
   } catch(e){
     allQuestions = [];
+    console.error('[QBP] loadQuestions error:', e);
     showToast('Could not load questions: '+e.message, true);
   }
   renderFilterSubjects();
