@@ -2502,15 +2502,16 @@ if(document.getElementById('saveBtn')) document.getElementById('saveBtn').addEve
 if(document.getElementById('resetBtn')) document.getElementById('resetBtn').addEventListener('click',resetForm);
 
 function renderFilterSubjects(){
+  if(!Array.isArray(allQuestions)) allQuestions = [];
   const fSubject=document.getElementById('fSubject');
   const fConcept=document.getElementById('fConcept');
   if(!fSubject) return;
-  const subs=Array.from(new Set(allQuestions.map(q=>q.subject))).filter(Boolean);const cur=fSubject.value;
+  const subs=Array.from(new Set(allQuestions.map(q=>q ? q.subject : ''))).filter(Boolean);const cur=fSubject.value;
   fSubject.innerHTML='<option value="">All Subjects</option>'+subs.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
   fSubject.value=subs.includes(cur)?cur:'';
 
   if(fConcept){
-    const concepts=Array.from(new Set(allQuestions.map(q=>q.topic))).filter(c => c && c !== 'General');
+    const concepts=Array.from(new Set(allQuestions.map(q=>q ? q.topic : ''))).filter(c => c && c !== 'General');
     const curC = fConcept.value;
     fConcept.innerHTML='<option value="">All Concepts</option>'+concepts.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
     fConcept.value=concepts.includes(curC)?curC:'';
@@ -2542,6 +2543,7 @@ function getCleanQuestionText(q){
 function renderStaticPreview(raw){const span=document.createElement('span');span.className='li-preview';span.appendChild(buildEquationFragment(raw||''));return span;}
 
 function renderList(){
+  if(!Array.isArray(allQuestions)) allQuestions = [];
   const listContainer=document.getElementById('listContainer');
   if(!listContainer) return;
   const fSubject=document.getElementById('fSubject');
@@ -2550,7 +2552,7 @@ function renderList(){
   const subjF=fSubject ? fSubject.value : '';
   const conceptF=fConcept ? fConcept.value : '';
   const typeF=fType ? fType.value : '';
-  const filtered=allQuestions.filter(q=>(!subjF||q.subject===subjF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
+  const filtered=allQuestions.filter(q=>q && (!subjF||q.subject===subjF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
   const cl=document.getElementById('countLine');
   if(cl) cl.textContent=filtered.length+' question'+(filtered.length===1?'':'s');
   listContainer.innerHTML='';
@@ -2678,9 +2680,15 @@ window.QP={
 };
 
 async function loadQuestions(){
-  try{allQuestions=await apiRequest();}
-  catch(e){allQuestions=[];showToast('Could not load questions: '+e.message,true);}
-  renderFilterSubjects();renderList();
+  try{
+    const data = await apiRequest();
+    allQuestions = Array.isArray(data) ? data : [];
+  } catch(e){
+    allQuestions = [];
+    showToast('Could not load questions: '+e.message, true);
+  }
+  renderFilterSubjects();
+  renderList();
 }
 
 // ============================================================
