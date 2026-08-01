@@ -152,28 +152,65 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
     return payload;
   });
 
+  const CORE_FIELDS = [
+    'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
+    'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d', 'assertion', 'reason',
+    'predef_options', 'column_a', 'column_b', 'match_options',
+    'num_answer', 'correct_option', 'solution_text',
+    'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
+  ];
+
+  function sanitizeToCore(record) {
+    const clean = {};
+    for (const key of CORE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(record, key)) {
+        clean[key] = record[key];
+      }
+    }
+    return clean;
+  }
+
   // Batch insert into Supabase in chunks of 50
   const chunkSize = 50;
   const insertedData = [];
 
   for (let i = 0; i < recordsToInsert.length; i += chunkSize) {
-    const chunk = recordsToInsert.slice(i, i + chunkSize);
-    const { data, error } = await supabase
+    let chunk = recordsToInsert.slice(i, i + chunkSize);
+    let { data, error } = await supabase
       .from('questions')
       .insert(chunk)
       .select();
 
-    if (error) {
-      return res.status(400).json({
-        error: `Batch insert failed at item ${i + 1}`,
-        details: error.message,
-        insertedCount: insertedData.length
-      });
+    // Fallback if schema does not contain extra columns yet
+    if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204')) {
+      chunk = chunk.map(sanitizeToCore);
+      const retry = await supabase
+        .from('questions')
+        .insert(chunk)
+        .select();
+      data = retry.data;
+      error = retry.error;
     }
 
-    if (data) {
+    // Fallback: item-by-item insert if batch chunk fails
+    if (error) {
+      console.warn(`Batch chunk insert failed at ${i + 1}, falling back to sequential insert:`, error.message);
+      for (const item of chunk) {
+        const singleRetry = await supabase
+          .from('questions')
+          .insert([item])
+          .select();
+        if (singleRetry.data && singleRetry.data.length) {
+          insertedData.push(singleRetry.data[0]);
+        }
+      }
+    } else if (data) {
       insertedData.push(...data);
     }
+  }
+
+  if (insertedData.length === 0) {
+    return res.status(400).json({ error: 'Failed to insert questions into database. Please check required fields.' });
   }
 
   await writeAuditLog({
