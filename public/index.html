@@ -1932,8 +1932,12 @@ window.fillSelect = fillSelect;
 
 const QTYPE_LABELS = {
   mcq_single:"MCQ (Single Correct)",
-  assertion_reason:"Assertion & Reason",match:"Match the Following",
-  numerical:"Numerical / Integer Type",true_false:"True / False"
+  assertion_reason:"Assertion & Reason",
+  match:"Match the Following",
+  numerical:"Numerical / Integer Type",
+  true_false:"True / False",
+  diagram_based:"Diagram Based Question",
+  statement_based:"Statement Based Question"
 };
 
 let selectedExams  = new Set();
@@ -2342,19 +2346,9 @@ document.addEventListener('paste', async (e) => {
   }
 });
 
-const QTYPE_LABELS = {
-  mcq_single:"MCQ (Single Correct)",
-  assertion_reason:"Assertion & Reason",
-  match:"Match the Following",
-  numerical:"Numerical / Integer Type",
-  true_false:"True / False",
-  diagram_based:"Diagram Based Question",
-  statement_based:"Statement Based Question"
-};
 
-let selectedExams  = new Set();
-let editingId      = null;
-let allQuestions   = [];
+
+
 
 function normalizeLatexExpr(expr){
   if(!expr) return expr;
