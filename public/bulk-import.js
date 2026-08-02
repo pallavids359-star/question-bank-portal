@@ -165,25 +165,71 @@
     return line.trim();
   }
 
-  // ── CHAPTER-CONSTRAINED CONCEPT DETECTION ────────────────────────
+  // ── INLINE METADATA TAG EXTRACTOR (@concept, @type, @difficulty, etc.) ──
+  function extractInlineMetadata(lines) {
+    const meta = {
+      concept: null,
+      type: null,
+      difficulty: null,
+      subject: null,
+      chapter: null,
+      klass: null,
+      cleanLines: []
+    };
+
+    const tagPatterns = [
+      { key: 'concept',    regex: /^\s*(?:@concept|@topic|concept|topic|sub-topic)\s*[:=]\s*(.+)/i },
+      { key: 'type',       regex: /^\s*(?:@type|@qtype|type|question\s*type)\s*[:=]\s*(.+)/i },
+      { key: 'difficulty', regex: /^\s*(?:@difficulty|@level|difficulty|level)\s*[:=]\s*(.+)/i },
+      { key: 'subject',    regex: /^\s*(?:@subject|subject)\s*[:=]\s*(.+)/i },
+      { key: 'chapter',    regex: /^\s*(?:@chapter|chapter)\s*[:=]\s*(.+)/i },
+      { key: 'klass',      regex: /^\s*(?:@class|@klass|class|grade)\s*[:=]\s*(.+)/i },
+    ];
+
+    for (const item of lines) {
+      const text = typeof item === 'string' ? item : item.text;
+      let isTag = false;
+      for (const { key, regex } of tagPatterns) {
+        const match = text.match(regex);
+        if (match) {
+          meta[key] = match[1].trim();
+          isTag = true;
+          break;
+        }
+      }
+      if (!isTag) {
+        meta.cleanLines.push(item);
+      }
+    }
+
+    return meta;
+  }
+
+  // ── COMPREHENSIVE CONCEPT DETECTION DICTIONARY ─────────────────────
   const CHAPTER_CONCEPTS_MAP = {
-    'Periodic Classification': ['electronegativity', 'ionization energy', 'atomic radius', 'electron affinity', 'pauling scale', 'mendeleev', 'modern periodic law', 's-block', 'p-block', 'd-block', 'f-block', 'periodicity', 'valency', 'effective nuclear charge', 'shielding effect'],
-    'Chemical Bonding': ['hybridization', 'vsepr', 'dipole moment', 'bond order', 'molecular orbital theory', 'mot', 'resonance', 'lewis structure', 'covalent bond', 'ionic bond', 'hydrogen bonding'],
-    'Atomic Structure': ['orbitals', 'quantum numbers', 'schrodinger equation', 'bohr model', 'de broglie', 'heisenberg uncertainty', 'photoelectric effect', 'spectrum', 'rydberg constant'],
-    'Thermodynamics': ['entropy', 'enthalpy', 'gibbs free energy', 'hess law', 'internal energy', 'spontaneous process', 'first law', 'second law', 'heat capacity', 'calorimetry'],
+    'Alternating Current': ['lcr circuit', 'phasor', 'impedance', 'reactance', 'inductor', 'capacitor', 'rms voltage', 'resonance', 'peak voltage', 'power factor', 'transformer', 'ac generator'],
+    'Electrostatics': ['coulomb law', 'electric field', 'potential difference', 'capacitor', 'gauss law', 'electric charge', 'electric dipole', 'equipotential'],
     'Kinematics': ['velocity', 'acceleration', 'displacement', 'projectile motion', 'relative motion', 'speed', 'distance', 'v-t graph', 'x-t graph'],
     'Laws of Motion': ['newtons laws', 'friction', 'tension', 'inertia', 'impulse', 'momentum', 'pulley system', 'free body diagram'],
-    'Electrostatics': ['coulomb law', 'electric field', 'electric potential', 'capacitor', 'gauss law', 'electric charge', 'electric dipole'],
+    'Thermodynamics': ['entropy', 'enthalpy', 'gibbs free energy', 'hess law', 'internal energy', 'spontaneous process', 'first law', 'second law', 'heat capacity', 'calorimetry'],
+    'Periodic Classification': ['electronegativity', 'ionization energy', 'atomic radius', 'electron affinity', 'pauling scale', 'mendeleev', 'modern periodic law', 's-block', 'p-block', 'd-block', 'f-block', 'periodicity', 'valency', 'effective nuclear charge', 'shielding effect'],
+    'Chemical Bonding': ['hybridization', 'vsepr', 'dipole moment', 'bond order', 'molecular orbital theory', 'mot', 'resonance', 'lewis structure', 'covalent bond', 'ionic bond', 'hydrogen bonding', 'lattice energy', 'diamagnetic', 'paramagnetic'],
+    'Atomic Structure': ['orbitals', 'quantum numbers', 'schrodinger equation', 'bohr model', 'de broglie', 'heisenberg uncertainty', 'photoelectric effect', 'spectrum', 'rydberg constant'],
     'Cell Biology': ['mitosis', 'meiosis', 'cell cycle', 'organelles', 'cell membrane', 'nucleus', 'mitochondria', 'ribosome', 'endoplasmic reticulum'],
     'Genetics': ['mendelian genetics', 'dna', 'rna', 'replication', 'transcription', 'translation', 'alleles', 'genes', 'chromosomes', 'pedigree analysis'],
     'Calculus': ['derivatives', 'integrals', 'limits', 'continuity', 'differential equations', 'rate of change', 'maxima and minima'],
   };
 
-  function detectConcept(qText, selectedChapter) {
+  function detectConcept(qText, selectedChapter, inlineConcept) {
+    // 1. Prioritize explicit inline @concept tag!
+    if (inlineConcept) {
+      return { concept: inlineConcept, confidence: 100 };
+    }
+
     const text = qText.toLowerCase();
-    
-    // STRICT CONSTRAIN: Only predict concepts relevant to the selected Chapter!
-    if (selectedChapter && CHAPTER_CONCEPTS_MAP[selectedChapter]) {
+
+    // 2. Search selected chapter keywords
+    if (selectedChapter && selectedChapter !== 'General' && CHAPTER_CONCEPTS_MAP[selectedChapter]) {
       const keywords = CHAPTER_CONCEPTS_MAP[selectedChapter];
       const matches = keywords.filter(kw => text.includes(kw));
       if (matches.length > 0) {
@@ -192,10 +238,26 @@
       }
       return { concept: selectedChapter, confidence: 70 };
     }
-    return { concept: selectedChapter || 'General', confidence: 65 };
+
+    // 3. Search across all chapters in dictionary if chapter is General or not in map
+    for (const [chap, keywords] of Object.entries(CHAPTER_CONCEPTS_MAP)) {
+      const matches = keywords.filter(kw => text.includes(kw));
+      if (matches.length > 0) {
+        const best = matches[0].split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        return { concept: best, confidence: Math.min(95, 70 + matches.length * 5) };
+      }
+    }
+
+    // 4. Fallback to Chapter name or General
+    return { concept: (selectedChapter && selectedChapter !== 'General') ? selectedChapter : 'General Concept', confidence: 60 };
   }
 
-  function detectDifficulty(qText, options, solution) {
+  function detectDifficulty(qText, options, solution, inlineDiff) {
+    if (inlineDiff) {
+      const formatted = inlineDiff.charAt(0).toUpperCase() + inlineDiff.slice(1).toLowerCase();
+      if (['Easy', 'Medium', 'Hard'].includes(formatted)) return formatted;
+    }
+
     let score = 0;
     const combined = (qText + ' ' + (solution || '')).toLowerCase();
     if (qText.length > 350) score += 2;
@@ -293,6 +355,41 @@
   // STAGE 2: QUESTION TYPE DETECTION
   // ================================================================
   function detectBlockType(block) {
+    const rawLines = block.lines.map(l => l.text);
+    const inline = extractInlineMetadata(rawLines);
+
+    // If explicit inline @type: ... tag is present, normalize and return it!
+    if (inline.type) {
+      const rawType = inline.type.toLowerCase().trim().replace(/\s+/g, '_');
+      const typeMap = {
+        mcq: 'mcq_single',
+        mcq_single: 'mcq_single',
+        single_correct: 'mcq_single',
+        standard_mcq: 'mcq_single',
+        mcq_multiple: 'mcq_multiple',
+        multiple_correct: 'mcq_multiple',
+        matrix: 'matrix',
+        matrix_match: 'matrix',
+        match: 'match',
+        match_following: 'match',
+        assertion_reason: 'assertion_reason',
+        assertion: 'assertion_reason',
+        statement_based: 'statement_based',
+        statement: 'statement_based',
+        numerical: 'numerical',
+        float: 'numerical',
+        integer: 'integer',
+        true_false: 'true_false',
+        tf: 'true_false',
+        case_study: 'case_study',
+        passage: 'case_study',
+        diagram: 'diagram',
+        graph: 'graph',
+        table: 'table',
+      };
+      if (typeMap[rawType]) return typeMap[rawType];
+    }
+
     const text = block.lines.map(l => l.text).join('\n');
 
     // 1. Matrix Match
@@ -366,16 +463,23 @@
 
   class BaseQuestionParser {
     createBaseObject(block, meta, overrides = {}) {
+      const inline = extractInlineMetadata(block.lines);
       const qText = overrides.question || '';
       const solText = overrides.solutionText || '';
       const opts = overrides.options || {};
-      const { concept, confidence } = detectConcept(qText, meta.chapter);
-      const difficulty = overrides.difficulty || detectDifficulty(qText, opts, solText);
+
+      // Priority: Inline @tag > Overrides > Meta panel default
+      const finalSubject = inline.subject || overrides.subject || meta.subject;
+      const finalKlass   = inline.klass || overrides.klass || meta.klass;
+      const finalChapter = inline.chapter || overrides.chapter || meta.chapter;
+      
+      const { concept, confidence } = detectConcept(qText, finalChapter, inline.concept);
+      const difficulty = detectDifficulty(qText, opts, solText, inline.difficulty || overrides.difficulty);
 
       return {
-        subject: meta.subject,
-        klass: meta.klass,
-        chapter: meta.chapter,
+        subject: finalSubject,
+        klass: finalKlass,
+        chapter: finalChapter,
         topic: concept,
         exams: meta.exams,
         language: meta.language,
@@ -385,7 +489,7 @@
         marks: meta.defaultMarks,
         negMarks: meta.negMarks,
         difficulty: difficulty,
-        qType: overrides.qType || 'mcq_single',
+        qType: inline.type ? detectBlockType(block) : (overrides.qType || 'mcq_single'),
         question: qText,
         optA: overrides.optA || opts['A'] || '',
         optB: overrides.optB || opts['B'] || '',
@@ -415,7 +519,8 @@
     }
 
     parseStandard(block, meta) {
-      const lines = block.lines;
+      const inline = extractInlineMetadata(block.lines);
+      const lines = inline.cleanLines;
       let qLines = [];
       let solLines = [];
       let options = {};
@@ -423,7 +528,7 @@
       let mode = 'q';
 
       for (let i = 0; i < lines.length; i++) {
-        let line = lines[i].text.trim();
+        let line = (typeof lines[i] === 'string' ? lines[i] : lines[i].text).trim();
         if (!line) continue;
 
         if (i === 0) {
@@ -535,7 +640,8 @@
   // 5. Matrix Match Parser (DEDICATED MATRIX ENGINE)
   class MatrixMatchParser extends BaseQuestionParser {
     parse(block, meta) {
-      const lines = block.lines;
+      const inline = extractInlineMetadata(block.lines);
+      const lines = inline.cleanLines;
       let qLines = [];
       let col1 = [];
       let col2 = [];
@@ -544,14 +650,13 @@
       let mode = 'q';
 
       for (let i = 0; i < lines.length; i++) {
-        let line = lines[i].text.trim();
+        let line = (typeof lines[i] === 'string' ? lines[i] : lines[i].text).trim();
         if (!line) continue;
 
         if (i === 0) {
           line = stripQNumber(line);
         }
 
-        // CRITICAL FIX: Instantly switch to Answer Mode when Answer is reached! STOP Column II immediately!
         if (isAnsLine(line) || /^\s*[A-D]\s*(?:→|->|=>|-|:)\s*[1-4]/i.test(line)) {
           mode = 'ans';
           this.extractMatrixPair(line, matrixAnswerMap);
@@ -580,7 +685,6 @@
           continue;
         }
 
-        // Header detection for Column I / Column II
         if (/^\s*(?:Column|List)\s+I\b/i.test(line)) {
           mode = 'col1';
           continue;
@@ -601,7 +705,6 @@
         }
       }
 
-      // Format answer string: "A → 1,3; B → 1,4; C → 2,4; D → 2,3"
       const ansParts = [];
       ['A', 'B', 'C', 'D'].forEach(k => {
         if (matrixAnswerMap[k] && matrixAnswerMap[k].length > 0) {
@@ -653,14 +756,15 @@
   // 7. Numerical / Integer Parser
   class NumericalParser extends BaseQuestionParser {
     parse(block, meta) {
-      const lines = block.lines;
+      const inline = extractInlineMetadata(block.lines);
+      const lines = inline.cleanLines;
       let qLines = [];
       let solLines = [];
       let answer = '';
       let mode = 'q';
 
       for (let i = 0; i < lines.length; i++) {
-        let line = lines[i].text.trim();
+        let line = (typeof lines[i] === 'string' ? lines[i] : lines[i].text).trim();
         if (!line) continue;
 
         if (i === 0) {
@@ -822,7 +926,7 @@
     if (!text) return document.createTextNode('');
 
     const container = document.createElement('span');
-    const parts = text.split(/(\{\{IMG::[^\}]+\}\})/g);
+    const parts = text.split(/({{IMG::[^}]+}})/g);
 
     parts.forEach(part => {
       if (part.startsWith('{{IMG::') && part.endsWith('}}')) {
@@ -842,7 +946,6 @@
 
     return container;
   }
-
 
   function renderCard(q, idx) {
     const card = document.createElement('div');
@@ -1222,7 +1325,26 @@
   }
 
   function restoreSample() {
-    const sample = `1. Matrix Match Question
+    const sample = `@subject: Physics
+@chapter: Alternating Current
+@concept: LCR Circuit & Phasor Analysis
+@type: Standard MCQ
+@difficulty: Medium
+
+1. A 220 V, 50 Hz a.c. generator is connected to an inductor and a 50 ohm resistance in series. The current in the circuit is 1.0 A. What is potential difference across inductor?
+(A) 102.2 V
+(B) 186.4 V
+(C) 213.6 V
+(D) 302 V
+Answer: C
+Solution: Voltage across resistor VR = IR = 1.0 x 50 = 50 V. Since V, VR, VL form a right triangle (90 deg phase difference): V^2 = VR^2 + VL^2 => 220^2 = 50^2 + VL^2 => 48400 = 2500 + VL^2 => VL = 213.6 V.
+
+---
+
+@concept: Matrix Matching
+@type: matrix
+
+2. Matrix Match Question
 Column I
 A. Sodium
 B. Potassium
@@ -1243,18 +1365,19 @@ D → 2,3
 
 Solution: Sodium is Group 1, Period 3. Potassium is Group 1, Period 4. Calcium is Group 2, Period 4. Magnesium is Group 2, Period 3.
 
-2. Assertion: Light waves can travel through vacuum.
+---
+
+@concept: Light Propagation
+@type: assertion_reason
+
+3. Assertion: Light waves can travel through vacuum.
 Reason: Light is an electromagnetic wave and does not require a material medium for propagation.
 (A) Both A and R are true and R is correct explanation.
 (B) Both A and R are true but R is not correct explanation.
 (C) A is true but R is false.
 (D) A is false but R is true.
 Answer: A
-Solution: Electromagnetic waves self-propagate through electric and magnetic field oscillations.
-
-3. Find the value of \\int_{0}^{2} x^3 dx.
-Answer: 4
-Solution: \\left[ \\frac{x^4}{4} \\right]_{0}^{2} = \\frac{16}{4} = 4.`;
+Solution: Electromagnetic waves self-propagate through electric and magnetic field oscillations.`;
 
     const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
     if (ta) {
