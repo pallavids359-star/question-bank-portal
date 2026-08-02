@@ -189,65 +189,62 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
   const userId = req.user.userId;
   const userName = req.user.name;
 
-  const recordsToInsert = items.map(item => {
-    const payload = toDatabase(item);
-    payload.created_by      = userId;
-    payload.created_by_name = userName;
-    payload.updated_by      = userId;
-    payload.updated_by_name = userName;
-    return payload;
-  });
-
   const CORE_FIELDS = [
     'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
     'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d', 'assertion', 'reason',
     'statement1', 'statement2',
     'predef_options', 'column_a', 'column_b', 'match_options',
     'num_answer', 'correct_option', 'solution_text',
+    'difficulty', 'marks', 'neg_marks', 'language', 'source', 'author', 'reference_book',
     'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
   ];
 
-  function sanitizeToCore(record) {
+  function sanitizeRecord(record) {
     const clean = {};
     for (const key of CORE_FIELDS) {
-      if (Object.prototype.hasOwnProperty.call(record, key)) {
+      if (Object.prototype.hasOwnProperty.call(record, key) && record[key] !== undefined && record[key] !== null) {
         clean[key] = record[key];
       }
     }
     return clean;
   }
 
+  const recordsToInsert = items.map(item => {
+    const payload = toDatabase(item);
+    payload.created_by      = userId;
+    payload.created_by_name = userName;
+    payload.updated_by      = userId;
+    payload.updated_by_name = userName;
+    return sanitizeRecord(payload);
+  });
+
   // Batch insert into Supabase in chunks of 50
   const chunkSize = 50;
   const insertedData = [];
+  let lastErrorMessage = '';
 
   for (let i = 0; i < recordsToInsert.length; i += chunkSize) {
-    let chunk = recordsToInsert.slice(i, i + chunkSize);
+    const chunk = recordsToInsert.slice(i, i + chunkSize);
     let { data, error } = await supabase
       .from('questions')
       .insert(chunk)
       .select();
 
-    // Fallback if schema does not contain extra columns yet
-    if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204')) {
-      chunk = chunk.map(sanitizeToCore);
-      const retry = await supabase
-        .from('questions')
-        .insert(chunk)
-        .select();
-      data = retry.data;
-      error = retry.error;
-    }
-
-    // Fallback: item-by-item insert if batch chunk fails
     if (error) {
-      console.warn(`Batch chunk insert failed at ${i + 1}, falling back to sequential insert:`, error.message);
+      console.warn(`Batch chunk insert failed at offset ${i}:`, error.message);
+      lastErrorMessage = error.message;
+
+      // Sequential retry item by item
       for (const item of chunk) {
         const singleRetry = await supabase
           .from('questions')
           .insert([item])
           .select();
-        if (singleRetry.data && singleRetry.data.length) {
+
+        if (singleRetry.error) {
+          console.error(`Single item insert failed:`, singleRetry.error.message);
+          lastErrorMessage = singleRetry.error.message;
+        } else if (singleRetry.data && singleRetry.data.length) {
           insertedData.push(singleRetry.data[0]);
         }
       }
@@ -257,7 +254,10 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
   }
 
   if (insertedData.length === 0) {
-    return res.status(400).json({ error: 'Failed to insert questions into database. Please check required fields.' });
+    return res.status(400).json({
+      error: 'Failed to insert questions into database: ' + (lastErrorMessage || 'Please check required fields and database schema.'),
+      details: lastErrorMessage
+    });
   }
 
   await writeAuditLog({
@@ -273,6 +273,7 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
     data: insertedData.map(toApi)
   });
 });
+
 
 
 // ── PUT /api/questions/:id ─────────────────────────────────────────────────
