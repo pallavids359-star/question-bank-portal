@@ -2632,12 +2632,35 @@ function filterByConcept(conceptName){
 function getCleanQuestionText(q){
   if(!q || !q.question) return '';
   let raw = q.question.trim();
+  const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if(lines.length < 2) return raw;
+
+  const firstLine = lines[0];
+  const restText = lines.slice(1).join('\n').trim();
+
+  // Strip first line if it exactly matches the stored topic
   if(q.topic && q.topic !== 'General'){
-    const lines = raw.split('\n');
-    if(lines.length > 1 && lines[0].trim().toLowerCase() === q.topic.trim().toLowerCase()){
-      return lines.slice(1).join('\n').trim();
+    if(firstLine.toLowerCase() === q.topic.trim().toLowerCase()){
+      return restText;
     }
   }
+
+  // Strip first line if it looks like a concept heading:
+  // - doesn't end with ? (not a question itself)
+  // - is shorter than 80 chars (a title, not the full question)
+  // - the remaining text is longer (real question content follows)
+  // - doesn't start with option letters like A: B: C: D:
+  const looksLikeHeading = (
+    firstLine.length < 80 &&
+    !firstLine.endsWith('?') &&
+    !firstLine.endsWith('.') &&
+    restText.length > firstLine.length &&
+    !/^[A-D][\s:.]/i.test(firstLine)
+  );
+  if(looksLikeHeading){
+    return restText;
+  }
+
   return raw;
 }
 
