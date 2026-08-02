@@ -108,8 +108,8 @@
   }
 
   const Q_START_PATTERNS = [
-    /^\s*(?:Q|Question|Que|Problem|Item)?\s*\.?\s*(\d{1,4})\s*[\.:\)]\s+/i,
-    /^\s*Q(\d{1,4})\s*[:\.]\s+/i,
+    /^\s*(?:Q|Question|Que|Problem|Item)\s*#?\s*(\d{1,4})?\s*[:\.]?\s*/i,
+    /^\s*@question\s*[:\.]?\s*/i,
   ];
 
   function looksLikeQStart(line) {
@@ -136,7 +136,6 @@
     /^\s*Page\s+\d+\s*of\s*\d+/i,
     /^\s*\d+\s*$/,
     /^\s*Coaching\s+Institute\s+Question\s+Bank/i,
-    /^={3,}$/, /^_{3,}$/, /^-{3,}$/, /^\*{3,}$/,
   ];
 
   function shouldIgnoreLine(line) {
@@ -221,14 +220,12 @@
   };
 
   function detectConcept(qText, selectedChapter, inlineConcept) {
-    // 1. Prioritize explicit inline @concept tag!
     if (inlineConcept) {
       return { concept: inlineConcept, confidence: 100 };
     }
 
     const text = qText.toLowerCase();
 
-    // 2. Search selected chapter keywords
     if (selectedChapter && selectedChapter !== 'General' && CHAPTER_CONCEPTS_MAP[selectedChapter]) {
       const keywords = CHAPTER_CONCEPTS_MAP[selectedChapter];
       const matches = keywords.filter(kw => text.includes(kw));
@@ -239,7 +236,6 @@
       return { concept: selectedChapter, confidence: 70 };
     }
 
-    // 3. Search across all chapters in dictionary if chapter is General or not in map
     for (const [chap, keywords] of Object.entries(CHAPTER_CONCEPTS_MAP)) {
       const matches = keywords.filter(kw => text.includes(kw));
       if (matches.length > 0) {
@@ -248,7 +244,6 @@
       }
     }
 
-    // 4. Fallback to Chapter name or General
     return { concept: (selectedChapter && selectedChapter !== 'General') ? selectedChapter : 'General Concept', confidence: 60 };
   }
 
@@ -283,43 +278,64 @@
     let inColumnSection = false;
     let inAnsOrSolSection = false;
 
+    function isDelimiterLine(line) {
+      return /^\s*(?:-{3,}|={3,}|_{3,}|\*{3,}|#{3,})\s*$/.test(line);
+    }
+
+    function isBlockStartHeader(line) {
+      if (/^\s*(?:@topic|topic|@concept|concept|sub-topic)\s*[:=]/i.test(line)) return true;
+      if (/^\s*(?:@type|@qtype|type|question\s*type)\s*[:=]/i.test(line)) return true;
+      if (/^\s*(?:@subject|subject|@class|@klass|class|grade|@chapter|chapter)\s*[:=]/i.test(line)) return true;
+      if (/^\s*@question\b/i.test(line)) return true;
+      if (/^\s*(?:Q|Question|Que|Problem|Item)\s*#?\s*\d{1,4}\b/i.test(line)) return true;
+      if (/^\s*\d{1,4}\s*[\.:\)]\s+/i.test(line)) return true;
+      return false;
+    }
+
     for (let i = 0; i < lines.length; i++) {
       const rawLine = lines[i];
       const trimmed = rawLine.trim();
 
-      if (!trimmed || shouldIgnoreLine(trimmed)) continue;
+      if (!trimmed) continue;
 
-      const isExplicitQ = /^@question\b/i.test(trimmed);
-      const isNamedQ = /^\s*(?:Q|Question|Que|Problem|Item)\s*#?\d{1,4}\b/i.test(trimmed);
-      const isNumQ = /^\s*\d{1,4}\s*[\.:\)]\s+/i.test(trimmed);
+      if (isDelimiterLine(trimmed)) {
+        if (currentBlock && currentBlock.lines.length > 0) {
+          blocks.push(currentBlock);
+          currentBlock = null;
+        }
+        inColumnSection = false;
+        inAnsOrSolSection = false;
+        continue;
+      }
 
-      // Track column headers
+      if (shouldIgnoreLine(trimmed)) continue;
+
       if (/\b(Column|List)\s+(I{1,3}|[1234])\b/i.test(trimmed)) {
         inColumnSection = true;
       }
-
-      // Track Answer / Solution headers
       if (isAnsLine(trimmed) || isSolLine(trimmed)) {
         inAnsOrSolSection = true;
         inColumnSection = false;
       }
 
       let isNewQ = false;
-      if (isExplicitQ || isNamedQ) {
+      if (!currentBlock) {
         isNewQ = true;
-      } else if (isNumQ) {
-        if (inColumnSection && !inAnsOrSolSection) {
-          isNewQ = false;
-        } else if (!currentBlock) {
-          isNewQ = true;
-        } else if (inAnsOrSolSection) {
-          isNewQ = true;
-        } else {
-          const hasOptions = currentBlock.lines.some((l, idx) => detectOptionKey(l.text, idx === 0));
-          if (hasOptions) {
-            isNewQ = true;
+      } else {
+        const isHeader = isBlockStartHeader(trimmed);
+
+        if (isHeader) {
+          const isNumItem = /^\s*\d{1,4}\s*[\.:\)]\s+/i.test(trimmed);
+          if (isNumItem && inColumnSection && !inAnsOrSolSection) {
+            isNewQ = false;
           } else {
-            isNewQ = currentBlock.lines.length === 0;
+            isNewQ = true;
+          }
+        } else if (/^\s*(?:Question|Q|Que|Problem|Item)\s*[:\.]?\s*$/i.test(trimmed)) {
+          const hasAnsOrSol = inAnsOrSolSection || currentBlock.lines.some(l => isAnsLine(l.text) || isSolLine(l.text));
+          const hasOpts = currentBlock.lines.some((l, idx) => detectOptionKey(l.text, idx === 0));
+          if (hasAnsOrSol || hasOpts) {
+            isNewQ = true;
           }
         }
       }
@@ -335,14 +351,7 @@
         inColumnSection = false;
         inAnsOrSolSection = false;
       } else {
-        if (!currentBlock) {
-          currentBlock = {
-            lines: [{ text: trimmed, lineNumber: i + 1 }],
-            startLine: i + 1
-          };
-        } else {
-          currentBlock.lines.push({ text: trimmed, lineNumber: i + 1 });
-        }
+        currentBlock.lines.push({ text: trimmed, lineNumber: i + 1 });
       }
     }
     if (currentBlock && currentBlock.lines.length > 0) {
@@ -358,33 +367,52 @@
     const rawLines = block.lines.map(l => l.text);
     const inline = extractInlineMetadata(rawLines);
 
-    // If explicit inline @type: ... tag is present, normalize and return it!
     if (inline.type) {
-      const rawType = inline.type.toLowerCase().trim().replace(/\s+/g, '_');
+      const rawType = inline.type.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
       const typeMap = {
         mcq: 'mcq_single',
         mcq_single: 'mcq_single',
         single_correct: 'mcq_single',
         standard_mcq: 'mcq_single',
+        mcq_single_correct: 'mcq_single',
+        single: 'mcq_single',
         mcq_multiple: 'mcq_multiple',
         multiple_correct: 'mcq_multiple',
+        mcq_multiple_correct: 'mcq_multiple',
+        multiple: 'mcq_multiple',
         matrix: 'matrix',
         matrix_match: 'matrix',
+        matrix_match_question: 'matrix',
         match: 'match',
         match_following: 'match',
+        match_the_following: 'match',
+        matching: 'match',
         assertion_reason: 'assertion_reason',
+        assertion_and_reason: 'assertion_reason',
+        assertion_reason_question: 'assertion_reason',
         assertion: 'assertion_reason',
         statement_based: 'statement_based',
+        statement_based_question: 'statement_based',
         statement: 'statement_based',
         numerical: 'numerical',
+        numerical_integer_type: 'numerical',
+        numerical_type: 'numerical',
         float: 'numerical',
         integer: 'integer',
+        integer_type: 'integer',
+        integer_question: 'integer',
         true_false: 'true_false',
+        true_or_false: 'true_false',
         tf: 'true_false',
         case_study: 'case_study',
+        case_study_passage: 'case_study',
         passage: 'case_study',
+        comprehension: 'case_study',
         diagram: 'diagram',
+        diagram_based: 'diagram',
+        diagram_based_question: 'diagram',
         graph: 'graph',
+        graph_based: 'graph',
         table: 'table',
       };
       if (typeMap[rawType]) return typeMap[rawType];
@@ -531,8 +559,18 @@
         let line = (typeof lines[i] === 'string' ? lines[i] : lines[i].text).trim();
         if (!line) continue;
 
-        if (i === 0) {
-          line = stripQNumber(line);
+        if (i === 0 || mode === 'q') {
+          if (/^\s*(?:Question|Q|Que|Problem|Item)\s*[:\.]?\s*$/i.test(line)) {
+            continue;
+          }
+          const stripped = stripQNumber(line);
+          if (stripped !== line) line = stripped;
+          if (!line) continue;
+        }
+
+        if (/^\s*(?:Options|Choices|Select\s+Option)\s*[:\.-]?\s*$/i.test(line)) {
+          mode = 'opt';
+          continue;
         }
 
         if (isAnsLine(line)) {
@@ -922,11 +960,56 @@
   }
 
   // ── RENDER ENGINE ──────────────────────────────────────────────────
+  function autoWrapStandaloneLatex(text) {
+    if (!text) return '';
+    let i = 0;
+    const n = text.length;
+    let result = '';
+    let buf = '';
+
+    function processBuf(str) {
+      return str.replace(/(?<![\$\w\\])(\\[a-zA-Z]+(?:\{[^{}]*\}|\[[^\[\]]*\])*)(?![\$\w\\])/g, (m) => {
+        if (m === '\\n' || m === '\\r' || m === '\\t') return m;
+        return `$${m}$`;
+      });
+    }
+
+    while (i < n) {
+      if (text[i] === '$') {
+        const isDisplay = text[i + 1] === '$';
+        const delim = isDisplay ? '$$' : '$';
+        const end = text.indexOf(delim, i + delim.length);
+        if (end !== -1) {
+          if (buf) { result += processBuf(buf); buf = ''; }
+          result += text.slice(i, end + delim.length);
+          i = end + delim.length;
+          continue;
+        }
+      }
+      if (text.startsWith('\\(', i) || text.startsWith('\\[', i)) {
+        const isDisplay = text.startsWith('\\[', i);
+        const closeDelim = isDisplay ? '\\]' : '\\)';
+        const end = text.indexOf(closeDelim, i + 2);
+        if (end !== -1) {
+          if (buf) { result += processBuf(buf); buf = ''; }
+          result += text.slice(i, end + closeDelim.length);
+          i = end + closeDelim.length;
+          continue;
+        }
+      }
+      buf += text[i];
+      i++;
+    }
+    if (buf) result += processBuf(buf);
+    return result;
+  }
+
   function renderCardNode(text) {
     if (!text) return document.createTextNode('');
 
+    const processedText = autoWrapStandaloneLatex(text);
     const container = document.createElement('span');
-    const parts = text.split(/({{IMG::[^}]+}})/g);
+    const parts = processedText.split(/({{IMG::[^}]+}})/g);
 
     parts.forEach(part => {
       if (part.startsWith('{{IMG::') && part.endsWith('}}')) {

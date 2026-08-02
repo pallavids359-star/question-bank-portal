@@ -2146,6 +2146,20 @@ function buildEquationFragment(raw){
       if(closeIdx===-1){appendTextWithBreaks(frag,raw.slice(i));break;}
       frag.appendChild(buildImageChip(raw.slice(i+7,closeIdx)));i=closeIdx+2;continue;
     }
+    if(raw.startsWith('\\(', i) || raw.startsWith('\\[', i)){
+      const isDisplay = raw.startsWith('\\[', i);
+      const closeDelim = isDisplay ? '\\]' : '\\)';
+      const end = raw.indexOf(closeDelim, i + 2);
+      if(end !== -1){
+        const expr = normalizeLatexExpr(raw.slice(i + 2, end));
+        const span = document.createElement('span'); span.className = 'eq-chip'; span.contentEditable = 'false';
+        span.dataset.latex = expr; span.dataset.display = isDisplay ? '1' : '0';
+        try{ span.innerHTML = window.katex.renderToString(expr, {throwOnError: false, displayMode: isDisplay}); }
+        catch(err){ span.innerHTML = `<span class="katex-error">${escapeHtml(expr)}</span>`; }
+        span.addEventListener('click', onEquationClick); frag.appendChild(span);
+        i = end + 2; continue;
+      }
+    }
     if(raw[i]==='$'){
       const isDisplay=raw[i+1]==='$';const delim=isDisplay?'$$':'$';
       const start=i+delim.length;const end=raw.indexOf(delim,start);
@@ -2158,8 +2172,9 @@ function buildEquationFragment(raw){
       span.addEventListener('click',onEquationClick);frag.appendChild(span);i=end+delim.length;continue;
     }
     const nextDollar=raw.indexOf('$',i);const nextImg=raw.indexOf('{{IMG::',i);
-    let next;
-    if(nextDollar===-1)next=nextImg;else if(nextImg===-1)next=nextDollar;else next=Math.min(nextDollar,nextImg);
+    const nextSlashP=raw.indexOf('\\(',i);const nextSlashB=raw.indexOf('\\[',i);
+    let nexts = [nextDollar, nextImg, nextSlashP, nextSlashB].filter(x => x !== -1);
+    let next = nexts.length > 0 ? Math.min(...nexts) : -1;
     if(next===-1){appendTextWithBreaks(frag,raw.slice(i));break;}
     appendTextWithBreaks(frag,raw.slice(i,next));i=next;
   }
