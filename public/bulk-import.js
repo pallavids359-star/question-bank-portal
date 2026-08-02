@@ -820,13 +820,29 @@
   // ── RENDER ENGINE ──────────────────────────────────────────────────
   function renderCardNode(text) {
     if (!text) return document.createTextNode('');
-    if (typeof buildEquationFragment === 'function') {
-      return buildEquationFragment(text);
-    }
-    const span = document.createElement('span');
-    span.textContent = text;
-    return span;
+
+    const container = document.createElement('span');
+    const parts = text.split(/(\{\{IMG::[^\}]+\}\})/g);
+
+    parts.forEach(part => {
+      if (part.startsWith('{{IMG::') && part.endsWith('}}')) {
+        const imgUrl = part.slice(7, -2);
+        const img = document.createElement('img');
+        img.src = imgUrl;
+        img.style.cssText = 'max-width:100%;max-height:220px;display:block;margin:6px 0;border-radius:6px;border:1px solid #2e364a;';
+        container.appendChild(img);
+      } else if (part) {
+        if (typeof buildEquationFragment === 'function') {
+          container.appendChild(buildEquationFragment(part));
+        } else {
+          container.appendChild(document.createTextNode(part));
+        }
+      }
+    });
+
+    return container;
   }
+
 
   function renderCard(q, idx) {
     const card = document.createElement('div');

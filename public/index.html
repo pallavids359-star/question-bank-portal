@@ -3084,6 +3084,97 @@ window.QP                   = QP;     // already assigned above
     });
   }
 
+  // ── IMAGE COMPRESSION HELPER ────────────────────────────────────
+  async function compressImage(dataUrl, maxDim = 900, quality = 0.75) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+  window.compressImage = compressImage;
+
+  // ── CTRL+V CLIPBOARD IMAGE PASTE HANDLER FOR BULK IMPORT ────────
+  document.addEventListener('paste', async (e) => {
+    const target = e.target;
+    if (!target) return;
+
+    // Active target must be Bulk Main Editor Textarea or Bulk Edit Modal field
+    const isBulkMainArea = (target.id === 'bqTextarea' || target.id === 'bulkEditorTextarea');
+    const isBulkEditModalField = (target.id && target.id.startsWith('bqEdit'));
+
+    if (!isBulkMainArea && !isBulkEditModalField) return;
+
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+
+    let imageItem = null;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.indexOf('image') !== -1) {
+        imageItem = items[i];
+        break;
+      }
+    }
+
+    if (!imageItem) return; // Allow normal text paste
+
+    e.preventDefault(); // Stop binary text paste
+
+    const file = imageItem.getAsFile();
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target.result;
+      const compressed = await compressImage(dataUrl);
+      const marker = '{{IMG::' + compressed + '}}';
+
+      // Insert {{IMG::...}} marker at current cursor position in field
+      const start = target.selectionStart !== undefined ? target.selectionStart : target.value.length;
+      const end = target.selectionEnd !== undefined ? target.selectionEnd : target.value.length;
+      const val = target.value || '';
+      
+      const before = val.substring(0, start);
+      const after = val.substring(end);
+      const spaceBefore = (before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
+      const spaceAfter = (after.length > 0 && !after.startsWith(' ') && !after.startsWith('\n')) ? ' ' : '';
+
+      target.value = before + spaceBefore + marker + spaceAfter + after;
+      target.selectionStart = target.selectionEnd = start + spaceBefore.length + marker.length + spaceAfter.length;
+
+      // Trigger input event to re-parse and auto-save draft
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+
+      // If inside Bulk Edit Modal, show preview chip
+      if (isBulkEditModalField) {
+        const previewId = target.id + 'ImgPreview';
+        bqShowImgPreview(previewId, compressed);
+      }
+
+      if (typeof showToast === 'function') showToast('📷 Clipboard image pasted successfully!');
+    };
+    reader.readAsDataURL(file);
+  });
+
   // Clear image previews when bulk edit modal closes
   const origClose = window.BulkModule && window.BulkModule.closeCardEditor;
   if (origClose) {
@@ -3099,3 +3190,4 @@ window.QP                   = QP;     // already assigned above
 </script>
 </body>
 </html>
+
