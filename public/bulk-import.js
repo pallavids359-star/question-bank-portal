@@ -271,6 +271,22 @@
   // ================================================================
   // STAGE 1: QUESTION BOUNDARY DETECTION
   // ================================================================
+  function blockHasQuestionBody(block) {
+    if (!block || !block.lines || block.lines.length === 0) return false;
+    const hasAnsOrSol = block.lines.some(l => isAnsLine(l.text) || isSolLine(l.text));
+    if (hasAnsOrSol) return true;
+    const hasOpts = block.lines.some((l, idx) => detectOptionKey(l.text, idx === 0));
+    if (hasOpts) return true;
+
+    const nonTagLines = block.lines.filter(l => {
+      const t = l.text.trim();
+      if (/^\s*(?:@chapter|chapter|unit|@topic|topic|@concept|concept|sub-topic|@type|@qtype|type|question\s*type|@subject|subject|@class|@klass|class|grade|@difficulty|@level|difficulty|level)\s*[:=]/i.test(t)) return false;
+      if (/^\s*(?:Question|Q|Que|Problem|Item)\s*[:\.]?\s*$/i.test(t)) return false;
+      return true;
+    });
+    return nonTagLines.length > 0;
+  }
+
   function splitIntoRawBlocks(rawText) {
     const lines = rawText.split('\n');
     const blocks = [];
@@ -329,7 +345,7 @@
           if (isNumItem && inColumnSection && !inAnsOrSolSection) {
             isNewQ = false;
           } else {
-            isNewQ = true;
+            isNewQ = blockHasQuestionBody(currentBlock);
           }
         } else if (/^\s*(?:Question|Q|Que|Problem|Item)\s*[:\.]?\s*$/i.test(trimmed)) {
           const hasAnsOrSol = inAnsOrSolSection || currentBlock.lines.some(l => isAnsLine(l.text) || isSolLine(l.text));
