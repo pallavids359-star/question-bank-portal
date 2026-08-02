@@ -70,5 +70,15 @@ alter table public.questions
   add column if not exists tags           text not null default '',
   add column if not exists year           text not null default '',
   add column if not exists attempt_level  text not null default '',
-  add column if not exists board          text not null default '';
+  add column if not exists board          text not null default '',
+  add column if not exists assertion      text not null default '',
+  add column if not exists reason         text not null default '',
+  add column if not exists statement1     text not null default '',
+  add column if not exists statement2     text not null default '',
+  add column if not exists predef_options text not null default '',
+  add column if not exists column_a       text[] not null default '{}',
+  add column if not exists column_b       text[] not null default '{}',
+  add column if not exists match_options  jsonb not null default '{"A":"","B":"","C":"","D":""}'::jsonb,
+  add column if not exists num_answer     text not null default '';
+
 

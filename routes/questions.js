@@ -199,9 +199,17 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
     'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
   ];
 
-  function sanitizeRecord(record) {
+  const BASIC_LEGACY_FIELDS = [
+    'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
+    'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d',
+    'correct_option', 'solution_text', 'difficulty', 'marks', 'neg_marks',
+    'language', 'source', 'author', 'reference_book',
+    'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
+  ];
+
+  function sanitizeRecord(record, fieldList) {
     const clean = {};
-    for (const key of CORE_FIELDS) {
+    for (const key of fieldList) {
       if (Object.prototype.hasOwnProperty.call(record, key) && record[key] !== undefined && record[key] !== null) {
         clean[key] = record[key];
       }
@@ -215,7 +223,7 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
     payload.created_by_name = userName;
     payload.updated_by      = userId;
     payload.updated_by_name = userName;
-    return sanitizeRecord(payload);
+    return sanitizeRecord(payload, CORE_FIELDS);
   });
 
   // Batch insert into Supabase in chunks of 50
@@ -224,11 +232,23 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
   let lastErrorMessage = '';
 
   for (let i = 0; i < recordsToInsert.length; i += chunkSize) {
-    const chunk = recordsToInsert.slice(i, i + chunkSize);
+    let chunk = recordsToInsert.slice(i, i + chunkSize);
     let { data, error } = await supabase
       .from('questions')
       .insert(chunk)
       .select();
+
+    // Auto-fallback if database schema does not have new extended columns yet (e.g. statement1, column_a)
+    if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
+      console.warn(`Database missing extended columns, auto-stripping to basic legacy schema...`);
+      const basicChunk = chunk.map(r => sanitizeRecord(r, BASIC_LEGACY_FIELDS));
+      const retry = await supabase
+        .from('questions')
+        .insert(basicChunk)
+        .select();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       console.warn(`Batch chunk insert failed at offset ${i}:`, error.message);
@@ -236,10 +256,19 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
 
       // Sequential retry item by item
       for (const item of chunk) {
-        const singleRetry = await supabase
+        let singleRetry = await supabase
           .from('questions')
           .insert([item])
           .select();
+
+        if (singleRetry.error) {
+          // Retry single item with basic legacy schema
+          const basicItem = sanitizeRecord(item, BASIC_LEGACY_FIELDS);
+          singleRetry = await supabase
+            .from('questions')
+            .insert([basicItem])
+            .select();
+        }
 
         if (singleRetry.error) {
           console.error(`Single item insert failed:`, singleRetry.error.message);
@@ -259,6 +288,7 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
       details: lastErrorMessage
     });
   }
+
 
   await writeAuditLog({
     userId, userName,
