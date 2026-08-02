@@ -1,21 +1,17 @@
 create extension if not exists pgcrypto;
 
+-- Drop old restrictive q_type check constraint if present
+alter table public.questions drop constraint if exists questions_q_type_check;
+
 create table if not exists public.questions (
   id uuid primary key default gen_random_uuid(),
-  subject text not null,
-  klass text not null,
-  chapter text not null,
-  topic text not null,
+  subject text not null default 'General',
+  klass text not null default '11',
+  chapter text not null default 'General',
+  topic text not null default 'General',
   exams text[] not null default '{}',
-  q_type text not null check (
-    q_type in (
-      'mcq_single',
-      'assertion_reason',
-      'match',
-      'numerical',
-      'true_false'
-    )
-  ),
+  q_type text not null default 'mcq_single',
+
   question text not null default '',
   opt_a text not null default '',
   opt_b text not null default '',

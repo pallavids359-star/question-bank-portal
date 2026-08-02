@@ -44,14 +44,58 @@ const fieldMap = {
   board:         'board',
 };
 
-function toDatabase(input) {
-  return Object.entries(fieldMap).reduce((out, [apiField, dbField]) => {
-    if (Object.prototype.hasOwnProperty.call(input, apiField)) {
-      out[dbField] = input[apiField];
-    }
-    return out;
-  }, {});
+const DB_QTYPE_MAP = {
+  mcq_single:          'mcq_single',
+  mcq_multiple:        'mcq_single',
+  statement_based:     'statement_based',
+  assertion_reason:    'assertion_reason',
+  match:               'match',
+  matrix:              'match',
+  numerical:           'numerical',
+  integer:             'numerical',
+  true_false:          'true_false',
+  diagram:             'diagram_based',
+  diagram_based:       'diagram_based',
+  case_study:          'mcq_single',
+  paragraph:           'mcq_single',
+  comprehension:       'mcq_single',
+  table:               'mcq_single',
+  graph:               'mcq_single',
+  sequence:            'mcq_single',
+  reasoning:           'mcq_single',
+  data_interpretation: 'mcq_single',
+  fill_blank:          'numerical',
+  multi_part:          'mcq_single',
+};
+
+function normalizeQType(qType) {
+  if (!qType) return 'mcq_single';
+  return DB_QTYPE_MAP[qType.toLowerCase()] || 'mcq_single';
 }
+
+function toDatabase(input) {
+  const out = Object.entries(fieldMap).reduce((acc, [apiField, dbField]) => {
+    if (Object.prototype.hasOwnProperty.call(input, apiField)) {
+      acc[dbField] = input[apiField];
+    }
+    return acc;
+  }, {});
+
+  // Normalize q_type to match database check constraint
+  out.q_type = normalizeQType(input.qType || input.q_type);
+
+  // Fallbacks for required non-null fields
+  if (!out.subject) out.subject = 'General';
+  if (!out.klass)   out.klass   = '11';
+  if (!out.chapter) out.chapter = 'General';
+  if (!out.topic)   out.topic   = 'General';
+  if (!out.exams || !Array.isArray(out.exams) || out.exams.length === 0) {
+    out.exams = ['NEET'];
+  }
+
+  return out;
+}
+
 
 function toApi(row) {
   if (!row) return row;
