@@ -159,14 +159,27 @@ router.post('/', ...WRITE_ROLES, async (req, res) => {
   payload.updated_by      = req.user.userId;
   payload.updated_by_name = req.user.name;
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('questions')
     .insert(payload)
     .select()
     .single();
 
+  // Auto-fallback if database missing extended columns (e.g. statement1, assertion)
+  if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
+    console.warn('Single insert missing extended columns, auto-stripping to basic legacy schema...');
+    const basicPayload = sanitizeRecord(payload, BASIC_LEGACY_FIELDS);
+    const retry = await supabase
+      .from('questions')
+      .insert(basicPayload)
+      .select()
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) {
-    return res.status(400).json({ error: 'Failed to create question.', details: error.message });
+    return res.status(400).json({ error: 'Failed to create question: ' + error.message, details: error.message });
   }
 
   await writeAuditLog({
@@ -178,6 +191,7 @@ router.post('/', ...WRITE_ROLES, async (req, res) => {
 
   res.status(201).json(toApi(data));
 });
+
 
 // ── POST /api/questions/batch ──────────────────────────────────────────────
 router.post('/batch', ...WRITE_ROLES, async (req, res) => {
@@ -317,15 +331,29 @@ router.put('/:id', ...WRITE_ROLES, async (req, res) => {
   payload.updated_by      = req.user.userId;
   payload.updated_by_name = req.user.name;
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('questions')
     .update(payload)
     .eq('id', req.params.id)
     .select()
     .maybeSingle();
 
+  // Auto-fallback if database missing extended columns (e.g. statement1, assertion)
+  if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
+    console.warn('Update question missing extended columns, auto-stripping to basic legacy schema...');
+    const basicPayload = sanitizeRecord(payload, BASIC_LEGACY_FIELDS);
+    const retry = await supabase
+      .from('questions')
+      .update(basicPayload)
+      .eq('id', req.params.id)
+      .select()
+      .maybeSingle();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) {
-    return res.status(400).json({ error: 'Failed to update question.', details: error.message });
+    return res.status(400).json({ error: 'Failed to update question: ' + error.message, details: error.message });
   }
   if (!data) return res.status(404).json({ error: 'Question not found.' });
 
@@ -338,6 +366,7 @@ router.put('/:id', ...WRITE_ROLES, async (req, res) => {
 
   res.json(toApi(data));
 });
+
 
 // ── DELETE /api/questions/:id ──────────────────────────────────────────────
 router.delete('/:id', ...WRITE_ROLES, async (req, res) => {
