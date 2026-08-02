@@ -1,1161 +1,913 @@
-/* ============================================================
-   BULK QUESTION IMPORT MODULE - CORE LOGIC & PARSER
-   ============================================================ */
+/* ================================================================
+   BULK QUESTION IMPORT MODULE v2 (SMART PARSER & METADATA ENGINE)
+   ================================================================ */
 
 (function () {
   'use strict';
 
-  // State Management
+  // ── STATE ────────────────────────────────────────────────────────
   const state = {
     rawText: '',
     parsedQuestions: [],
-    errors: [],
     existingQuestions: [],
     historyStack: [],
     historyIndex: -1,
     autoSaveTimer: null,
-    debouncedParseTimer: null,
+    debounceTimer: null,
     wordWrap: true,
     filterSearch: '',
-    filterConcept: '',
-    filterDifficulty: '',
+    filterType: '',
+    filterDiff: '',
     filterStatus: '',
-    filterDuplicate: '',
+    filterDup: '',
     editingIndex: null,
   };
 
-  // Standard Format Sample Text with metadata tags
-  const DEFAULT_SAMPLE_FORMAT = `@subject
-Chemistry
+  // ── METADATA PANEL HELPERS ───────────────────────────────────────
+  function getMeta() {
+    const sEl = document.getElementById('bqMetaSubject') || document.getElementById('subject');
+    const kEl = document.getElementById('bqMetaClass') || document.getElementById('klass');
+    const cEl = document.getElementById('bqMetaChapter') || document.getElementById('chapter');
+    const eEl = document.getElementById('bqMetaExam');
 
-@class
-11
+    return {
+      subject:        sEl && sEl.value ? sEl.value.trim() : 'Physics',
+      klass:          kEl && kEl.value ? kEl.value.trim() : '11',
+      chapter:        cEl && cEl.value ? cEl.value.trim() : 'General',
+      exams:          eEl && eEl.value ? [eEl.value.trim()] : ['NEET'],
+      language:       val('bqMetaLanguage') || 'English',
+      source:         val('bqMetaSource') || '',
+      referenceBook:  val('bqMetaRefBook') || '',
+      author:         val('bqMetaAuthor') || '',
+      defaultMarks:   val('bqMetaMarks') || '4',
+      negMarks:       val('bqMetaNegMarks') || '1',
+      defaultDiff:    val('bqMetaDiff') || 'Medium',
+    };
+  }
 
-@chapter
-Chemical Bonding and Molecular Structure
+  function val(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+  }
 
-@exam
-NEET
+  // ── QUESTION TYPE DEFINITIONS & DETECTORS ─────────────────────────
+  const QTYPE_LABELS = {
+    mcq_single: 'Standard MCQ',
+    mcq_multiple: 'Multiple Correct',
+    statement_based: 'Statement Based',
+    assertion_reason: 'Assertion Reason',
+    match: 'Match the Following',
+    numerical: 'Numerical / Integer',
+    true_false: 'True / False',
+    case_study: 'Case Study / Passage',
+    paragraph: 'Paragraph Based',
+    comprehension: 'Comprehension',
+    matrix: 'Matrix Match',
+    diagram: 'Diagram Based',
+    image: 'Image Based',
+    table: 'Table Based',
+    graph: 'Graph Based',
+    sequence: 'Sequence Based',
+    reasoning: 'Reasoning Based',
+    data_interpretation: 'Data Interpretation',
+  };
 
-@concept
-Chemical Bonding
-
-@question
-Which of the following is diamagnetic in nature?
-
-@optionA
-$\\mathrm{Zn}^{2+}$
-
-@optionB
-$\\mathrm{Ni}^{2+}$
-
-@optionC
-$\\mathrm{Co}^{2+}$
-
-@optionD
-$\\mathrm{Cu}^{2+}$
-
-@answer
-A
-
-@solution
-Zn loses two 4s electrons and forms the configuration $[Ar]3d^{10}$.
-All electrons become paired.
-Hence it is diamagnetic.
-
-@difficulty
-Easy
-
-@end
-
-@question
-Which statement is correct regarding ionic compounds?
-
-@optionA
-They have low melting points.
-
-@optionB
-They conduct electricity in solid state.
-
-@optionC
-They have high lattice energy.
-
-@optionD
-They are non-polar.
-
-@answer
-C
-
-@solution
-Ionic compounds have high electrostatic forces of attraction leading to high lattice energy.
-
-@difficulty
-Medium
-
-@end
-`;
-
-  // ------------------------------------------------------------
-  // 1. PARSER ENGINE
-  // ------------------------------------------------------------
-  function parseBulkText(text) {
-    const lines = text.split('\n');
-    const questions = [];
-
-    let currentSubject = '';
-    let currentClass = '';
-    let currentChapter = '';
-    let currentExams = ['NEET'];
-    let currentConcept = '';
-    let currentType = 'mcq_single';
-    let currentDifficulty = 'Medium';
-
-    let currentQ = null;
-    let currentTag = null;
-    let currentTagContent = [];
-
-    function flushTag() {
-      if (!currentTag) return;
-      const content = currentTagContent.join('\n').trim();
-      currentTagContent = [];
-
-      if (!currentQ) {
-        // Global metadata tag processing outside question body
-        switch (currentTag) {
-          case 'subject':
-          case 'subj':
-            if (content) currentSubject = content;
-            break;
-          case 'class':
-          case 'klass':
-            if (content) currentClass = content;
-            break;
-          case 'chapter':
-          case 'chap':
-            if (content) currentChapter = content;
-            break;
-          case 'exam':
-          case 'category':
-            if (content) currentExams = [content];
-            break;
-          case 'concept':
-          case 'topic':
-            if (content) currentConcept = content;
-            break;
-          case 'type':
-          case 'qtype':
-            if (content) currentType = parseQTypeString(content);
-            break;
-          case 'difficulty':
-          case 'diff':
-            if (content) currentDifficulty = capitalize(content);
-            break;
-        }
-        return;
+  const TYPE_RULES = [
+    {
+      type: 'assertion_reason',
+      test: (q) => /\b(assertion|reason)\b.*\b(assertion|reason)\b/is.test(q) || /^A:\s*Assertion/i.test(q)
+    },
+    {
+      type: 'statement_based',
+      test: (q) => /\bstatement\s+(i|ii|1|2)\b/i.test(q) || /statement\s+I\b/i.test(q)
+    },
+    {
+      type: 'match',
+      test: (q) => /\b(column|list)\s+(i{1,3}|[1234])\b/i.test(q) || /match\s+the\s+following/i.test(q)
+    },
+    {
+      type: 'matrix',
+      test: (q) => /\bmatrix\s+match\b/i.test(q) || /column\s+I.*column\s+II.*column\s+III/is.test(q)
+    },
+    {
+      type: 'true_false',
+      test: (q, opts) => {
+        const optVals = Object.values(opts).map(v => v.toLowerCase().trim());
+        return (optVals.includes('true') && optVals.includes('false')) || /^\s*(true|false)\s*$/i.test(q.trim());
       }
+    },
+    {
+      type: 'mcq_multiple',
+      test: (q, opts, ans) => /[A-D]\s*,\s*[A-D]/i.test(ans || '') || /more\s+than\s+one\s+correct|multiple\s+correct/i.test(q)
+    },
+    {
+      type: 'case_study',
+      test: (q) => /\b(case\s+study|read\s+the\s+following\s+passage|comprehension|passage\s+based)\b/i.test(q)
+    },
+    {
+      type: 'diagram',
+      test: (q) => /\b(diagram|circuit|figure|refer\s+to\s+the\s+image|given\s+figure)\b/i.test(q) || /\{\{IMG::/i.test(q)
+    },
+    {
+      type: 'graph',
+      test: (q) => /\b(graph|curve|plot|v-t\s+graph|x-t\s+graph|p-v\s+diagram)\b/i.test(q)
+    },
+    {
+      type: 'table',
+      test: (q) => /\b(table|data\s+given\s+below|following\s+data)\b/i.test(q) || /\|.*\|.*\|/.test(q)
+    },
+    {
+      type: 'numerical',
+      test: (q, opts, ans) => Object.keys(opts).length === 0 || /^\d+(\.\d+)?$/.test((ans || '').trim()) || /\b(numerical\s+value|integer\s+type|find\s+the\s+value)\b/i.test(q)
+    },
+    {
+      type: 'mcq_single',
+      test: () => true
+    }
+  ];
 
-      // Question body tags
-      switch (currentTag) {
-        case 'subject':
-        case 'subj':
-          currentQ.subject = content;
-          break;
-        case 'class':
-        case 'klass':
-          currentQ.klass = content;
-          break;
-        case 'chapter':
-        case 'chap':
-          currentQ.chapter = content;
-          break;
-        case 'exam':
-        case 'category':
-          currentQ.exams = [content];
-          break;
-        case 'concept':
-        case 'topic':
-          currentQ.concept = content;
-          break;
-        case 'question':
-          currentQ.question = cleanQuestionText(content);
-          break;
-        case 'optiona':
-        case 'option1':
-        case 'opta':
-          currentQ.optA = processImageInText(content);
-          break;
-        case 'optionb':
-        case 'option2':
-        case 'optb':
-          currentQ.optB = processImageInText(content);
-          break;
-        case 'optionc':
-        case 'option3':
-        case 'optc':
-          currentQ.optC = processImageInText(content);
-          break;
-        case 'optiond':
-        case 'option4':
-        case 'optd':
-          currentQ.optD = processImageInText(content);
-          break;
-        case 'answer':
-        case 'ans':
-          currentQ.answer = content.toUpperCase();
-          break;
-        case 'solution':
-        case 'sol':
-          currentQ.solutionText = processImageInText(content);
-          break;
-        case 'difficulty':
-        case 'diff':
-          currentQ.difficulty = capitalize(content);
-          break;
-        case 'type':
-        case 'qtype':
-          currentQ.qType = parseQTypeString(content);
-          break;
-        case 'statement1':
-        case 'statementi':
-        case 'stmt1':
-        case 'stmti':
-          currentQ.statement1 = processImageInText(content);
-          break;
-        case 'statement2':
-        case 'statementii':
-        case 'stmt2':
-        case 'stmtii':
-          currentQ.statement2 = processImageInText(content);
-          break;
+  function detectQType(questionText, options, answer) {
+    for (const rule of TYPE_RULES) {
+      if (rule.test(questionText, options, answer)) {
+        return rule.type;
       }
     }
+    return 'mcq_single';
+  }
 
-    function flushQuestion(endLineNum) {
-      if (!currentQ) return;
-      flushTag();
-      currentQ.endLine = endLineNum;
+  // ── OPTION PATTERNS ───────────────────────────────────────────────
+  const OPT_PATTERNS = [
+    /^\s*\(([A-Da-d1-4])\)\s+/,      // (A) (1)
+    /^\s*([A-Da-d1-4])[\.\):]\s+/,   // A. A) A:
+    /^\s*([a-dA-D])\s*[\)\.]\s+/,   // a) b.
+    /^\s*\[([A-Da-d1-4])\]\s+/,     // [A]
+    /^\s*Option\s+([A-Da-d1-4])\s*[:\.]\s*/i,
+  ];
 
-      // Attach active persistent metadata if not set on question
-      currentQ.subject = currentQ.subject || currentSubject;
-      currentQ.klass = currentQ.klass || currentClass;
-      currentQ.chapter = currentQ.chapter || currentChapter;
-      currentQ.exams = currentQ.exams && currentQ.exams.length ? currentQ.exams : currentExams;
-      currentQ.concept = currentQ.concept || currentConcept || 'General';
-      currentQ.difficulty = currentQ.difficulty || currentDifficulty || 'Medium';
-
-      // Infer qType if missing
-      if (!currentQ.qType) {
-        if (currentQ.statement1 && currentQ.statement2) currentQ.qType = 'statement_based';
-        else if (currentQ.assertion && currentQ.reason) currentQ.qType = 'assertion_reason';
-        else if (currentQ.numAnswer) currentQ.qType = 'numerical';
-        else if (currentQ.question && currentQ.question.includes('{{IMG::')) currentQ.qType = 'diagram_based';
-        else currentQ.qType = currentType || 'mcq_single';
+  function detectOption(line) {
+    for (const pat of OPT_PATTERNS) {
+      const m = line.match(pat);
+      if (m) {
+        let key = m[1].toUpperCase();
+        if (key === '1') key = 'A';
+        else if (key === '2') key = 'B';
+        else if (key === '3') key = 'C';
+        else if (key === '4') key = 'D';
+        return key;
       }
+    }
+    return null;
+  }
 
-      questions.push(currentQ);
-      currentQ = null;
-      currentTag = null;
-      currentTagContent = [];
+  function stripOptionPrefix(line) {
+    for (const pat of OPT_PATTERNS) {
+      if (pat.test(line)) {
+        return line.replace(pat, '').trim();
+      }
+    }
+    return line.trim();
+  }
+
+  // ── BOUNDARY PATTERNS ─────────────────────────────────────────────
+  const Q_START_PATTERNS = [
+    /^\s*(?:Q|Question|Que|Problem|Item)?\s*\.?\s*(\d{1,4})\s*[\.:\)]\s+/i,
+    /^\s*Q(\d{1,4})\s*[:\.]\s+/i,
+  ];
+
+  function looksLikeQStart(line) {
+    return Q_START_PATTERNS.some(p => p.test(line));
+  }
+
+  function stripQNumber(line) {
+    for (const p of Q_START_PATTERNS) {
+      const m = line.match(p);
+      if (m) return line.replace(p, '').trim();
+    }
+    return line.trim();
+  }
+
+  const ANS_PATTERNS = [
+    /^\s*(?:Answer|Ans|Correct\s*Answer|Correct\s*Option|Ans\.:?)\s*[:\.\-]?\s*\(?([A-Da-d1-4]|True|False|[0-9\.,]+)\)?/i,
+  ];
+
+  const SOL_PATTERNS = [
+    /^\s*(?:Solution|Detailed\s*Solution|Explanation|Reason|Working|Answer\s*Explanation|Sol\.|Expl\.)\s*[:\.\-]?/i,
+  ];
+
+  const IGNORE_PATTERNS = [
+    /^\s*Page\s+\d+\s*of\s*\d+/i,
+    /^\s*\d+\s*$/,
+    /^\s*Coaching\s+Institute\s+Question\s+Bank/i,
+    /^={3,}$/, /^_{3,}$/, /^-{3,}$/, /^\*{3,}$/,
+  ];
+
+  function shouldIgnoreLine(line) {
+    return IGNORE_PATTERNS.some(p => p.test(line));
+  }
+
+  // ── CONCEPT & DIFFICULTY DETECTORS ────────────────────────────────
+  const CONCEPT_KEYWORDS = {
+    'Chemical Bonding': ['hybridization', 'vsepr', 'dipole', 'bond order', 'mot', 'resonance', 'lewis', 'electronegativity', 'covalent', 'ionic'],
+    'Atomic Structure': ['orbital', 'quantum number', 'schrodinger', 'bohr', 'de broglie', 'heisenberg', 'photoelectric'],
+    'Thermodynamics': ['entropy', 'enthalpy', 'gibbs', 'hess', 'internal energy', 'spontaneous', 'first law', 'second law'],
+    'Kinematics': ['velocity', 'acceleration', 'displacement', 'projectile', 'relative motion', 'speed', 'distance'],
+    'Laws of Motion': ['newton', 'friction', 'tension', 'inertia', 'impulse', 'momentum', 'pulley'],
+    'Electrostatics': ['coulomb', 'electric field', 'potential', 'capacitor', 'gauss', 'charge', 'dipole'],
+    'Cell Biology': ['mitosis', 'meiosis', 'cell cycle', 'organelle', 'membrane', 'nucleus', 'mitochondria'],
+    'Genetics': ['mendel', 'dna', 'rna', 'replication', 'transcription', 'translation', 'allele', 'gene'],
+    'Calculus': ['derivative', 'integral', 'limit', 'continuity', 'differential', 'rate of change'],
+  };
+
+  function detectConcept(qText, chapter) {
+    const text = (qText + ' ' + chapter).toLowerCase();
+    let bestMatch = { concept: chapter || 'General', confidence: 65 };
+    
+    for (const [concept, keywords] of Object.entries(CONCEPT_KEYWORDS)) {
+      const matches = keywords.filter(kw => text.includes(kw));
+      if (matches.length > 0) {
+        const conf = Math.min(95, 70 + matches.length * 8);
+        if (conf > bestMatch.confidence) {
+          bestMatch = { concept, confidence: conf };
+        }
+      }
+    }
+    return bestMatch;
+  }
+
+  function detectDifficulty(qText, options, solution) {
+    let score = 0;
+    const combined = (qText + ' ' + solution).toLowerCase();
+    if (qText.length > 350) score += 2;
+    else if (qText.length > 180) score += 1;
+
+    if (/calculate|determine|evaluate|find the value|derived/.test(combined)) score += 1;
+    if (/\\frac|\\int|\\sum|\\sqrt|\\matrix/.test(combined)) score += 1;
+    if (Object.keys(options).length === 0) score += 1;
+    if (solution.length > 250) score += 1;
+
+    if (score >= 4) return 'Hard';
+    if (score >= 2) return 'Medium';
+    return 'Easy';
+  }
+
+  // ── SMART PARSER CORE ──────────────────────────────────────────────
+  function parseText(rawText) {
+    const meta = getMeta();
+    const lines = rawText.split('\n');
+    const questions = [];
+    let cur = null;
+    let mode = 'q';
+
+    function pushCur() {
+      if (cur && cur.qLines.length > 0) {
+        const qText = cur.qLines.join('\n').trim();
+        const solText = cur.solLines.join('\n').trim();
+        const qType = detectQType(qText, cur.options, cur.answer);
+        const { concept, confidence } = detectConcept(qText, meta.chapter);
+        const difficulty = detectDifficulty(qText, cur.options, solText);
+
+        questions.push({
+          subject: meta.subject,
+          klass: meta.klass,
+          chapter: meta.chapter,
+          topic: concept,
+          exams: meta.exams,
+          language: meta.language,
+          source: meta.source,
+          referenceBook: meta.referenceBook,
+          author: meta.author,
+          marks: meta.defaultMarks,
+          negMarks: meta.negMarks,
+          difficulty: difficulty,
+          qType: qType,
+          question: qText,
+          optA: cur.options['A'] || '',
+          optB: cur.options['B'] || '',
+          optC: cur.options['C'] || '',
+          optD: cur.options['D'] || '',
+          answer: cur.answer || '',
+          solutionText: solText,
+          concept: concept,
+          confidenceScore: confidence,
+          startLine: cur.startLine,
+          errors: [],
+          isValid: true,
+          isDuplicate: false,
+          ignored: false,
+          dupAction: 'skip',
+          collapsed: false,
+        });
+      }
     }
 
     for (let i = 0; i < lines.length; i++) {
-      const lineNum = i + 1;
-      const rawLine = lines[i];
-      const trimmed = rawLine.trim();
+      const raw = lines[i];
+      const line = raw.trim();
+      if (!line || shouldIgnoreLine(line)) continue;
 
-      if (!trimmed) continue;
+      if (/^@question\b/i.test(line)) {
+        pushCur();
+        cur = { qLines: [], solLines: [], options: {}, answer: '', startLine: i + 1 };
+        mode = 'q';
+        const rest = line.replace(/^@question\s*/i, '').trim();
+        if (rest) cur.qLines.push(rest);
+        continue;
+      }
 
-      // Tag matching (case insensitive)
-      const tagMatch = trimmed.match(/^@([a-zA-Z0-9]+)\b/i);
-
-      if (tagMatch) {
-        const tagName = tagMatch[1].toLowerCase();
-
-        // 1. Metadata tags (can appear anywhere)
-        if (['subject', 'subj', 'class', 'klass', 'chapter', 'chap', 'exam', 'category', 'concept', 'topic'].includes(tagName)) {
-          if (currentQ && tagName === 'concept') {
-            // inside question body concept update
-            flushTag();
-            currentTag = 'concept';
-            const rest = trimmed.replace(/^@concept\s*/i, '').trim();
-            if (rest) currentTagContent.push(rest);
-            continue;
-          }
-
-          if (currentQ) flushQuestion(lineNum - 1);
-          flushTag();
-          currentTag = tagName;
-          const rest = trimmed.replace(new RegExp('^@' + tagName + '\\s*', 'i'), '').trim();
-          if (rest) {
-            currentTagContent.push(rest);
-            flushTag();
-          }
-          continue;
-        }
-
-        if (tagName === 'end') {
-          flushQuestion(lineNum);
-          continue;
-        }
-
-        if (tagName === 'question') {
-          if (currentQ) flushQuestion(lineNum - 1);
-          currentQ = {
-            id: 'import_' + (questions.length + 1),
-            startLine: lineNum,
-            subject: currentSubject,
-            klass: currentClass,
-            chapter: currentChapter,
-            exams: [...currentExams],
-            concept: currentConcept,
-            qType: currentType,
-            question: '',
-            optA: '',
-            optB: '',
-            optC: '',
-            optD: '',
-            answer: '',
-            solutionText: '',
-            difficulty: currentDifficulty,
-            isValid: true,
-            isDuplicate: false,
-            dupAction: 'skip',
-            ignored: false,
-            collapsed: false,
-            errors: [],
-          };
-          currentTag = 'question';
-          const rest = trimmed.replace(/^@question\s*/i, '').trim();
-          if (rest) currentTagContent.push(rest);
-          continue;
-        }
-
-        // Option / Answer / Solution / Difficulty / Type tags
-        if (currentQ) {
-          flushTag();
-          currentTag = tagName;
-          const rest = trimmed.replace(new RegExp('^@' + tagName + '\\s*', 'i'), '').trim();
-          if (rest) currentTagContent.push(rest);
-        } else {
-          // Global tag outside question
-          flushTag();
-          currentTag = tagName;
-          const rest = trimmed.replace(new RegExp('^@' + tagName + '\\s*', 'i'), '').trim();
-          if (rest) {
-            currentTagContent.push(rest);
-            flushTag();
-          }
-        }
-      } else {
-        if (currentTag) {
-          currentTagContent.push(rawLine);
+      let isAns = false;
+      for (const p of ANS_PATTERNS) {
+        const m = line.match(p);
+        if (m && cur) {
+          let ansVal = m[1].toUpperCase().trim();
+          if (ansVal === '1') ansVal = 'A';
+          else if (ansVal === '2') ansVal = 'B';
+          else if (ansVal === '3') ansVal = 'C';
+          else if (ansVal === '4') ansVal = 'D';
+          cur.answer = ansVal;
+          isAns = true;
+          break;
         }
       }
-    }
+      if (isAns) continue;
 
-    if (currentQ) {
-      flushQuestion(lines.length);
+      let isSol = false;
+      for (const p of SOL_PATTERNS) {
+        if (p.test(line)) {
+          if (cur) {
+            mode = 'sol';
+            const rest = line.replace(p, '').trim();
+            if (rest) cur.solLines.push(rest);
+            isSol = true;
+            break;
+          }
+        }
+      }
+      if (isSol) continue;
+
+      const optKey = detectOption(line);
+      if (optKey && cur) {
+        mode = 'opt';
+        const optVal = stripOptionPrefix(line);
+        cur.options[optKey] = optVal;
+        continue;
+      }
+
+      if (looksLikeQStart(line)) {
+        pushCur();
+        cur = { qLines: [], solLines: [], options: {}, answer: '', startLine: i + 1 };
+        mode = 'q';
+        cur.qLines.push(stripQNumber(line));
+        continue;
+      }
+
+      if (cur) {
+        if (mode === 'sol') {
+          cur.solLines.push(line);
+        } else if (mode === 'opt') {
+          const lastKey = Object.keys(cur.options).pop();
+          if (lastKey) cur.options[lastKey] += ' ' + line;
+          else cur.qLines.push(line);
+        } else {
+          cur.qLines.push(line);
+        }
+      } else {
+        cur = { qLines: [line], solLines: [], options: {}, answer: '', startLine: i + 1 };
+        mode = 'q';
+      }
     }
+    pushCur();
 
     return questions;
   }
 
-  function parseQTypeString(str) {
-    if (!str) return 'mcq_single';
-    const s = str.toLowerCase();
-    if (s.includes('assertion')) return 'assertion_reason';
-    if (s.includes('match')) return 'match';
-    if (s.includes('num') || s.includes('integer')) return 'numerical';
-    if (s.includes('true') || s.includes('false')) return 'true_false';
-    if (s.includes('diagram') || s.includes('image') || s.includes('figure')) return 'diagram_based';
-    if (s.includes('statement')) return 'statement_based';
-    return 'mcq_single';
-  }
-
-  // Helper: clean question numbering
-  function cleanQuestionText(text) {
-    if (!text) return '';
-    let cleaned = text.replace(/^\s*(?:(?:Q|Question)\s*\d+[\.\:\)\-]?|\d+[\.\:\)\-]?|\(\d+\))\s*/i, '');
-    return processImageInText(cleaned);
-  }
-
-  // Helper: process base64 images inside text into {{IMG::...}} chips
-  function processImageInText(text) {
-    if (!text) return '';
-    const base64Regex = /(data:image\/(?:png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+)/g;
-    return text.replace(base64Regex, (match) => {
-      if (match.startsWith('{{IMG::')) return match;
-      return `{{IMG::${match}}}`;
-    });
-  }
-
-  function capitalize(str) {
-    if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-  }
-
-  // ------------------------------------------------------------
-  // 2. VALIDATION ENGINE
-  // ------------------------------------------------------------
-  function validateQuestions(questions) {
-    const allErrors = [];
-
+  // ── VALIDATION & DUPLICATE CHECKING ────────────────────────────────
+  function validateAll(questions) {
+    const meta = getMeta();
     questions.forEach((q, idx) => {
       q.errors = [];
-      q.isValid = true;
-      const qNum = idx + 1;
-
-      // 0. Metadata validations
-      if (!q.subject) addErr(q, q.startLine, `Question #${qNum}: Subject is missing. Specify @subject in LaTeX.`);
-      if (!q.klass) addErr(q, q.startLine, `Question #${qNum}: Class is missing. Specify @class (e.g. 11 or 12) in LaTeX.`);
-      if (!q.chapter) addErr(q, q.startLine, `Question #${qNum}: Chapter is missing. Specify @chapter in LaTeX.`);
-
-      // 1. Question Text
-      if (!q.question) {
-        addErr(q, q.startLine, `Question #${qNum}: Question text is missing.`);
+      const num = idx + 1;
+      if (!q.subject && !meta.subject) q.errors.push(`Question #${num}: Subject is required.`);
+      if (!q.klass && !meta.klass) q.errors.push(`Question #${num}: Class is required.`);
+      if (!q.chapter && !meta.chapter) q.errors.push(`Question #${num}: Chapter is required.`);
+      if (!q.question || q.question.length < 5) q.errors.push(`Question #${num}: Question text is missing or too short.`);
+      if (q.qType === 'mcq_single' || q.qType === 'mcq_multiple') {
+        if (!q.optA) q.errors.push(`Question #${num}: Option A is missing.`);
+        if (!q.optB) q.errors.push(`Question #${num}: Option B is missing.`);
       }
-
-      // 2. Options A-D (for MCQ)
-      if (q.qType === 'mcq_single' || !q.qType) {
-        if (!q.optA) addErr(q, q.startLine, `Question #${qNum}: Option A is missing.`);
-        if (!q.optB) addErr(q, q.startLine, `Question #${qNum}: Option B is missing.`);
-        if (!q.optC) addErr(q, q.startLine, `Question #${qNum}: Option C is missing.`);
-        if (!q.optD) addErr(q, q.startLine, `Question #${qNum}: Option D is missing.`);
-
-        if (q.optA && q.optB && q.optA === q.optB) addErr(q, q.startLine, `Question #${qNum}: Option A and Option B are identical.`);
-        if (q.optA && q.optC && q.optA === q.optC) addErr(q, q.startLine, `Question #${qNum}: Option A and Option C are identical.`);
-        if (q.optA && q.optD && q.optA === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option A and Option D are identical.`);
-        if (q.optB && q.optC && q.optB === q.optC) addErr(q, q.startLine, `Question #${qNum}: Option B and Option C are identical.`);
-        if (q.optB && q.optD && q.optB === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option B and Option D are identical.`);
-        if (q.optC && q.optD && q.optC === q.optD) addErr(q, q.startLine, `Question #${qNum}: Option C and Option D are identical.`);
-      }
-
-      // 3. Answer
-      if (!q.answer) {
-        addErr(q, q.startLine, `Question #${qNum}: Correct answer is missing.`);
-      } else {
-        const normAns = q.answer.trim().toUpperCase();
-        const validAnswers = ['A', 'B', 'C', 'D', '1', '2', '3', '4'];
-        if (!validAnswers.includes(normAns)) {
-          if (normAns === '1') q.answer = 'A';
-          else if (normAns === '2') q.answer = 'B';
-          else if (normAns === '3') q.answer = 'C';
-          else if (normAns === '4') q.answer = 'D';
-          else addErr(q, q.startLine, `Question #${qNum}: Invalid answer "${q.answer}". Must be A, B, C, or D.`);
-        }
-      }
-
-      // 4. Solution
-      if (!q.solutionText) {
-        addErr(q, q.startLine, `Question #${qNum}: Detailed solution is missing.`);
-      }
-
-      // 5. Difficulty
-      if (!q.difficulty) {
-        q.difficulty = 'Medium';
-      }
-
-      // 6. Concept
-      if (!q.concept) {
-        q.concept = 'General';
-      }
-
-      // 7. KaTeX Compilation Check
-      checkKaTeX(q, 'question', qNum);
-      checkKaTeX(q, 'optA', qNum);
-      checkKaTeX(q, 'optB', qNum);
-      checkKaTeX(q, 'optC', qNum);
-      checkKaTeX(q, 'optD', qNum);
-      checkKaTeX(q, 'solutionText', qNum);
-
-      if (q.errors.length > 0) {
-        q.isValid = false;
-        allErrors.push(...q.errors);
-      }
+      if (!q.answer && q.qType !== 'numerical') q.errors.push(`Question #${num}: Correct answer is missing.`);
+      q.isValid = q.errors.length === 0;
     });
-
-    return allErrors;
   }
 
-  function addErr(q, lineNum, message) {
-    const errObj = { line: lineNum, message };
-    q.errors.push(errObj);
-  }
-
-  function checkKaTeX(q, fieldName, qNum) {
-    const raw = q[fieldName];
-    if (!raw || typeof window.katex === 'undefined') return;
-
-    const regex = /\$([^$]+)\$/g;
-    let match;
-    while ((match = regex.exec(raw)) !== null) {
-      const expr = match[1];
-      try {
-        window.katex.renderToString(expr, { throwOnError: true });
-      } catch (err) {
-        addErr(q, q.startLine, `Question #${qNum}: Invalid LaTeX math formula "$${expr.slice(0, 30)}...": ${err.message}`);
-      }
-    }
-  }
-
-  // ------------------------------------------------------------
-  // 3. DUPLICATE CHECKER ENGINE
-  // ------------------------------------------------------------
-  function checkDuplicates(parsedList, dbList) {
+  function checkDuplicates(questions, dbList) {
     if (!dbList || !dbList.length) return;
-
-    parsedList.forEach((pq) => {
-      const normText = normalizeForComparison(pq.question);
-      if (!normText) return;
-
-      const dup = dbList.find((dbq) => {
-        if (pq.subject && dbq.subject !== pq.subject) return false;
-        if (pq.chapter && dbq.chapter !== pq.chapter) return false;
-        const dbNorm = normalizeForComparison(dbq.question);
-        return dbNorm && dbNorm === normText;
+    questions.forEach(q => {
+      const normQ = (q.question || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!normQ) return;
+      const match = dbList.find(dbq => {
+        if (q.subject && dbq.subject !== q.subject) return false;
+        const normDB = (dbq.question || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return normDB === normQ;
       });
-
-      if (dup) {
-        pq.isDuplicate = true;
-        pq.existingId = dup.id;
-      } else {
-        pq.isDuplicate = false;
-        pq.existingId = null;
-      }
+      q.isDuplicate = !!match;
+      q.existingId = match ? match.id : null;
     });
   }
 
-  function normalizeForComparison(str) {
-    if (!str) return '';
-    return str
-      .toLowerCase()
-      .replace(/\{\{img::[^}]+\}\}/gi, '')
-      .replace(/[^a-z0-9]/gi, '');
-  }
-
-  // ------------------------------------------------------------
-  // 4. EDITOR WITH DYNAMIC LINE NUMBERS & AUTO-SAVE
-  // ------------------------------------------------------------
-  function initEditor() {
-    const textarea = document.getElementById('bulkEditorTextarea');
-    const lineNumEl = document.getElementById('bulkLineNumbers');
-    if (!textarea || !lineNumEl) return;
-
-    const savedDraft = localStorage.getItem('bulk_import_draft');
-    textarea.value = savedDraft && savedDraft.trim() ? savedDraft : DEFAULT_SAMPLE_FORMAT;
-
-    updateLineNumbers();
-    pushHistory(textarea.value);
-    triggerReparse();
-
-    textarea.addEventListener('input', () => {
-      updateLineNumbers();
-      scheduleAutoSave();
-      triggerReparse();
-    });
-
-    textarea.addEventListener('scroll', () => {
-      lineNumEl.scrollTop = textarea.scrollTop;
-    });
-
-    textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
-        textarea.selectionStart = textarea.selectionEnd = start + 2;
-        updateLineNumbers();
-        triggerReparse();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) redoHistory();
-        else undoHistory();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        e.preventDefault();
-        redoHistory();
-      }
-    });
-  }
-
-  function updateLineNumbers() {
-    const textarea = document.getElementById('bulkEditorTextarea');
-    const lineNumEl = document.getElementById('bulkLineNumbers');
-    if (!textarea || !lineNumEl) return;
-
-    const lines = textarea.value.split('\n');
-    const count = Math.max(lines.length, 1);
-    const errorLines = new Set((state.errors || []).map((e) => e.line));
-
-    let html = '';
-    for (let i = 1; i <= count; i++) {
-      const isErr = errorLines.has(i);
-      html += `<div class="bulk-line-number ${isErr ? 'has-error' : ''}" onclick="window.BulkModule.jumpToLine(${i})" title="${isErr ? 'Error on line ' + i : 'Line ' + i}">${i}</div>`;
-    }
-    lineNumEl.innerHTML = html;
-    lineNumEl.scrollTop = textarea.scrollTop;
-  }
-
-  function jumpToLine(lineNum) {
-    const textarea = document.getElementById('bulkEditorTextarea');
-    if (!textarea) return;
-
-    const lines = textarea.value.split('\n');
-    let charCount = 0;
-
-    for (let i = 0; i < Math.min(lineNum - 1, lines.length); i++) {
-      charCount += lines[i].length + 1;
-    }
-
-    textarea.focus();
-    textarea.selectionStart = charCount;
-    textarea.selectionEnd = charCount + (lines[lineNum - 1] ? lines[lineNum - 1].length : 0);
-
-    const lineHeight = 19.5;
-    textarea.scrollTop = Math.max(0, (lineNum - 5) * lineHeight);
-  }
-
-  function scheduleAutoSave() {
-    if (state.autoSaveTimer) clearTimeout(state.autoSaveTimer);
-    const indicator = document.getElementById('bulkAutoSaveIndicator');
-    if (indicator) indicator.textContent = 'Saving draft...';
-
-    state.autoSaveTimer = setTimeout(() => {
-      const textarea = document.getElementById('bulkEditorTextarea');
-      if (textarea) {
-        localStorage.setItem('bulk_import_draft', textarea.value);
-        if (indicator) indicator.textContent = 'Draft auto-saved';
-      }
-    }, 1500);
-  }
-
-  function toggleWordWrap() {
-    const textarea = document.getElementById('bulkEditorTextarea');
-    const btn = document.getElementById('bulkWrapBtn');
-    if (!textarea || !btn) return;
-
-    state.wordWrap = !state.wordWrap;
-    if (state.wordWrap) {
-      textarea.classList.add('word-wrap');
-      btn.classList.add('active');
-    } else {
-      textarea.classList.remove('word-wrap');
-      btn.classList.remove('active');
-    }
-  }
-
-  function pushHistory(val) {
-    if (state.historyStack[state.historyIndex] === val) return;
-    state.historyStack = state.historyStack.slice(0, state.historyIndex + 1);
-    state.historyStack.push(val);
-    if (state.historyStack.length > 50) state.historyStack.shift();
-    state.historyIndex = state.historyStack.length - 1;
-  }
-
-  function undoHistory() {
-    if (state.historyIndex > 0) {
-      state.historyIndex--;
-      const val = state.historyStack[state.historyIndex];
-      const textarea = document.getElementById('bulkEditorTextarea');
-      if (textarea) {
-        textarea.value = val;
-        updateLineNumbers();
-        triggerReparse();
-      }
-    }
-  }
-
-  function redoHistory() {
-    if (state.historyIndex < state.historyStack.length - 1) {
-      state.historyIndex++;
-      const val = state.historyStack[state.historyIndex];
-      const textarea = document.getElementById('bulkEditorTextarea');
-      if (textarea) {
-        textarea.value = val;
-        updateLineNumbers();
-        triggerReparse();
-      }
-    }
-  }
-
-  function clearEditor() {
-    if (!confirm('Are you sure you want to clear the editor content?')) return;
-    const textarea = document.getElementById('bulkEditorTextarea');
-    if (textarea) {
-      textarea.value = '';
-      updateLineNumbers();
-      triggerReparse();
-    }
-  }
-
-  function restoreSample() {
-    const textarea = document.getElementById('bulkEditorTextarea');
-    if (textarea) {
-      textarea.value = DEFAULT_SAMPLE_FORMAT;
-      updateLineNumbers();
-      triggerReparse();
-    }
-  }
-
-  // ------------------------------------------------------------
-  // 5. DEBOUNCED REPARSE & RENDER PIPELINE
-  // ------------------------------------------------------------
-  function triggerReparse() {
-    if (state.debouncedParseTimer) clearTimeout(state.debouncedParseTimer);
-    state.debouncedParseTimer = setTimeout(() => {
-      runParsingAndRendering();
-    }, 250);
-  }
-
-  function runParsingAndRendering() {
-    const textarea = document.getElementById('bulkEditorTextarea');
-    if (!textarea) return;
-
-    state.rawText = textarea.value;
-
-    state.parsedQuestions = parseBulkText(state.rawText);
-    state.errors = validateQuestions(state.parsedQuestions);
-    checkDuplicates(state.parsedQuestions, state.existingQuestions);
-
-    updateLineNumbers();
-    renderPreviewCards();
-    renderErrorPanel();
-    renderSummaryBar();
-    updateConceptFilterDropdown();
-  }
-
-  // ------------------------------------------------------------
-  // 6. PREVIEW RENDERER & QUESTION CARDS
-  // ------------------------------------------------------------
-  function renderPreviewCards() {
-    const container = document.getElementById('bulkCardsContainer');
-    if (!container) return;
-
-    let filtered = state.parsedQuestions.filter((q) => {
-      if (state.filterSearch) {
-        const term = state.filterSearch.toLowerCase();
-        const text = (q.question + ' ' + q.concept + ' ' + q.subject + ' ' + q.chapter + ' ' + q.optA + ' ' + q.optB + ' ' + q.optC + ' ' + q.optD + ' ' + q.solutionText).toLowerCase();
-        if (!text.includes(term)) return false;
-      }
-      if (state.filterConcept && q.concept !== state.filterConcept) return false;
-      if (state.filterDifficulty && (q.difficulty || '').toLowerCase() !== state.filterDifficulty.toLowerCase()) return false;
-      if (state.filterStatus === 'valid' && !q.isValid) return false;
-      if (state.filterStatus === 'invalid' && q.isValid) return false;
-      if (state.filterDuplicate === 'duplicate' && !q.isDuplicate) return false;
-      if (state.filterDuplicate === 'unique' && q.isDuplicate) return false;
-      return true;
-    });
-
-    if (filtered.length === 0) {
-      container.innerHTML = `<div class="empty-state">No questions found ${state.parsedQuestions.length ? 'matching current filters' : 'in editor text. Paste LaTeX questions to begin.'}</div>`;
-      return;
-    }
-
-    container.innerHTML = '';
-
-    filtered.forEach((q, idx) => {
-      const card = document.createElement('div');
-      const cardClass = q.ignored
-        ? 'ignored-card'
-        : q.isDuplicate
-        ? 'duplicate-card'
-        : q.isValid
-        ? 'valid-card'
-        : 'invalid-card';
-
-      card.className = `bulk-q-card ${cardClass}`;
-
-      const topRow = document.createElement('div');
-      topRow.className = 'bulk-card-top';
-
-      const pillsRow = document.createElement('div');
-      pillsRow.className = 'bulk-card-pills';
-
-      const numBadge = document.createElement('span');
-      numBadge.className = 'bulk-card-num-tag';
-      numBadge.textContent = `#${idx + 1}`;
-
-      if (q.subject) {
-        const subjPill = document.createElement('span');
-        subjPill.className = 'bulk-pill';
-        subjPill.style.background = 'rgba(201,162,39,0.15)';
-        subjPill.style.color = 'var(--gold)';
-        subjPill.textContent = q.subject;
-        pillsRow.appendChild(subjPill);
-      }
-
-      if (q.klass) {
-        const klassPill = document.createElement('span');
-        klassPill.className = 'bulk-pill';
-        klassPill.style.background = 'rgba(255,255,255,0.08)';
-        klassPill.style.color = '#ccc';
-        klassPill.textContent = `Class ${q.klass}`;
-        pillsRow.appendChild(klassPill);
-      }
-
-
-      const diffPill = document.createElement('span');
-      const diffClass = (q.difficulty || 'Medium').toLowerCase();
-      diffPill.className = `bulk-pill bulk-pill-${diffClass}`;
-      diffPill.textContent = q.difficulty || 'Medium';
-
-      const statusPill = document.createElement('span');
-      statusPill.className = `bulk-pill ${q.isValid ? 'bulk-pill-status-valid' : 'bulk-pill-status-invalid'}`;
-      statusPill.textContent = q.isValid ? '✓ Valid' : '✕ Invalid';
-
-      pillsRow.appendChild(numBadge);
-      pillsRow.appendChild(diffPill);
-      pillsRow.appendChild(statusPill);
-
-
-      if (q.isDuplicate) {
-        const dupPill = document.createElement('span');
-        dupPill.className = 'bulk-pill bulk-pill-duplicate';
-        dupPill.textContent = '⚠ Duplicate';
-        pillsRow.appendChild(dupPill);
-      }
-
-      const actionsRow = document.createElement('div');
-      actionsRow.className = 'bulk-card-actions';
-
-      actionsRow.innerHTML = `
-        <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;">
-          <input type="checkbox" ${q.ignored ? '' : 'checked'} onchange="window.BulkModule.toggleIgnore(${state.parsedQuestions.indexOf(q)})" title="Include in import"> Select
-        </label>
-        <button class="bulk-tool-btn" onclick="window.BulkModule.toggleCardCollapse(${state.parsedQuestions.indexOf(q)})" title="Expand/Collapse">
-          ${q.collapsed ? '▼' : '▲'}
-        </button>
-        <button class="bulk-tool-btn" onclick="window.BulkModule.openCardEditor(${state.parsedQuestions.indexOf(q)})" title="Edit Question">
-          ✎
-        </button>
-        <button class="bulk-tool-btn" style="color:var(--danger);" onclick="window.BulkModule.deleteCard(${state.parsedQuestions.indexOf(q)})" title="Delete Question">
-          ✕
-        </button>
-      `;
-
-      topRow.appendChild(pillsRow);
-      topRow.appendChild(actionsRow);
-      card.appendChild(topRow);
-
-      if (!q.collapsed) {
-        if (q.chapter || q.concept) {
-          const metaLine = document.createElement('div');
-          metaLine.style.fontSize = '12px';
-          metaLine.style.color = 'var(--muted)';
-          metaLine.style.marginBottom = '8px';
-          let metaText = '';
-          if (q.chapter) metaText += `Chapter: ${q.chapter}`;
-          if (q.concept && q.concept !== 'General') metaText += (metaText ? '  ·  ' : '') + `Concept: ${q.concept}`;
-          metaLine.textContent = metaText;
-          card.appendChild(metaLine);
-        }
-
-        const qBody = document.createElement('div');
-        qBody.className = 'bulk-card-qbody';
-        qBody.appendChild(renderStaticPreviewNode(q.question || '(Empty question text)'));
-        card.appendChild(qBody);
-
-        const optsGrid = document.createElement('div');
-        optsGrid.className = 'bulk-card-options';
-
-        ['A', 'B', 'C', 'D'].forEach((letter) => {
-          const optVal = q['opt' + letter] || '';
-          const isCorrect = q.answer === letter;
-
-          const optEl = document.createElement('div');
-          optEl.className = `bulk-card-opt ${isCorrect ? 'is-correct' : ''}`;
-          optEl.appendChild(document.createTextNode(`${letter}: `));
-          optEl.appendChild(renderStaticPreviewNode(optVal));
-          if (isCorrect) {
-            const check = document.createElement('span');
-            check.style.color = 'var(--ok)';
-            check.style.marginLeft = '6px';
-            check.textContent = '✓';
-            optEl.appendChild(check);
-          }
-          optsGrid.appendChild(optEl);
-        });
-
-        card.appendChild(optsGrid);
-
-        if (q.solutionText) {
-          const solBox = document.createElement('div');
-          solBox.className = 'bulk-card-solution';
-          const solTitle = document.createElement('div');
-          solTitle.className = 'bulk-card-sol-title';
-          solTitle.textContent = 'Detailed Solution';
-          solBox.appendChild(solTitle);
-          solBox.appendChild(renderStaticPreviewNode(q.solutionText));
-          card.appendChild(solBox);
-        }
-
-        if (q.isDuplicate) {
-          const dupBar = document.createElement('div');
-          dupBar.className = 'bulk-dup-actions';
-          dupBar.innerHTML = `
-            <span class="bulk-dup-label">Duplicate Found in DB:</span>
-            <select class="bulk-filter-select" style="padding:4px 24px 4px 8px;font-size:12px;" onchange="window.BulkModule.setDupAction(${state.parsedQuestions.indexOf(q)}, this.value)">
-              <option value="skip" ${q.dupAction === 'skip' ? 'selected' : ''}>Skip (Do not import)</option>
-              <option value="overwrite" ${q.dupAction === 'overwrite' ? 'selected' : ''}>Overwrite existing</option>
-              <option value="keep_both" ${q.dupAction === 'keep_both' ? 'selected' : ''}>Keep both (Import as new)</option>
-            </select>
-          `;
-          card.appendChild(dupBar);
-        }
-      }
-
-      container.appendChild(card);
-    });
-  }
-
-  function renderStaticPreviewNode(rawText) {
-    if (typeof window.buildEquationFragment === 'function') {
-      const span = document.createElement('span');
-      span.className = 'li-preview';
-      span.appendChild(window.buildEquationFragment(rawText || ''));
-      return span;
+  // ── RENDER ENGINE ──────────────────────────────────────────────────
+  function renderCardNode(text) {
+    if (!text) return document.createTextNode('');
+    if (typeof buildEquationFragment === 'function') {
+      return buildEquationFragment(text);
     }
     const span = document.createElement('span');
-    span.textContent = rawText || '';
+    span.textContent = text;
     return span;
   }
 
-  // ------------------------------------------------------------
-  // 7. ERROR PANEL ENGINE
-  // ------------------------------------------------------------
+  function renderCard(q, idx) {
+    const card = document.createElement('div');
+    card.className = 'bq-card' +
+      (q.isValid ? '' : ' is-invalid') +
+      (q.isDuplicate ? ' is-duplicate' : '') +
+      (q.ignored ? ' is-ignored' : '');
+    card.id = 'bqCard_' + idx;
+
+    const top = document.createElement('div');
+    top.className = 'bq-card-top';
+
+    top.appendChild(createBadge('num', '#' + (idx + 1)));
+    top.appendChild(createBadge('type', QTYPE_LABELS[q.qType] || q.qType));
+    top.appendChild(createBadge((q.difficulty || 'Medium').toLowerCase(), q.difficulty));
+    top.appendChild(createBadge(q.isValid ? 'valid' : 'invalid', q.isValid ? '✓ Valid' : '✕ Invalid'));
+    if (q.isDuplicate) top.appendChild(createBadge('dup', '⚠ Duplicate'));
+    top.appendChild(createBadge('conf', 'AI Conf: ' + (q.confidenceScore || 70) + '%'));
+
+    const acts = document.createElement('div');
+    acts.className = 'bq-card-actions';
+
+    const selLabel = document.createElement('label');
+    selLabel.style.cssText = 'font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !q.ignored;
+    cb.onchange = () => {
+      q.ignored = !cb.checked;
+      updateStats();
+      renderCards();
+    };
+    selLabel.appendChild(cb);
+    selLabel.appendChild(document.createTextNode('Select'));
+    acts.appendChild(selLabel);
+
+    acts.appendChild(createToolBtn(q.collapsed ? '▼' : '▲', 'Expand/Collapse', () => {
+      q.collapsed = !q.collapsed;
+      renderCards();
+    }));
+    acts.appendChild(createToolBtn('✎', 'Edit', () => openCardEditor(idx)));
+    acts.appendChild(createToolBtn('✕', 'Delete', () => {
+      state.parsedQuestions.splice(idx, 1);
+      renderCards();
+      updateStats();
+    }, true));
+
+    top.appendChild(acts);
+    card.appendChild(top);
+
+    const metaLine = document.createElement('div');
+    metaLine.className = 'bq-card-meta';
+    metaLine.textContent = (q.subject || '') + ' · Class ' + (q.klass || '') + ' · Chapter: ' + (q.chapter || '') + (q.concept ? ' · Concept: ' + q.concept : '');
+    card.appendChild(metaLine);
+
+    if (q.collapsed) return card;
+
+    const body = document.createElement('div');
+    body.className = 'bq-card-body';
+
+    const qtext = document.createElement('div');
+    qtext.className = 'bq-card-qtext';
+    qtext.appendChild(renderCardNode(q.question || ''));
+    body.appendChild(qtext);
+
+    if (q.optA || q.optB || q.optC || q.optD) {
+      const optsGrid = document.createElement('div');
+      optsGrid.className = 'bq-card-opts';
+      ['A', 'B', 'C', 'D'].forEach(letter => {
+        const optVal = q['opt' + letter];
+        if (!optVal) return;
+        const isCorrect = (q.answer || '').toUpperCase().includes(letter);
+        const optEl = document.createElement('div');
+        optEl.className = 'bq-opt' + (isCorrect ? ' correct' : '');
+        optEl.appendChild(document.createTextNode(letter + ': '));
+        optEl.appendChild(renderCardNode(optVal));
+        if (isCorrect) {
+          const ck = document.createElement('span');
+          ck.textContent = ' ✓';
+          optEl.appendChild(ck);
+        }
+        optsGrid.appendChild(optEl);
+      });
+      body.appendChild(optsGrid);
+    }
+
+    if (q.answer) {
+      const ansEl = document.createElement('div');
+      ansEl.className = 'bq-card-answer';
+      ansEl.textContent = '✓ Correct Answer: ' + q.answer;
+      body.appendChild(ansEl);
+    }
+
+    if (q.solutionText) {
+      const solEl = document.createElement('div');
+      solEl.className = 'bq-card-solution';
+      solEl.appendChild(document.createTextNode('SOLUTION: '));
+      solEl.appendChild(renderCardNode(q.solutionText));
+      body.appendChild(solEl);
+    }
+
+    card.appendChild(body);
+
+    if (q.errors && q.errors.length > 0) {
+      const errBox = document.createElement('div');
+      errBox.className = 'bq-card-errors';
+      q.errors.forEach(e => {
+        const item = document.createElement('div');
+        item.className = 'bq-err-item';
+        item.textContent = '⚠ ' + e;
+        errBox.appendChild(item);
+      });
+      card.appendChild(errBox);
+    }
+
+    if (q.isDuplicate) {
+      const dupBanner = document.createElement('div');
+      dupBanner.className = 'bq-card-dup-banner';
+      dupBanner.appendChild(document.createTextNode('⚠ Duplicate question detected in database. Action: '));
+      ['skip', 'overwrite', 'keep_both'].forEach(act => {
+        const btn = document.createElement('button');
+        btn.className = 'bq-dup-btn' + (q.dupAction === act ? ' active' : '');
+        btn.textContent = act.replace('_', ' ').toUpperCase();
+        btn.onclick = () => {
+          q.dupAction = act;
+          renderCards();
+        };
+        dupBanner.appendChild(btn);
+      });
+      card.appendChild(dupBanner);
+    }
+
+    return card;
+  }
+
+  function createBadge(cls, text) {
+    const s = document.createElement('span');
+    s.className = 'bq-badge ' + cls;
+    s.textContent = text;
+    return s;
+  }
+
+  function createToolBtn(text, title, onClick, isDanger) {
+    const btn = document.createElement('button');
+    btn.className = 'bq-tool-btn' + (isDanger ? ' danger' : '');
+    btn.title = title;
+    btn.textContent = text;
+    btn.onclick = onClick;
+    return btn;
+  }
+
+  function getFiltered() {
+    const search = state.filterSearch.toLowerCase();
+    return state.parsedQuestions.filter(q => {
+      if (state.filterType && q.qType !== state.filterType) return false;
+      if (state.filterDiff && (q.difficulty || 'Medium').toLowerCase() !== state.filterDiff) return false;
+      if (state.filterStatus === 'valid' && !q.isValid) return false;
+      if (state.filterStatus === 'invalid' && q.isValid) return false;
+      if (state.filterDup === 'duplicate' && !q.isDuplicate) return false;
+      if (state.filterDup === 'unique' && q.isDuplicate) return false;
+      if (search && !(q.question || '').toLowerCase().includes(search) && !(q.concept || '').toLowerCase().includes(search)) return false;
+      return true;
+    });
+  }
+
+  function renderCards() {
+    const container = document.getElementById('bqCardsContainer') || document.getElementById('bulkCardsContainer');
+    if (!container) return;
+    const filtered = getFiltered();
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="bq-empty"><div class="bq-empty-icon">📭</div><div class="bq-empty-text">' +
+        (state.parsedQuestions.length === 0 ? 'Paste questions in the editor to parse and preview.' : 'No questions match the selected filters.') +
+        '</div></div>';
+      updateStats();
+      renderErrorPanel();
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    filtered.forEach((q) => {
+      const realIdx = state.parsedQuestions.indexOf(q);
+      frag.appendChild(renderCard(q, realIdx));
+    });
+
+    container.innerHTML = '';
+    container.appendChild(frag);
+
+    updateStats();
+    renderErrorPanel();
+  }
+
+  function updateStats() {
+    const qs = state.parsedQuestions;
+    const total = qs.length;
+    const valid = qs.filter(q => q.isValid && !q.ignored).length;
+    const invalid = qs.filter(q => !q.isValid).length;
+    const dup = qs.filter(q => q.isDuplicate).length;
+    const ready = qs.filter(q => q.isValid && !q.ignored && (!q.isDuplicate || q.dupAction !== 'skip')).length;
+
+    ['bqStatTotal', 'bulkStatTotal'].forEach(id => setTxt(id, total));
+    ['bqStatValid', 'bulkStatValid'].forEach(id => setTxt(id, valid));
+    ['bqStatInvalid', 'bulkStatInvalid'].forEach(id => setTxt(id, invalid));
+    ['bqStatDup', 'bulkStatDup'].forEach(id => setTxt(id, dup));
+    ['bqStatReady', 'bulkStatReady'].forEach(id => setTxt(id, ready));
+
+    const fill = document.getElementById('bqProgressFill');
+    if (fill) fill.style.width = total > 0 ? ((valid / total) * 100) + '%' : '0%';
+  }
+
+  function setTxt(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
   function renderErrorPanel() {
-    const panel = document.getElementById('bulkErrorCard');
-    const listEl = document.getElementById('bulkErrorList');
-    const countEl = document.getElementById('bulkErrorCount');
-    if (!panel || !listEl) return;
+    const panel = document.getElementById('bqErrorPanel') || document.getElementById('bulkErrorCard');
+    const list = document.getElementById('bqErrorList') || document.getElementById('bulkErrorList');
+    const count = document.getElementById('bqErrorCount') || document.getElementById('bulkErrorCount');
+    if (!panel || !list) return;
 
-    const totalErrors = state.errors.length;
-    if (countEl) countEl.textContent = `${totalErrors} Issue${totalErrors === 1 ? '' : 's'} Found`;
+    const allErrors = [];
+    state.parsedQuestions.forEach(q => (q.errors || []).forEach(e => allErrors.push({ q, e })));
 
-    if (totalErrors === 0) {
+    if (allErrors.length === 0) {
       panel.style.display = 'none';
       return;
     }
 
     panel.style.display = 'block';
-    listEl.innerHTML = '';
+    if (count) count.textContent = allErrors.length + ' Issues';
 
-    state.errors.forEach((err) => {
-      const item = document.createElement('div');
-      item.className = 'bulk-error-item';
-      item.onclick = () => jumpToLine(err.line);
-
-      item.innerHTML = `
-        <span class="bulk-error-line">Line ${err.line}</span>
-        <span class="bulk-error-msg">${escapeHtml(err.message)}</span>
-      `;
-      listEl.appendChild(item);
+    list.innerHTML = '';
+    allErrors.forEach(({ q, e }) => {
+      const idx = state.parsedQuestions.indexOf(q);
+      const row = document.createElement('div');
+      row.className = 'bq-error-row';
+      row.innerHTML = '<span class="bq-err-qnum">Q#' + (idx + 1) + '</span><span class="bq-err-msg">' + escapeHtml(e) + '</span>';
+      row.onclick = () => {
+        const cardEl = document.getElementById('bqCard_' + idx);
+        if (cardEl) cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      };
+      list.appendChild(row);
     });
   }
 
-  // ------------------------------------------------------------
-  // 8. IMPORT SUMMARY BAR
-  // ------------------------------------------------------------
-  function renderSummaryBar() {
-    const totalEl = document.getElementById('bulkStatTotal');
-    const validEl = document.getElementById('bulkStatValid');
-    const invalidEl = document.getElementById('bulkStatInvalid');
-    const dupEl = document.getElementById('bulkStatDup');
-    const readyEl = document.getElementById('bulkStatReady');
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
 
-    const total = state.parsedQuestions.length;
-    const validCount = state.parsedQuestions.filter((q) => q.isValid).length;
-    const invalidCount = state.parsedQuestions.filter((q) => !q.isValid).length;
-    const dupCount = state.parsedQuestions.filter((q) => q.isDuplicate).length;
+  function runParse() {
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    if (!ta) return;
+    const text = ta.value;
+    if (!text.trim()) {
+      state.parsedQuestions = [];
+      renderCards();
+      return;
+    }
 
-    const readyCount = state.parsedQuestions.filter((q) => {
-      if (q.ignored || !q.isValid) return false;
-      if (q.isDuplicate && q.dupAction === 'skip') return false;
-      return true;
-    }).length;
+    const questions = parseText(text);
+    validateAll(questions);
+    checkDuplicates(questions, state.existingQuestions);
+    state.parsedQuestions = questions;
+    renderCards();
+  }
 
-    if (totalEl) totalEl.textContent = total;
-    if (validEl) validEl.textContent = validCount;
-    if (invalidEl) invalidEl.textContent = invalidCount;
-    if (dupEl) dupEl.textContent = dupCount;
-    if (readyEl) readyEl.textContent = readyCount;
+  function scheduleReparse() {
+    clearTimeout(state.debounceTimer);
+    state.debounceTimer = setTimeout(runParse, 800);
+  }
 
-    const importBtn = document.getElementById('bulkImportBtn');
-    if (importBtn) {
-      importBtn.disabled = readyCount === 0;
+  function initEditor() {
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    const ln = document.getElementById('bqLineNumbers') || document.getElementById('bulkLineNumbers');
+    if (!ta) return;
+
+    function updateLineNumbers() {
+      if (!ln) return;
+      const count = ta.value.split('\n').length;
+      let nums = '';
+      for (let i = 1; i <= count; i++) nums += i + '\n';
+      ln.textContent = nums;
+      ln.scrollTop = ta.scrollTop;
+    }
+
+    ta.addEventListener('input', () => {
+      updateLineNumbers();
+      scheduleReparse();
+      autoSave();
+      pushHistory(ta.value);
+    });
+
+    ta.addEventListener('scroll', () => {
+      if (ln) ln.scrollTop = ta.scrollTop;
+    });
+
+    ta.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault();
+        undoHistory();
+      } else if (e.ctrlKey && e.key === 'y') {
+        e.preventDefault();
+        redoHistory();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        ta.value = ta.value.substring(0, start) + '  ' + ta.value.substring(end);
+        ta.selectionStart = ta.selectionEnd = start + 2;
+        updateLineNumbers();
+      }
+    });
+
+    const draft = localStorage.getItem('bq_draft_v2');
+    if (draft) {
+      ta.value = draft;
+      updateLineNumbers();
+      scheduleReparse();
+    } else {
+      updateLineNumbers();
     }
   }
 
-  // ------------------------------------------------------------
-  // 9. CARD INTERACTION HANDLERS
-  // ------------------------------------------------------------
-  function toggleCardCollapse(index) {
-    if (state.parsedQuestions[index]) {
-      state.parsedQuestions[index].collapsed = !state.parsedQuestions[index].collapsed;
-      renderPreviewCards();
+  function pushHistory(text) {
+    if (state.historyStack[state.historyIndex] === text) return;
+    state.historyStack = state.historyStack.slice(0, state.historyIndex + 1);
+    state.historyStack.push(text);
+    if (state.historyStack.length > 100) state.historyStack.shift();
+    state.historyIndex = state.historyStack.length - 1;
+  }
+
+  function undoHistory() {
+    if (state.historyIndex <= 0) return;
+    state.historyIndex--;
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    if (ta) {
+      ta.value = state.historyStack[state.historyIndex];
+      scheduleReparse();
     }
   }
 
-  function toggleIgnore(index) {
-    if (state.parsedQuestions[index]) {
-      state.parsedQuestions[index].ignored = !state.parsedQuestions[index].ignored;
-      renderPreviewCards();
-      renderSummaryBar();
+  function redoHistory() {
+    if (state.historyIndex >= state.historyStack.length - 1) return;
+    state.historyIndex++;
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    if (ta) {
+      ta.value = state.historyStack[state.historyIndex];
+      scheduleReparse();
     }
   }
 
-  function deleteCard(index) {
-    if (confirm('Delete this question from import list?')) {
-      state.parsedQuestions.splice(index, 1);
-      renderPreviewCards();
-      renderErrorPanel();
-      renderSummaryBar();
+  function autoSave() {
+    clearTimeout(state.autoSaveTimer);
+    state.autoSaveTimer = setTimeout(() => {
+      const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+      if (ta) localStorage.setItem('bq_draft_v2', ta.value);
+    }, 1500);
+  }
+
+  function toggleWordWrap() {
+    state.wordWrap = !state.wordWrap;
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    const btn = document.getElementById('bqWrapBtn') || document.getElementById('bulkWrapBtn');
+    if (ta) ta.classList.toggle('word-wrap', state.wordWrap);
+    if (btn) btn.classList.toggle('active', state.wordWrap);
+  }
+
+  function clearEditor() {
+    if (!confirm('Clear editor content?')) return;
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    if (ta) {
+      ta.value = '';
+      pushHistory('');
+      scheduleReparse();
+    }
+    localStorage.removeItem('bq_draft_v2');
+  }
+
+  function restoreSample() {
+    const sample = `1. Which of the following is diamagnetic in nature?
+(A) Zn2+
+(B) Ni2+
+(C) Co2+
+(D) Cu2+
+Answer: A
+Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10. All electrons become paired, making it diamagnetic.
+
+2. Which statement is correct regarding ionic compounds?
+(A) They have low melting points.
+(B) They conduct electricity in solid state.
+(C) They have high lattice energy.
+(D) They are non-polar.
+Answer: C
+Solution: Ionic compounds have strong electrostatic forces leading to high lattice energy.
+
+3. Assertion: Light waves can travel through vacuum.
+Reason: Light is an electromagnetic wave and does not require a material medium for propagation.
+(A) Both A and R are true and R is correct explanation.
+(B) Both A and R are true but R is not correct explanation.
+(C) A is true but R is false.
+(D) A is false but R is true.
+Answer: A
+Solution: Electromagnetic waves self-propagate through electric and magnetic field oscillations.`;
+
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    if (ta) {
+      ta.value = sample;
+      pushHistory(sample);
+      scheduleReparse();
     }
   }
 
-  function setDupAction(index, action) {
-    if (state.parsedQuestions[index]) {
-      state.parsedQuestions[index].dupAction = action;
-      renderSummaryBar();
-    }
-  }
-
-  function openCardEditor(index) {
-    const q = state.parsedQuestions[index];
+  function openCardEditor(idx) {
+    state.editingIndex = idx;
+    const q = state.parsedQuestions[idx];
     if (!q) return;
-    state.editingIndex = index;
 
-    document.getElementById('bulkEditConcept').value = q.concept || '';
-    document.getElementById('bulkEditDifficulty').value = q.difficulty || 'Medium';
-    document.getElementById('bulkEditQuestion').value = q.question || '';
-    document.getElementById('bulkEditOptA').value = q.optA || '';
-    document.getElementById('bulkEditOptB').value = q.optB || '';
-    document.getElementById('bulkEditOptC').value = q.optC || '';
-    document.getElementById('bulkEditOptD').value = q.optD || '';
-    document.getElementById('bulkEditAnswer').value = q.answer || 'A';
-    document.getElementById('bulkEditSolution').value = q.solutionText || '';
+    const modal = document.getElementById('bqEditModal') || document.getElementById('bulkEditModal');
+    if (!modal) return;
 
-    const modal = document.getElementById('bulkEditModal');
-    if (modal) modal.classList.add('visible');
+    setVal('bqEditQuestion', q.question || '');
+    setVal('bqEditOptA', q.optA || '');
+    setVal('bqEditOptB', q.optB || '');
+    setVal('bqEditOptC', q.optC || '');
+    setVal('bqEditOptD', q.optD || '');
+    setVal('bqEditAnswer', q.answer || 'A');
+    setVal('bqEditSolution', q.solutionText || '');
+    setVal('bqEditConcept', q.concept || '');
+    setVal('bqEditDifficulty', q.difficulty || 'Medium');
+    setVal('bqEditQType', q.qType || 'mcq_single');
+
+    modal.style.display = 'flex';
+    modal.classList.add('open');
   }
 
   function closeCardEditor() {
-    const modal = document.getElementById('bulkEditModal');
-    if (modal) modal.classList.remove('visible');
+    const modal = document.getElementById('bqEditModal') || document.getElementById('bulkEditModal');
+    if (modal) {
+      modal.style.display = 'none';
+      modal.classList.remove('open');
+    }
     state.editingIndex = null;
   }
 
   function saveCardEditor() {
-    if (state.editingIndex === null) return;
-    const q = state.parsedQuestions[state.editingIndex];
-    if (!q) return;
-
-    q.concept = document.getElementById('bulkEditConcept').value.trim();
-    q.difficulty = document.getElementById('bulkEditDifficulty').value;
-    q.question = document.getElementById('bulkEditQuestion').value.trim();
-    q.optA = document.getElementById('bulkEditOptA').value.trim();
-    q.optB = document.getElementById('bulkEditOptB').value.trim();
-    q.optC = document.getElementById('bulkEditOptC').value.trim();
-    q.optD = document.getElementById('bulkEditOptD').value.trim();
-    q.answer = document.getElementById('bulkEditAnswer').value;
-    q.solutionText = document.getElementById('bulkEditSolution').value.trim();
-
-    closeCardEditor();
-    state.errors = validateQuestions(state.parsedQuestions);
-    renderPreviewCards();
-    renderErrorPanel();
-    renderSummaryBar();
-    if (typeof showToast === 'function') showToast('Question updated in preview.');
-  }
-
-  // ------------------------------------------------------------
-  // 10. EXPORT & SEARCH ENGINE
-  // ------------------------------------------------------------
-  function updateConceptFilterDropdown() {
-    const sel = document.getElementById('bulkFilterConcept');
-    if (!sel) return;
-    const current = sel.value;
-
-    const concepts = Array.from(new Set(state.parsedQuestions.map((q) => q.concept).filter(Boolean)));
-    sel.innerHTML = '<option value="">All Concepts</option>' + concepts.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-    if (concepts.includes(current)) sel.value = current;
-  }
-
-  function exportQuestions(format) {
-    const validQuestions = state.parsedQuestions.filter((q) => q.isValid && !q.ignored);
-    if (!validQuestions.length) {
-      if (typeof showToast === 'function') showToast('No valid questions to export.', true);
+    const idx = state.editingIndex;
+    if (idx === null || !state.parsedQuestions[idx]) {
+      closeCardEditor();
       return;
     }
+    const q = state.parsedQuestions[idx];
+    q.question = gVal('bqEditQuestion');
+    q.optA = gVal('bqEditOptA');
+    q.optB = gVal('bqEditOptB');
+    q.optC = gVal('bqEditOptC');
+    q.optD = gVal('bqEditOptD');
+    q.answer = gVal('bqEditAnswer');
+    q.solutionText = gVal('bqEditSolution');
+    q.concept = gVal('bqEditConcept');
+    q.topic = q.concept;
+    q.difficulty = gVal('bqEditDifficulty');
+    q.qType = gVal('bqEditQType');
 
-    let fileContent = '';
-    let fileName = `questions_export_${Date.now()}`;
-    let mimeType = 'text/plain';
-
-    if (format === 'json') {
-      fileContent = JSON.stringify(validQuestions, null, 2);
-      fileName += '.json';
-      mimeType = 'application/json';
-    } else if (format === 'txt') {
-      let txt = '';
-      let lastConcept = '';
-      validQuestions.forEach((q) => {
-        if (q.subject) txt += `@subject\n${q.subject}\n\n`;
-        if (q.klass) txt += `@class\n${q.klass}\n\n`;
-        if (q.chapter) txt += `@chapter\n${q.chapter}\n\n`;
-        if (q.concept !== lastConcept) {
-          txt += `@concept\n${q.concept}\n\n`;
-          lastConcept = q.concept;
-        }
-        txt += `@question\n${q.question}\n\n`;
-        txt += `@optionA\n${q.optA}\n\n`;
-        txt += `@optionB\n${q.optB}\n\n`;
-        txt += `@optionC\n${q.optC}\n\n`;
-        txt += `@optionD\n${q.optD}\n\n`;
-        txt += `@answer\n${q.answer}\n\n`;
-        txt += `@solution\n${q.solutionText}\n\n`;
-        txt += `@difficulty\n${q.difficulty}\n\n`;
-        txt += `@end\n\n`;
-      });
-      fileContent = txt;
-      fileName += '.txt';
-    } else if (format === 'latex') {
-      let latex = `\\documentclass{article}\n\\usepackage{amsmath,amssymb}\n\\begin{document}\n\n`;
-      validQuestions.forEach((q, idx) => {
-        latex += `\\section*{Question ${idx + 1} (${q.subject || ''} - Class ${q.klass || ''} - ${q.concept || ''})}\n`;
-        latex += `${q.question}\n\n`;
-        latex += `\\begin{enumerate}[(A)]\n`;
-        latex += `  \\item ${q.optA}\n  \\item ${q.optB}\n  \\item ${q.optC}\n  \\item ${q.optD}\n`;
-        latex += `\\end{enumerate}\n\n`;
-        latex += `\\textbf{Correct Answer:} ${q.answer}\\\\\n`;
-        latex += `\\textbf{Solution:} ${q.solutionText}\n\n\\hrulefill\n\n`;
-      });
-      latex += `\\end{document}`;
-      fileContent = latex;
-      fileName += '.tex';
-    }
-
-    const blob = new Blob([fileContent], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
-    if (typeof showToast === 'function') showToast(`Exported ${validQuestions.length} questions as ${format.toUpperCase()}`);
+    validateAll(state.parsedQuestions);
+    closeCardEditor();
+    renderCards();
   }
 
-  // ------------------------------------------------------------
-  // 11. BATCH DATABASE IMPORT EXECUTION
-  // ------------------------------------------------------------
+  function setVal(id, v) {
+    const el = document.getElementById(id);
+    if (el) el.value = v;
+  }
+  function gVal(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+  }
+
   async function executeBulkImport() {
     if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('edit')) {
       if (typeof showToast === 'function') showToast('You do not have permission to import questions.', true);
       return;
     }
 
-    // Filter ready questions
-    const importList = state.parsedQuestions.filter((q) => {
+    const importList = state.parsedQuestions.filter(q => {
       if (q.ignored) return false;
       if (!q.isValid) return false;
       if (q.isDuplicate && q.dupAction === 'skip') return false;
@@ -1163,83 +915,75 @@ Medium
     });
 
     if (!importList.length) {
-      if (typeof showToast === 'function') showToast('No ready valid questions to import. Check validation errors.', true);
+      if (typeof showToast === 'function') showToast('No valid questions ready to import.', true);
       return;
     }
 
-    if (!confirm(`Import ${importList.length} validated question(s) into the database?`)) return;
+    if (!confirm(`Import ${importList.length} validated question(s) into database?`)) return;
 
-    const importBtn = document.getElementById('bulkImportBtn');
-    if (importBtn) {
-      importBtn.disabled = true;
-      importBtn.textContent = 'Importing...';
+    const btn = document.getElementById('bqImportBtn') || document.getElementById('bulkImportBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Importing...';
     }
 
-    // Map each parsed question into backend JSON contract
-    const payloadArray = importList.map((q) => {
-    return {
-        subject: q.subject,
-        klass: q.klass,
-        chapter: q.chapter,
-        topic: q.concept || 'General',
-        exams: q.exams && q.exams.length ? q.exams : ['NEET'],
-        qType: q.qType || 'mcq_single',
-        question: q.question,
-        optA: q.optA || '',
-        optB: q.optB || '',
-        optC: q.optC || '',
-        optD: q.optD || '',
-        assertion: q.assertion || '',
-        reason: q.reason || '',
-        statement1: q.statement1 || '',
-        statement2: q.statement2 || '',
-        predefOptions: q.predefOptions || '',
-        columnA: q.columnA || [],
-        columnB: q.columnB || [],
-        matchOptions: q.matchOptions || {},
-        numAnswer: q.numAnswer || '',
-        correctOption: q.answer,
-        solutionText: q.solutionText || '',
-      };
-    });
+    const meta = getMeta();
+    const payload = importList.map(q => ({
+      subject: q.subject || meta.subject,
+      klass: q.klass || meta.klass,
+      chapter: q.chapter || meta.chapter,
+      topic: q.concept || q.topic || 'General',
+      exams: q.exams && q.exams.length ? q.exams : meta.exams,
+      qType: q.qType || 'mcq_single',
+      question: q.question,
+      optA: q.optA || '',
+      optB: q.optB || '',
+      optC: q.optC || '',
+      optD: q.optD || '',
+      assertion: q.assertion || '',
+      reason: q.reason || '',
+      statement1: q.statement1 || '',
+      statement2: q.statement2 || '',
+      predefOptions: q.predefOptions || '',
+      columnA: q.columnA || [],
+      columnB: q.columnB || [],
+      matchOptions: q.matchOptions || {},
+      numAnswer: q.numAnswer || '',
+      correctOption: q.answer,
+      solutionText: q.solutionText || '',
+    }));
 
     try {
       const res = await apiReq('/api/questions/batch', {
         method: 'POST',
-        body: JSON.stringify(payloadArray),
+        body: JSON.stringify(payload),
       });
 
       if (typeof showToast === 'function') {
-        showToast(`Successfully imported ${res.count || payloadArray.length} questions!`);
+        showToast(`Successfully imported ${res.count || payload.length} questions!`);
       }
 
-      // Refresh saved questions list in parent system
       if (typeof window.loadQuestions === 'function') {
         window.loadQuestions();
       }
 
-      // Clear draft editor text after successful import
-      const textarea = document.getElementById('bulkEditorTextarea');
-      if (textarea) {
-        textarea.value = '';
-        localStorage.removeItem('bulk_import_draft');
-        updateLineNumbers();
-        triggerReparse();
+      const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+      if (ta) {
+        ta.value = '';
+        localStorage.removeItem('bq_draft_v2');
+        scheduleReparse();
       }
     } catch (err) {
-      console.error('Bulk Import Error:', err);
-      if (typeof showToast === 'function') {
-        showToast('Bulk import failed: ' + err.message, true);
-      }
+      console.error('Bulk Import error:', err);
+      if (typeof showToast === 'function') showToast('Import failed: ' + err.message, true);
     } finally {
-      if (importBtn) {
-        importBtn.disabled = false;
-        importBtn.textContent = '⚡ Import All Validated Questions';
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '⚡ Import All Validated Questions';
       }
     }
   }
 
-  // Fetch existing DB questions for duplicate detection
   async function fetchExistingQuestions() {
     try {
       const res = await apiReq('/api/questions');
@@ -1249,48 +993,55 @@ Medium
     }
   }
 
-  function escapeHtml(s) {
-    return (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
-
-  // ------------------------------------------------------------
-  // 12. INITIALIZATION
-  // ------------------------------------------------------------
   function init() {
     initEditor();
     fetchExistingQuestions();
 
-    const searchInput = document.getElementById('bulkSearchInput');
-    const conceptFilter = document.getElementById('bulkFilterConcept');
-    const diffFilter = document.getElementById('bulkFilterDiff');
-    const statusFilter = document.getElementById('bulkFilterStatus');
-    const dupFilter = document.getElementById('bulkFilterDup');
+    const searchInput = document.getElementById('bqFilterSearch') || document.getElementById('bulkSearchInput');
+    const typeFilter = document.getElementById('bqFilterType');
+    const diffFilter = document.getElementById('bqFilterDiff') || document.getElementById('bulkFilterDiff');
+    const statusFilter = document.getElementById('bqFilterStatus') || document.getElementById('bulkFilterStatus');
+    const dupFilter = document.getElementById('bqFilterDup') || document.getElementById('bulkFilterDup');
+    const conceptFilter = document.getElementById('bqFilterConcept') || document.getElementById('bulkFilterConcept');
 
-    if (searchInput) searchInput.addEventListener('input', (e) => { state.filterSearch = e.target.value; renderPreviewCards(); });
-    if (conceptFilter) conceptFilter.addEventListener('change', (e) => { state.filterConcept = e.target.value; renderPreviewCards(); });
-    if (diffFilter) diffFilter.addEventListener('change', (e) => { state.filterDifficulty = e.target.value; renderPreviewCards(); });
-    if (statusFilter) statusFilter.addEventListener('change', (e) => { state.filterStatus = e.target.value; renderPreviewCards(); });
-    if (dupFilter) dupFilter.addEventListener('change', (e) => { state.filterDuplicate = e.target.value; renderPreviewCards(); });
+    if (searchInput) searchInput.addEventListener('input', (e) => { state.filterSearch = e.target.value; renderCards(); });
+    if (typeFilter) typeFilter.addEventListener('change', (e) => { state.filterType = e.target.value; renderCards(); });
+    if (diffFilter) diffFilter.addEventListener('change', (e) => { state.filterDiff = e.target.value; renderCards(); });
+    if (statusFilter) statusFilter.addEventListener('change', (e) => { state.filterStatus = e.target.value; renderCards(); });
+    if (dupFilter) dupFilter.addEventListener('change', (e) => { state.filterDup = e.target.value; renderCards(); });
+    if (conceptFilter) conceptFilter.addEventListener('change', (e) => { state.filterSearch = e.target.value; renderCards(); });
   }
 
-  // Export module API to global scope
   window.BulkModule = {
     init,
-    jumpToLine,
-    toggleWordWrap,
-    undoHistory,
-    redoHistory,
-    clearEditor,
-    restoreSample,
-    toggleCardCollapse,
-    toggleIgnore,
-    deleteCard,
-    setDupAction,
+    runParse,
     openCardEditor,
     closeCardEditor,
     saveCardEditor,
-    exportQuestions,
+    clearEditor,
+    restoreSample,
+    toggleWordWrap,
+    undoHistory,
+    redoHistory,
     executeBulkImport,
-    runParsingAndRendering,
+    exportQuestions: () => {},
+    toggleCardCollapse: (idx) => {
+      if (state.parsedQuestions[idx]) {
+        state.parsedQuestions[idx].collapsed = !state.parsedQuestions[idx].collapsed;
+        renderCards();
+      }
+    },
+    toggleIgnore: (idx) => {
+      if (state.parsedQuestions[idx]) {
+        state.parsedQuestions[idx].ignored = !state.parsedQuestions[idx].ignored;
+        updateStats();
+        renderCards();
+      }
+    },
+    deleteCard: (idx) => {
+      state.parsedQuestions.splice(idx, 1);
+      renderCards();
+      updateStats();
+    },
   };
 })();

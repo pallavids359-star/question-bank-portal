@@ -881,163 +881,180 @@ textarea{resize:vertical;min-height:70px;}
       <div id="pageBulkImport" class="page-section">
         <div class="page-header">
           <h2>Bulk Question Import</h2>
-          <p>Import hundreds or thousands of LaTeX questions at once by pasting standard formatted text.</p>
+          <p>Import thousands of questions at once from PDF, OCR, Word or LaTeX text with intelligent auto-detection.</p>
         </div>
 
-        <!-- SECTION 1: QUICK FORMAT GUIDE -->
-        <div class="bulk-meta-card" style="padding: 16px 22px;">
-          <div class="bulk-meta-title" style="font-size: 15px;">💡 LaTeX Import Format Tags</div>
-          <p class="bulk-meta-sub" style="margin-bottom: 0;">
-            All question metadata is parsed directly from tags in the editor:
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@subject</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@class</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@chapter</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@concept</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@exam</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@type</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@question</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@optionA..D</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@answer</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@solution</code>,
-            <code style="color:var(--gold);background:#181818;padding:2px 6px;border-radius:4px;margin:0 2px;">@end</code>.
-            Tags persist for all subsequent questions until overridden by a new tag.
-          </p>
+        <!-- TOP PANEL: METADATA & DEFAULTS -->
+        <div class="bq-meta-panel" style="background:#11141a;border:1px solid #252b3b;border-radius:12px;padding:18px 22px;margin-bottom:20px;">
+          <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+            <span>⚙ Import Metadata & Defaults</span>
+            <span style="font-weight:400;font-size:11px;color:var(--muted);">(Applied to all imported questions)</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:12px;">
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Subject *</label>
+              <select id="bqMetaSubject" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+                <option value="Physics" selected>Physics</option>
+                <option value="Chemistry">Chemistry</option>
+                <option value="Mathematics">Mathematics</option>
+                <option value="Biology">Biology</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Class *</label>
+              <select id="bqMetaClass" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+                <option value="11" selected>Class 11</option>
+                <option value="12">Class 12</option>
+                <option value="10">Class 10</option>
+                <option value="9">Class 9</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Chapter *</label>
+              <input type="text" id="bqMetaChapter" value="General" placeholder="e.g. Chemical Bonding" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Exam Category</label>
+              <select id="bqMetaExam" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+                <option value="NEET" selected>NEET</option>
+                <option value="JEE Main">JEE Main</option>
+                <option value="JEE Advanced">JEE Advanced</option>
+                <option value="KCET">KCET</option>
+                <option value="CBSE">CBSE</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Language</label>
+              <select id="bqMetaLanguage" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+                <option value="English" selected>English</option>
+                <option value="Hindi">Hindi</option>
+                <option value="Kannada">Kannada</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Default Marks</label>
+              <input type="number" id="bqMetaMarks" value="4" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Negative Marks</label>
+              <input type="number" id="bqMetaNegMarks" value="1" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Default Difficulty</label>
+              <select id="bqMetaDiff" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+                <option value="Easy">Easy</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="Hard">Hard</option>
+              </select>
+            </div>
+          </div>
         </div>
 
-        <!-- SECTION 2: BULK LATEX EDITOR & LIVE PREVIEW -->
-        <div class="bulk-workspace-layout">
-          <!-- LEFT PANE: BULK EDITOR -->
-          <div class="bulk-editor-pane">
-            <div class="bulk-editor-header">
-              <div class="bulk-editor-title">
-                📝 Bulk LaTeX Editor
-                <span class="bulk-autosave-indicator" id="bulkAutoSaveIndicator">
-                  <span class="bulk-autosave-dot"></span> Draft ready
-                </span>
+        <!-- MAIN WORKSPACE LAYOUT -->
+        <div class="bq-workspace-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;min-height:700px;">
+          <!-- LEFT: EDITOR PANE -->
+          <div class="bq-editor-pane" style="display:flex;flex-direction:column;background:#11141a;border:1px solid #252b3b;border-radius:12px;overflow:hidden;">
+            <!-- Editor Toolbar -->
+            <div style="padding:10px 14px;background:#161a23;border-bottom:1px solid #252b3b;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <button class="bq-tool-btn" title="Undo (Ctrl+Z)" onclick="window.BulkModule.undoHistory()">↶ Undo</button>
+                <button class="bq-tool-btn" title="Redo (Ctrl+Y)" onclick="window.BulkModule.redoHistory()">↷ Redo</button>
+                <button class="bq-tool-btn" id="bqWrapBtn" title="Toggle Word Wrap" onclick="window.BulkModule.toggleWordWrap()">⏎ Wrap</button>
+                <button class="bq-tool-btn" title="Clear Editor" onclick="window.BulkModule.clearEditor()">🗑 Clear</button>
+                <button class="bq-tool-btn" title="Load Sample Text" onclick="window.BulkModule.restoreSample()">📋 Sample</button>
               </div>
-              <div class="bulk-editor-tools">
-                <button type="button" class="bulk-tool-btn" onclick="window.BulkModule.undoHistory()" title="Undo (Ctrl+Z)">↩ Undo</button>
-                <button type="button" class="bulk-tool-btn" onclick="window.BulkModule.redoHistory()" title="Redo (Ctrl+Y)">↪ Redo</button>
-                <button type="button" class="bulk-tool-btn active" id="bulkWrapBtn" onclick="window.BulkModule.toggleWordWrap()" title="Toggle Word Wrap">Wrap</button>
-                <button type="button" class="bulk-tool-btn" onclick="window.BulkModule.restoreSample()" title="Load Sample Text">Format Sample</button>
-                <button type="button" class="bulk-tool-btn" style="color:var(--danger)" onclick="window.BulkModule.clearEditor()" title="Clear Editor">Clear</button>
+              <div>
+                <button class="btn btn-primary" style="padding:4px 12px;font-size:12px;" onclick="window.BulkModule.runParse()">⚡ Parse Now</button>
               </div>
             </div>
-            <div class="bulk-editor-wrapper">
-              <div class="bulk-line-numbers" id="bulkLineNumbers"></div>
-              <textarea id="bulkEditorTextarea" class="bulk-textarea word-wrap" spellcheck="false" placeholder="Paste questions here in @question format..."></textarea>
+
+            <!-- Editor Wrapper with Line Numbers -->
+            <div style="position:relative;flex:1;display:flex;background:#0d0f14;min-height:650px;">
+              <div id="bqLineNumbers" style="width:40px;background:#131720;color:#4f5a70;font-family:monospace;font-size:12px;line-height:1.5;padding:12px 6px;text-align:right;user-select:none;overflow:hidden;border-right:1px solid #202634;">1</div>
+              <textarea id="bqTextarea" class="word-wrap" placeholder="Paste questions here in standard format:
+
+1. Which of the following is diamagnetic in nature?
+(A) Zn2+
+(B) Ni2+
+(C) Co2+
+(D) Cu2+
+Answer: A
+Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="flex:1;background:transparent;color:#e2e8f0;border:none;outline:none;padding:12px 14px;font-family:'Fira Code',Consolas,monospace;font-size:13px;line-height:1.5;resize:none;min-height:650px;"></textarea>
             </div>
           </div>
 
-          <!-- RIGHT PANE: LIVE PREVIEW -->
-          <div class="bulk-preview-pane">
-            <div class="bulk-preview-card">
-              <div class="bulk-preview-header">
-                <div class="bulk-preview-title-row">
-                  <div class="bulk-preview-title">👁️ KaTeX Live Preview</div>
-                  <div style="display:flex;gap:6px;">
-                    <button class="bulk-tool-btn" onclick="window.BulkModule.exportQuestions('json')">📥 Export JSON</button>
-                    <button class="bulk-tool-btn" onclick="window.BulkModule.exportQuestions('txt')">📄 Export TXT</button>
-                    <button class="bulk-tool-btn" onclick="window.BulkModule.exportQuestions('latex')">📐 Export LaTeX</button>
-                  </div>
+          <!-- RIGHT: LIVE PREVIEW & CARDS PANE -->
+          <div class="bq-preview-pane" style="display:flex;flex-direction:column;background:#11141a;border:1px solid #252b3b;border-radius:12px;overflow:hidden;">
+            <!-- Filter & Search Toolbar -->
+            <div style="padding:10px 14px;background:#161a23;border-bottom:1px solid #252b3b;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <input type="text" id="bqFilterSearch" placeholder="🔍 Search parsed questions..." style="flex:1;background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;">
+                <select id="bqFilterType" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;">
+                  <option value="">All Types</option>
+                  <option value="mcq_single">Standard MCQ</option>
+                  <option value="mcq_multiple">Multiple Correct</option>
+                  <option value="statement_based">Statement Based</option>
+                  <option value="assertion_reason">Assertion Reason</option>
+                  <option value="match">Match Following</option>
+                  <option value="numerical">Numerical / Integer</option>
+                  <option value="true_false">True / False</option>
+                  <option value="case_study">Case Study</option>
+                </select>
+                <select id="bqFilterDiff" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;">
+                  <option value="">All Difficulty</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+                <select id="bqFilterStatus" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;">
+                  <option value="">All Status</option>
+                  <option value="valid">Valid Only</option>
+                  <option value="invalid">Invalid Only</option>
+                </select>
+              </div>
+
+              <!-- Stats & Progress Fill Bar -->
+              <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted);">
+                <div style="display:flex;gap:12px;">
+                  <span>Total: <strong id="bqStatTotal" style="color:#fff;">0</strong></span>
+                  <span>Valid: <strong id="bqStatValid" style="color:var(--ok);">0</strong></span>
+                  <span>Invalid: <strong id="bqStatInvalid" style="color:var(--danger);">0</strong></span>
+                  <span>Duplicates: <strong id="bqStatDup" style="color:var(--warn);">0</strong></span>
+                  <span>Ready: <strong id="bqStatReady" style="color:var(--gold);">0</strong></span>
                 </div>
-                <div class="bulk-preview-controls">
-                  <input type="text" id="bulkSearchInput" class="bulk-search-input" placeholder="🔍 Search parsed questions...">
-                  <select id="bulkFilterConcept" class="bulk-filter-select"><option value="">All Concepts</option></select>
-                  <select id="bulkFilterDiff" class="bulk-filter-select">
-                    <option value="">All Difficulties</option>
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                  </select>
-                  <select id="bulkFilterStatus" class="bulk-filter-select">
-                    <option value="">All Statuses</option>
-                    <option value="valid">Valid Only</option>
-                    <option value="invalid">Invalid Only</option>
-                  </select>
-                  <select id="bulkFilterDup" class="bulk-filter-select">
-                    <option value="">All Records</option>
-                    <option value="duplicate">Duplicates Only</option>
-                    <option value="unique">Unique Only</option>
-                  </select>
-                </div>
               </div>
-              <div class="bulk-cards-container" id="bulkCardsContainer">
-                <div class="empty-state">Loading questions preview...</div>
+              <div style="height:4px;background:#1e2433;border-radius:2px;overflow:hidden;">
+                <div id="bqProgressFill" style="height:100%;width:0%;background:linear-gradient(90deg, #10b981, #f59e0b);transition:width 0.3s ease;"></div>
               </div>
             </div>
+
+            <!-- Error Panel -->
+            <div id="bqErrorPanel" style="display:none;background:#2d171c;border-bottom:1px solid #5c232c;padding:10px 14px;max-height:120px;overflow-y:auto;">
+              <div style="font-size:12px;font-weight:700;color:#f87171;margin-bottom:6px;display:flex;justify-content:space-between;">
+                <span>⚠️ Validation Issues</span>
+                <span id="bqErrorCount">0 Issues</span>
+              </div>
+              <div id="bqErrorList" style="display:flex;flex-direction:column;gap:4px;"></div>
+            </div>
+
+            <!-- Parsed Cards Container -->
+            <div id="bqCardsContainer" style="flex:1;padding:14px;overflow-y:auto;max-height:600px;">
+              <div class="bq-empty">
+                <div class="bq-empty-icon">📭</div>
+                <div class="bq-empty-text">Paste questions in the editor on the left to parse and preview in real-time.</div>
+              </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div style="padding:12px 14px;background:#161a23;border-top:1px solid #252b3b;display:flex;align-items:center;justify-content:space-between;">
+              <button class="btn btn-ghost" onclick="window.BulkModule.clearEditor()">Clear All</button>
+              <button class="btn btn-primary" id="bqImportBtn" onclick="window.BulkModule.executeBulkImport()">⚡ Import All Validated Questions</button>
+            </div>
           </div>
         </div>
-
-        <!-- SECTION 3: ERROR PANEL -->
-        <div class="bulk-error-card" id="bulkErrorCard" style="display:none;">
-          <div class="bulk-error-header">
-            <div class="bulk-error-title">⚠️ Validation Error Panel</div>
-            <span style="font-size:12px;color:var(--muted)" id="bulkErrorCount">0 Issues</span>
-          </div>
-          <div class="bulk-error-list" id="bulkErrorList"></div>
-        </div>
-
-        <!-- SECTION 4: IMPORT SUMMARY & ACTION BAR -->
-        <div class="bulk-summary-bar">
-          <div class="bulk-summary-stats">
-            <div class="bulk-stat-pill">
-              <span class="bulk-stat-val" id="bulkStatTotal">0</span>
-              <span class="bulk-stat-lbl">Total Questions</span>
-            </div>
-            <div class="bulk-stat-pill">
-              <span class="bulk-stat-val" style="color:var(--ok);" id="bulkStatValid">0</span>
-              <span class="bulk-stat-lbl">Valid</span>
-            </div>
-            <div class="bulk-stat-pill">
-              <span class="bulk-stat-val" style="color:var(--danger);" id="bulkStatInvalid">0</span>
-              <span class="bulk-stat-lbl">Invalid</span>
-            </div>
-            <div class="bulk-stat-pill">
-              <span class="bulk-stat-val" style="color:var(--warn);" id="bulkStatDup">0</span>
-              <span class="bulk-stat-lbl">Duplicates</span>
-            </div>
-            <div class="bulk-stat-pill">
-              <span class="bulk-stat-val" style="color:var(--gold);" id="bulkStatReady">0</span>
-              <span class="bulk-stat-lbl">Ready to Import</span>
-            </div>
-          </div>
-          <div class="bulk-summary-btns">
-            <button class="btn btn-ghost" onclick="window.BulkModule.restoreSample()">Reset Form</button>
-            <button class="btn btn-primary" id="bulkImportBtn" onclick="window.BulkModule.executeBulkImport()">⚡ Import All Validated Questions</button>
-          </div>
-        </div>
-
       </div>
 
       <!-- INLINE CARD EDIT MODAL -->
-      <div class="bulk-edit-modal" id="bulkEditModal">
-        <div class="bulk-edit-box">
-          <h3 style="color:#fff;margin-bottom:18px;">Edit Question in Preview</h3>
-          <div class="form-group">
-            <label>Concept / Topic</label>
-            <input type="text" id="bulkEditConcept">
-          </div>
-          <div class="form-group">
-            <label>Difficulty</label>
-            <select id="bulkEditDifficulty">
-              <option value="Easy">Easy</option>
-              <option value="Medium">Medium</option>
-              <option value="Hard">Hard</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Question Text (LaTeX supported)</label>
-            <textarea id="bulkEditQuestion" style="min-height:70px;"></textarea>
-          </div>
-          <div class="grid2">
-            <div class="form-group"><label>Option A</label><input type="text" id="bulkEditOptA"></div>
-            <div class="form-group"><label>Option B</label><input type="text" id="bulkEditOptB"></div>
-            <div class="form-group"><label>Option C</label><input type="text" id="bulkEditOptC"></div>
-            <div class="form-group"><label>Option D</label><input type="text" id="bulkEditOptD"></div>
-          </div>
-          <div class="form-group">
-            <label>Correct Answer</label>
             <select id="bulkEditAnswer">
               <option value="A">Option A</option>
               <option value="B">Option B</option>
