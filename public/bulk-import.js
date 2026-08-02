@@ -793,9 +793,6 @@ Medium
         pillsRow.appendChild(klassPill);
       }
 
-      const conceptPill = document.createElement('span');
-      conceptPill.className = 'bulk-pill bulk-pill-concept';
-      conceptPill.textContent = q.concept || 'General';
 
       const diffPill = document.createElement('span');
       const diffClass = (q.difficulty || 'Medium').toLowerCase();
@@ -807,9 +804,9 @@ Medium
       statusPill.textContent = q.isValid ? '✓ Valid' : '✕ Invalid';
 
       pillsRow.appendChild(numBadge);
-      pillsRow.appendChild(conceptPill);
       pillsRow.appendChild(diffPill);
       pillsRow.appendChild(statusPill);
+
 
       if (q.isDuplicate) {
         const dupPill = document.createElement('span');
@@ -841,13 +838,16 @@ Medium
       card.appendChild(topRow);
 
       if (!q.collapsed) {
-        if (q.chapter) {
-          const chapLine = document.createElement('div');
-          chapLine.style.fontSize = '12px';
-          chapLine.style.color = 'var(--muted)';
-          chapLine.style.marginBottom = '8px';
-          chapLine.textContent = `Chapter: ${q.chapter}`;
-          card.appendChild(chapLine);
+        if (q.chapter || q.concept) {
+          const metaLine = document.createElement('div');
+          metaLine.style.fontSize = '12px';
+          metaLine.style.color = 'var(--muted)';
+          metaLine.style.marginBottom = '8px';
+          let metaText = '';
+          if (q.chapter) metaText += `Chapter: ${q.chapter}`;
+          if (q.concept && q.concept !== 'General') metaText += (metaText ? '  ·  ' : '') + `Concept: ${q.concept}`;
+          metaLine.textContent = metaText;
+          card.appendChild(metaLine);
         }
 
         const qBody = document.createElement('div');

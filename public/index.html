@@ -2671,6 +2671,18 @@ function renderList(){
     meta.innerHTML=`<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(q.chapter||'')} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'}`;
     main.appendChild(meta);
 
+    if(q.topic && q.topic !== 'General'){
+      const conceptLabel=document.createElement('div');
+      conceptLabel.style.fontSize='12px';
+      conceptLabel.style.color='var(--muted)';
+      conceptLabel.style.marginBottom='4px';
+      conceptLabel.style.cursor='pointer';
+      conceptLabel.textContent='Concept: '+q.topic;
+      conceptLabel.title='Click to filter by concept: '+q.topic;
+      conceptLabel.onclick=()=>filterByConcept(q.topic);
+      main.appendChild(conceptLabel);
+    }
+
     const cleanQText = getCleanQuestionText(q);
 
     if(q.qType==='assertion_reason'){
@@ -2704,19 +2716,6 @@ function renderList(){
     }
     const examsLine=document.createElement('div');examsLine.style.marginTop='8px';examsLine.style.display='flex';examsLine.style.flexWrap='wrap';examsLine.style.gap='6px';
     (q.exams||[]).forEach(ex=>{const pill=document.createElement('span');pill.className='tag-pill';pill.textContent=ex;examsLine.appendChild(pill);});
-
-    if(q.topic && q.topic !== 'General'){
-      const cPill=document.createElement('span');
-      cPill.className='tag-pill';
-      cPill.style.cursor='pointer';
-      cPill.style.background='rgba(201,162,39,0.15)';
-      cPill.style.color='var(--gold)';
-      cPill.style.border='1px solid rgba(201,162,39,0.3)';
-      cPill.textContent='💡 ' + q.topic;
-      cPill.title='Click to view all questions for concept: ' + q.topic;
-      cPill.onclick=()=>filterByConcept(q.topic);
-      examsLine.appendChild(cPill);
-    }
 
     main.appendChild(examsLine);
     if(q.createdBy||q.updatedBy){
