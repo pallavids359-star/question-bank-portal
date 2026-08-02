@@ -1,5 +1,5 @@
 /* ================================================================
-   BULK QUESTION IMPORT MODULE v2 (SMART PARSER & METADATA ENGINE)
+   BULK QUESTION IMPORT MODULE v3 (MODULAR PIPELINE ARCHITECTURE)
    ================================================================ */
 
 (function () {
@@ -50,19 +50,20 @@
     return el ? el.value.trim() : '';
   }
 
-  // ── QUESTION TYPE DEFINITIONS & DETECTORS ─────────────────────────
+  // ── QUESTION TYPE LABELS ──────────────────────────────────────────
   const QTYPE_LABELS = {
     mcq_single: 'Standard MCQ',
     mcq_multiple: 'Multiple Correct',
     statement_based: 'Statement Based',
     assertion_reason: 'Assertion Reason',
     match: 'Match the Following',
-    numerical: 'Numerical / Integer',
+    matrix: 'Matrix Match',
+    numerical: 'Numerical / Float',
+    integer: 'Integer Type',
     true_false: 'True / False',
     case_study: 'Case Study / Passage',
     paragraph: 'Paragraph Based',
     comprehension: 'Comprehension',
-    matrix: 'Matrix Match',
     diagram: 'Diagram Based',
     image: 'Image Based',
     table: 'Table Based',
@@ -70,81 +71,21 @@
     sequence: 'Sequence Based',
     reasoning: 'Reasoning Based',
     data_interpretation: 'Data Interpretation',
+    fill_blank: 'Fill in the Blank',
+    multi_part: 'Multi-Part Question',
   };
 
-  const TYPE_RULES = [
-    {
-      type: 'assertion_reason',
-      test: (q) => /\b(assertion|reason)\b.*\b(assertion|reason)\b/is.test(q) || /^A:\s*Assertion/i.test(q)
-    },
-    {
-      type: 'statement_based',
-      test: (q) => /\bstatement\s+(i|ii|1|2)\b/i.test(q) || /statement\s+I\b/i.test(q)
-    },
-    {
-      type: 'match',
-      test: (q) => /\b(column|list)\s+(i{1,3}|[1234])\b/i.test(q) || /match\s+the\s+following/i.test(q)
-    },
-    {
-      type: 'matrix',
-      test: (q) => /\bmatrix\s+match\b/i.test(q) || /column\s+I.*column\s+II.*column\s+III/is.test(q)
-    },
-    {
-      type: 'true_false',
-      test: (q, opts) => {
-        const optVals = Object.values(opts).map(v => v.toLowerCase().trim());
-        return (optVals.includes('true') && optVals.includes('false')) || /^\s*(true|false)\s*$/i.test(q.trim());
-      }
-    },
-    {
-      type: 'mcq_multiple',
-      test: (q, opts, ans) => /[A-D]\s*,\s*[A-D]/i.test(ans || '') || /more\s+than\s+one\s+correct|multiple\s+correct/i.test(q)
-    },
-    {
-      type: 'case_study',
-      test: (q) => /\b(case\s+study|read\s+the\s+following\s+passage|comprehension|passage\s+based)\b/i.test(q)
-    },
-    {
-      type: 'diagram',
-      test: (q) => /\b(diagram|circuit|figure|refer\s+to\s+the\s+image|given\s+figure)\b/i.test(q) || /\{\{IMG::/i.test(q)
-    },
-    {
-      type: 'graph',
-      test: (q) => /\b(graph|curve|plot|v-t\s+graph|x-t\s+graph|p-v\s+diagram)\b/i.test(q)
-    },
-    {
-      type: 'table',
-      test: (q) => /\b(table|data\s+given\s+below|following\s+data)\b/i.test(q) || /\|.*\|.*\|/.test(q)
-    },
-    {
-      type: 'numerical',
-      test: (q, opts, ans) => Object.keys(opts).length === 0 || /^\d+(\.\d+)?$/.test((ans || '').trim()) || /\b(numerical\s+value|integer\s+type|find\s+the\s+value)\b/i.test(q)
-    },
-    {
-      type: 'mcq_single',
-      test: () => true
-    }
-  ];
-
-  function detectQType(questionText, options, answer) {
-    for (const rule of TYPE_RULES) {
-      if (rule.test(questionText, options, answer)) {
-        return rule.type;
-      }
-    }
-    return 'mcq_single';
-  }
-
-  // ── OPTION PATTERNS ───────────────────────────────────────────────
+  // ── OPTION & BOUNDARY PATTERNS ────────────────────────────────────
   const OPT_PATTERNS = [
     /^\s*\(([A-Da-d1-4])\)\s+/,      // (A) (1)
-    /^\s*([A-Da-d1-4])[\.\):]\s+/,   // A. A) A:
-    /^\s*([a-dA-D])\s*[\)\.]\s+/,   // a) b.
+    /^\s*([A-Da-d])[.\):]\s+/,      // A. A) A: (Letters only for standalone)
+    /^\s*([a-d])\s*[\)\.]\s+/,      // a) b.
     /^\s*\[([A-Da-d1-4])\]\s+/,     // [A]
     /^\s*Option\s+([A-Da-d1-4])\s*[:\.]\s*/i,
   ];
 
-  function detectOption(line) {
+  function detectOptionKey(line, isFirstLine = false) {
+    if (isFirstLine) return null; // First line of question is never an option!
     for (const pat of OPT_PATTERNS) {
       const m = line.match(pat);
       if (m) {
@@ -161,14 +102,11 @@
 
   function stripOptionPrefix(line) {
     for (const pat of OPT_PATTERNS) {
-      if (pat.test(line)) {
-        return line.replace(pat, '').trim();
-      }
+      if (pat.test(line)) return line.replace(pat, '').trim();
     }
     return line.trim();
   }
 
-  // ── BOUNDARY PATTERNS ─────────────────────────────────────────────
   const Q_START_PATTERNS = [
     /^\s*(?:Q|Question|Que|Problem|Item)?\s*\.?\s*(\d{1,4})\s*[\.:\)]\s+/i,
     /^\s*Q(\d{1,4})\s*[:\.]\s+/i,
@@ -187,7 +125,7 @@
   }
 
   const ANS_PATTERNS = [
-    /^\s*(?:Answer|Ans|Correct\s*Answer|Correct\s*Option|Ans\.:?)\s*[:\.\-]?\s*\(?([A-Da-d1-4]|True|False|[0-9\.,]+)\)?/i,
+    /^\s*(?:Answer|Ans|Correct\s*Answer|Correct\s*Option|Ans\.:?)\s*[:\.\-]?\s*/i,
   ];
 
   const SOL_PATTERNS = [
@@ -205,182 +143,633 @@
     return IGNORE_PATTERNS.some(p => p.test(line));
   }
 
-  // ── CONCEPT & DIFFICULTY DETECTORS ────────────────────────────────
-  const CONCEPT_KEYWORDS = {
-    'Chemical Bonding': ['hybridization', 'vsepr', 'dipole', 'bond order', 'mot', 'resonance', 'lewis', 'electronegativity', 'covalent', 'ionic'],
-    'Atomic Structure': ['orbital', 'quantum number', 'schrodinger', 'bohr', 'de broglie', 'heisenberg', 'photoelectric'],
-    'Thermodynamics': ['entropy', 'enthalpy', 'gibbs', 'hess', 'internal energy', 'spontaneous', 'first law', 'second law'],
-    'Kinematics': ['velocity', 'acceleration', 'displacement', 'projectile', 'relative motion', 'speed', 'distance'],
-    'Laws of Motion': ['newton', 'friction', 'tension', 'inertia', 'impulse', 'momentum', 'pulley'],
-    'Electrostatics': ['coulomb', 'electric field', 'potential', 'capacitor', 'gauss', 'charge', 'dipole'],
-    'Cell Biology': ['mitosis', 'meiosis', 'cell cycle', 'organelle', 'membrane', 'nucleus', 'mitochondria'],
-    'Genetics': ['mendel', 'dna', 'rna', 'replication', 'transcription', 'translation', 'allele', 'gene'],
-    'Calculus': ['derivative', 'integral', 'limit', 'continuity', 'differential', 'rate of change'],
+  function isAnsLine(line) {
+    return ANS_PATTERNS.some(p => p.test(line));
+  }
+
+  function isSolLine(line) {
+    return SOL_PATTERNS.some(p => p.test(line));
+  }
+
+  function stripAnsPrefix(line) {
+    for (const p of ANS_PATTERNS) {
+      if (p.test(line)) return line.replace(p, '').trim();
+    }
+    return line.trim();
+  }
+
+  function stripSolPrefix(line) {
+    for (const p of SOL_PATTERNS) {
+      if (p.test(line)) return line.replace(p, '').trim();
+    }
+    return line.trim();
+  }
+
+  // ── CHAPTER-CONSTRAINED CONCEPT DETECTION ────────────────────────
+  const CHAPTER_CONCEPTS_MAP = {
+    'Periodic Classification': ['electronegativity', 'ionization energy', 'atomic radius', 'electron affinity', 'pauling scale', 'mendeleev', 'modern periodic law', 's-block', 'p-block', 'd-block', 'f-block', 'periodicity', 'valency', 'effective nuclear charge', 'shielding effect'],
+    'Chemical Bonding': ['hybridization', 'vsepr', 'dipole moment', 'bond order', 'molecular orbital theory', 'mot', 'resonance', 'lewis structure', 'covalent bond', 'ionic bond', 'hydrogen bonding'],
+    'Atomic Structure': ['orbitals', 'quantum numbers', 'schrodinger equation', 'bohr model', 'de broglie', 'heisenberg uncertainty', 'photoelectric effect', 'spectrum', 'rydberg constant'],
+    'Thermodynamics': ['entropy', 'enthalpy', 'gibbs free energy', 'hess law', 'internal energy', 'spontaneous process', 'first law', 'second law', 'heat capacity', 'calorimetry'],
+    'Kinematics': ['velocity', 'acceleration', 'displacement', 'projectile motion', 'relative motion', 'speed', 'distance', 'v-t graph', 'x-t graph'],
+    'Laws of Motion': ['newtons laws', 'friction', 'tension', 'inertia', 'impulse', 'momentum', 'pulley system', 'free body diagram'],
+    'Electrostatics': ['coulomb law', 'electric field', 'electric potential', 'capacitor', 'gauss law', 'electric charge', 'electric dipole'],
+    'Cell Biology': ['mitosis', 'meiosis', 'cell cycle', 'organelles', 'cell membrane', 'nucleus', 'mitochondria', 'ribosome', 'endoplasmic reticulum'],
+    'Genetics': ['mendelian genetics', 'dna', 'rna', 'replication', 'transcription', 'translation', 'alleles', 'genes', 'chromosomes', 'pedigree analysis'],
+    'Calculus': ['derivatives', 'integrals', 'limits', 'continuity', 'differential equations', 'rate of change', 'maxima and minima'],
   };
 
-  function detectConcept(qText, chapter) {
-    const text = (qText + ' ' + chapter).toLowerCase();
-    let bestMatch = { concept: chapter || 'General', confidence: 65 };
+  function detectConcept(qText, selectedChapter) {
+    const text = qText.toLowerCase();
     
-    for (const [concept, keywords] of Object.entries(CONCEPT_KEYWORDS)) {
+    // STRICT CONSTRAIN: Only predict concepts relevant to the selected Chapter!
+    if (selectedChapter && CHAPTER_CONCEPTS_MAP[selectedChapter]) {
+      const keywords = CHAPTER_CONCEPTS_MAP[selectedChapter];
       const matches = keywords.filter(kw => text.includes(kw));
       if (matches.length > 0) {
-        const conf = Math.min(95, 70 + matches.length * 8);
-        if (conf > bestMatch.confidence) {
-          bestMatch = { concept, confidence: conf };
-        }
+        const best = matches[0].split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        return { concept: best, confidence: Math.min(95, 75 + matches.length * 5) };
       }
+      return { concept: selectedChapter, confidence: 70 };
     }
-    return bestMatch;
+    return { concept: selectedChapter || 'General', confidence: 65 };
   }
 
   function detectDifficulty(qText, options, solution) {
     let score = 0;
-    const combined = (qText + ' ' + solution).toLowerCase();
+    const combined = (qText + ' ' + (solution || '')).toLowerCase();
     if (qText.length > 350) score += 2;
     else if (qText.length > 180) score += 1;
 
     if (/calculate|determine|evaluate|find the value|derived/.test(combined)) score += 1;
     if (/\\frac|\\int|\\sum|\\sqrt|\\matrix/.test(combined)) score += 1;
-    if (Object.keys(options).length === 0) score += 1;
-    if (solution.length > 250) score += 1;
+    if (Object.keys(options || {}).length === 0) score += 1;
+    if ((solution || '').length > 250) score += 1;
 
     if (score >= 4) return 'Hard';
     if (score >= 2) return 'Medium';
     return 'Easy';
   }
 
-  // ── SMART PARSER CORE ──────────────────────────────────────────────
-  function parseText(rawText) {
-    const meta = getMeta();
+  // ================================================================
+  // STAGE 1: QUESTION BOUNDARY DETECTION
+  // ================================================================
+  function splitIntoRawBlocks(rawText) {
     const lines = rawText.split('\n');
-    const questions = [];
-    let cur = null;
-    let mode = 'q';
-
-    function pushCur() {
-      if (cur && cur.qLines.length > 0) {
-        const qText = cur.qLines.join('\n').trim();
-        const solText = cur.solLines.join('\n').trim();
-        const qType = detectQType(qText, cur.options, cur.answer);
-        const { concept, confidence } = detectConcept(qText, meta.chapter);
-        const difficulty = detectDifficulty(qText, cur.options, solText);
-
-        questions.push({
-          subject: meta.subject,
-          klass: meta.klass,
-          chapter: meta.chapter,
-          topic: concept,
-          exams: meta.exams,
-          language: meta.language,
-          source: meta.source,
-          referenceBook: meta.referenceBook,
-          author: meta.author,
-          marks: meta.defaultMarks,
-          negMarks: meta.negMarks,
-          difficulty: difficulty,
-          qType: qType,
-          question: qText,
-          optA: cur.options['A'] || '',
-          optB: cur.options['B'] || '',
-          optC: cur.options['C'] || '',
-          optD: cur.options['D'] || '',
-          answer: cur.answer || '',
-          solutionText: solText,
-          concept: concept,
-          confidenceScore: confidence,
-          startLine: cur.startLine,
-          errors: [],
-          isValid: true,
-          isDuplicate: false,
-          ignored: false,
-          dupAction: 'skip',
-          collapsed: false,
-        });
-      }
-    }
+    const blocks = [];
+    let currentBlock = null;
+    let inColumnSection = false;
+    let inAnsOrSolSection = false;
 
     for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i];
-      const line = raw.trim();
-      if (!line || shouldIgnoreLine(line)) continue;
+      const rawLine = lines[i];
+      const trimmed = rawLine.trim();
 
-      if (/^@question\b/i.test(line)) {
-        pushCur();
-        cur = { qLines: [], solLines: [], options: {}, answer: '', startLine: i + 1 };
-        mode = 'q';
-        const rest = line.replace(/^@question\s*/i, '').trim();
-        if (rest) cur.qLines.push(rest);
-        continue;
+      if (!trimmed || shouldIgnoreLine(trimmed)) continue;
+
+      const isExplicitQ = /^@question\b/i.test(trimmed);
+      const isNamedQ = /^\s*(?:Q|Question|Que|Problem|Item)\s*#?\d{1,4}\b/i.test(trimmed);
+      const isNumQ = /^\s*\d{1,4}\s*[\.:\)]\s+/i.test(trimmed);
+
+      // Track column headers
+      if (/\b(Column|List)\s+(I{1,3}|[1234])\b/i.test(trimmed)) {
+        inColumnSection = true;
       }
 
-      let isAns = false;
-      for (const p of ANS_PATTERNS) {
-        const m = line.match(p);
-        if (m && cur) {
-          let ansVal = m[1].toUpperCase().trim();
-          if (ansVal === '1') ansVal = 'A';
-          else if (ansVal === '2') ansVal = 'B';
-          else if (ansVal === '3') ansVal = 'C';
-          else if (ansVal === '4') ansVal = 'D';
-          cur.answer = ansVal;
-          isAns = true;
-          break;
-        }
+      // Track Answer / Solution headers
+      if (isAnsLine(trimmed) || isSolLine(trimmed)) {
+        inAnsOrSolSection = true;
+        inColumnSection = false;
       }
-      if (isAns) continue;
 
-      let isSol = false;
-      for (const p of SOL_PATTERNS) {
-        if (p.test(line)) {
-          if (cur) {
-            mode = 'sol';
-            const rest = line.replace(p, '').trim();
-            if (rest) cur.solLines.push(rest);
-            isSol = true;
-            break;
+      let isNewQ = false;
+      if (isExplicitQ || isNamedQ) {
+        isNewQ = true;
+      } else if (isNumQ) {
+        if (inColumnSection && !inAnsOrSolSection) {
+          isNewQ = false;
+        } else if (!currentBlock) {
+          isNewQ = true;
+        } else if (inAnsOrSolSection) {
+          isNewQ = true;
+        } else {
+          const hasOptions = currentBlock.lines.some((l, idx) => detectOptionKey(l.text, idx === 0));
+          if (hasOptions) {
+            isNewQ = true;
+          } else {
+            isNewQ = currentBlock.lines.length === 0;
           }
         }
       }
-      if (isSol) continue;
 
-      const optKey = detectOption(line);
-      if (optKey && cur) {
-        mode = 'opt';
-        const optVal = stripOptionPrefix(line);
-        cur.options[optKey] = optVal;
-        continue;
-      }
-
-      if (looksLikeQStart(line)) {
-        pushCur();
-        cur = { qLines: [], solLines: [], options: {}, answer: '', startLine: i + 1 };
-        mode = 'q';
-        cur.qLines.push(stripQNumber(line));
-        continue;
-      }
-
-      if (cur) {
-        if (mode === 'sol') {
-          cur.solLines.push(line);
-        } else if (mode === 'opt') {
-          const lastKey = Object.keys(cur.options).pop();
-          if (lastKey) cur.options[lastKey] += ' ' + line;
-          else cur.qLines.push(line);
-        } else {
-          cur.qLines.push(line);
+      if (isNewQ) {
+        if (currentBlock && currentBlock.lines.length > 0) {
+          blocks.push(currentBlock);
         }
+        currentBlock = {
+          lines: [{ text: trimmed, lineNumber: i + 1 }],
+          startLine: i + 1
+        };
+        inColumnSection = false;
+        inAnsOrSolSection = false;
       } else {
-        cur = { qLines: [line], solLines: [], options: {}, answer: '', startLine: i + 1 };
-        mode = 'q';
+        if (!currentBlock) {
+          currentBlock = {
+            lines: [{ text: trimmed, lineNumber: i + 1 }],
+            startLine: i + 1
+          };
+        } else {
+          currentBlock.lines.push({ text: trimmed, lineNumber: i + 1 });
+        }
       }
     }
-    pushCur();
+    if (currentBlock && currentBlock.lines.length > 0) {
+      blocks.push(currentBlock);
+    }
+    return blocks;
+  }
+
+  // ================================================================
+  // STAGE 2: QUESTION TYPE DETECTION
+  // ================================================================
+  function detectBlockType(block) {
+    const text = block.lines.map(l => l.text).join('\n');
+
+    // 1. Matrix Match
+    if (/\b(column|list)\s+I\b/i.test(text) && /\b(column|list)\s+II\b/i.test(text) && (/\b[A-D]\s*(?:→|->|=>|-|:)\s*[1-4]/i.test(text) || /matrix\s+match/i.test(text))) {
+      return 'matrix';
+    }
+
+    // 2. Match the Following
+    if (/\b(column|list)\s+I\b/i.test(text) && /\b(column|list)\s+II\b/i.test(text)) {
+      return 'match';
+    }
+
+    // 3. Assertion & Reason
+    if (/\b(assertion|reason)\b.*\b(assertion|reason)\b/is.test(text) || /^A:\s*Assertion/i.test(text) || /\bassertion\s*\([aA]\)/i.test(text)) {
+      return 'assertion_reason';
+    }
+
+    // 4. Statement Based
+    if (/\bstatement\s+(i|ii|1|2)\b/i.test(text)) {
+      return 'statement_based';
+    }
+
+    // 5. Case Study / Paragraph / Comprehension
+    if (/\b(case\s+study|read\s+the\s+following\s+passage|comprehension|passage\s+based)\b/i.test(text)) {
+      return 'case_study';
+    }
+
+    // 6. True / False
+    if (/\btrue\b.*\bfalse\b/i.test(text) || block.lines.some(l => /^\s*(?:Ans|Answer)?\s*[:\.-]?\s*(True|False)\s*$/i.test(l.text))) {
+      return 'true_false';
+    }
+
+    // 7. Multiple Correct
+    if (/more\s+than\s+one\s+correct|multiple\s+correct/i.test(text) || /\bAns(?:wer)?\s*[:\.-]?\s*\(?[A-D]\s*[,;\s]\s*[A-D]\b/i.test(text)) {
+      return 'mcq_multiple';
+    }
+
+    // 8. Diagram / Image
+    if (/\b(diagram|circuit|figure|refer\s+to\s+the\s+image)\b/i.test(text) || /\{\{IMG::/i.test(text)) {
+      return 'diagram';
+    }
+
+    // 9. Graph
+    if (/\b(graph|curve|plot|v-t\s+graph|p-v\s+diagram)\b/i.test(text)) {
+      return 'graph';
+    }
+
+    // 10. Table
+    if (/\|.*\|.*\|/.test(text) || /\btable\b/i.test(text)) {
+      return 'table';
+    }
+
+    // 11. Numerical / Integer (No A-D options found)
+    const hasOptions = block.lines.some((l, idx) => detectOptionKey(l.text, idx === 0));
+    if (!hasOptions) {
+      const hasAnsNum = block.lines.some(l => isAnsLine(l.text) && /[-+]?\d+/.test(l.text));
+      if (hasAnsNum || /\b(numerical|integer|find\s+the\s+value|calculate)\b/i.test(text)) {
+        const ansLine = block.lines.find(l => isAnsLine(l.text));
+        const rawAns = ansLine ? stripAnsPrefix(ansLine.text) : '';
+        return /^\d+$/.test(rawAns.trim()) ? 'integer' : 'numerical';
+      }
+    }
+
+    // Default Fallback
+    return 'mcq_single';
+  }
+
+  // ================================================================
+  // STAGE 3: MODULAR PARSER REGISTRY & INDEPENDENT DEDICATED PARSERS
+  // ================================================================
+
+  class BaseQuestionParser {
+    createBaseObject(block, meta, overrides = {}) {
+      const qText = overrides.question || '';
+      const solText = overrides.solutionText || '';
+      const opts = overrides.options || {};
+      const { concept, confidence } = detectConcept(qText, meta.chapter);
+      const difficulty = overrides.difficulty || detectDifficulty(qText, opts, solText);
+
+      return {
+        subject: meta.subject,
+        klass: meta.klass,
+        chapter: meta.chapter,
+        topic: concept,
+        exams: meta.exams,
+        language: meta.language,
+        source: meta.source,
+        referenceBook: meta.referenceBook,
+        author: meta.author,
+        marks: meta.defaultMarks,
+        negMarks: meta.negMarks,
+        difficulty: difficulty,
+        qType: overrides.qType || 'mcq_single',
+        question: qText,
+        optA: overrides.optA || opts['A'] || '',
+        optB: overrides.optB || opts['B'] || '',
+        optC: overrides.optC || opts['C'] || '',
+        optD: overrides.optD || opts['D'] || '',
+        answer: overrides.answer || '',
+        answers: overrides.answers || null,
+        matrixAnswer: overrides.matrixAnswer || null,
+        columnA: overrides.columnA || null,
+        columnB: overrides.columnB || null,
+        assertion: overrides.assertion || '',
+        reason: overrides.reason || '',
+        statement1: overrides.statement1 || '',
+        statement2: overrides.statement2 || '',
+        numAnswer: overrides.numAnswer || '',
+        solutionText: solText,
+        concept: concept,
+        confidenceScore: confidence,
+        startLine: block.startLine,
+        errors: [],
+        isValid: true,
+        isDuplicate: false,
+        ignored: false,
+        dupAction: 'skip',
+        collapsed: false,
+      };
+    }
+
+    parseStandard(block, meta) {
+      const lines = block.lines;
+      let qLines = [];
+      let solLines = [];
+      let options = {};
+      let answer = '';
+      let mode = 'q';
+
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].text.trim();
+        if (!line) continue;
+
+        if (i === 0) {
+          line = stripQNumber(line);
+        }
+
+        if (isAnsLine(line)) {
+          mode = 'ans';
+          let rawAns = stripAnsPrefix(line).toUpperCase();
+          const m = rawAns.match(/([A-D]|TRUE|FALSE|[-+]?\d+(?:\.\d+)?)/i);
+          if (m) answer = m[1].toUpperCase();
+          continue;
+        }
+
+        if (isSolLine(line)) {
+          mode = 'sol';
+          const rest = stripSolPrefix(line);
+          if (rest) solLines.push(rest);
+          continue;
+        }
+
+        const optKey = detectOptionKey(line, i === 0);
+        if (optKey) {
+          mode = 'opt';
+          options[optKey] = stripOptionPrefix(line);
+          continue;
+        }
+
+        if (mode === 'sol') {
+          solLines.push(line);
+        } else if (mode === 'opt') {
+          const lastKey = Object.keys(options).pop();
+          if (lastKey) options[lastKey] += ' ' + line;
+          else qLines.push(line);
+        } else {
+          qLines.push(line);
+        }
+      }
+
+      const qText = qLines.join('\n').trim();
+      return this.createBaseObject(block, meta, {
+        question: qText,
+        options,
+        answer,
+        solutionText: solLines.join('\n').trim(),
+      });
+    }
+  }
+
+  // 1. Standard MCQ Parser
+  class StandardMCQParser extends BaseQuestionParser {
+    parse(block, meta) {
+      const res = this.parseStandard(block, meta);
+      res.qType = 'mcq_single';
+      return res;
+    }
+  }
+
+  // 2. Multiple Correct Parser
+  class MultipleCorrectParser extends BaseQuestionParser {
+    parse(block, meta) {
+      const res = this.parseStandard(block, meta);
+      res.qType = 'mcq_multiple';
+      
+      const rawAns = res.answer || block.lines.map(l => l.text).join('\n');
+      const matches = rawAns.match(/[A-D]/gi) || [];
+      const uniqueAnswers = Array.from(new Set(matches.map(m => m.toUpperCase())));
+      
+      if (uniqueAnswers.length > 0) {
+        res.answers = uniqueAnswers;
+        res.answer = uniqueAnswers.join(', ');
+      }
+      return res;
+    }
+  }
+
+  // 3. Assertion Reason Parser
+  class AssertionReasonParser extends BaseQuestionParser {
+    parse(block, meta) {
+      const res = this.parseStandard(block, meta);
+      res.qType = 'assertion_reason';
+
+      const text = res.question;
+      const aMatch = text.match(/Assertion\s*(?:\(A\))?\s*[:\.]?\s*([^\n]+(?:\n(?!Reason)[^\n]+)*)/i);
+      const rMatch = text.match(/Reason\s*(?:\(R\))?\s*[:\.]?\s*([^\n]+)+/i);
+
+      if (aMatch) res.assertion = aMatch[1].trim();
+      if (rMatch) res.reason = rMatch[1].trim();
+      return res;
+    }
+  }
+
+  // 4. Statement Based Parser
+  class StatementBasedParser extends BaseQuestionParser {
+    parse(block, meta) {
+      const res = this.parseStandard(block, meta);
+      res.qType = 'statement_based';
+
+      const text = res.question;
+      const s1Match = text.match(/Statement\s+(?:I|1)\s*[:\.]?\s*([^\n]+)/i);
+      const s2Match = text.match(/Statement\s+(?:II|2)\s*[:\.]?\s*([^\n]+)/i);
+
+      if (s1Match) res.statement1 = s1Match[1].trim();
+      if (s2Match) res.statement2 = s2Match[1].trim();
+      return res;
+    }
+  }
+
+  // 5. Matrix Match Parser (DEDICATED MATRIX ENGINE)
+  class MatrixMatchParser extends BaseQuestionParser {
+    parse(block, meta) {
+      const lines = block.lines;
+      let qLines = [];
+      let col1 = [];
+      let col2 = [];
+      let solLines = [];
+      let matrixAnswerMap = {};
+      let mode = 'q';
+
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].text.trim();
+        if (!line) continue;
+
+        if (i === 0) {
+          line = stripQNumber(line);
+        }
+
+        // CRITICAL FIX: Instantly switch to Answer Mode when Answer is reached! STOP Column II immediately!
+        if (isAnsLine(line) || /^\s*[A-D]\s*(?:→|->|=>|-|:)\s*[1-4]/i.test(line)) {
+          mode = 'ans';
+          this.extractMatrixPair(line, matrixAnswerMap);
+          continue;
+        }
+
+        if (isSolLine(line)) {
+          mode = 'sol';
+          const rest = stripSolPrefix(line);
+          if (rest) solLines.push(rest);
+          continue;
+        }
+
+        if (mode === 'ans') {
+          if (/^\s*[A-D]\s*(?:→|->|=>|-|:)\s*[1-4]/i.test(line)) {
+            this.extractMatrixPair(line, matrixAnswerMap);
+          } else if (isSolLine(line)) {
+            mode = 'sol';
+            solLines.push(stripSolPrefix(line));
+          }
+          continue;
+        }
+
+        if (mode === 'sol') {
+          solLines.push(line);
+          continue;
+        }
+
+        // Header detection for Column I / Column II
+        if (/^\s*(?:Column|List)\s+I\b/i.test(line)) {
+          mode = 'col1';
+          continue;
+        }
+        if (/^\s*(?:Column|List)\s+II\b/i.test(line)) {
+          mode = 'col2';
+          continue;
+        }
+
+        if (mode === 'col1') {
+          if (/^[A-D][\.\):]/i.test(line) || col1.length === 0) col1.push(line);
+          else col1[col1.length - 1] += ' ' + line;
+        } else if (mode === 'col2') {
+          if (/^[1-4][\.\):]/i.test(line) || col2.length === 0) col2.push(line);
+          else col2[col2.length - 1] += ' ' + line;
+        } else {
+          qLines.push(line);
+        }
+      }
+
+      // Format answer string: "A → 1,3; B → 1,4; C → 2,4; D → 2,3"
+      const ansParts = [];
+      ['A', 'B', 'C', 'D'].forEach(k => {
+        if (matrixAnswerMap[k] && matrixAnswerMap[k].length > 0) {
+          ansParts.push(`${k} → ${matrixAnswerMap[k].join(',')}`);
+        }
+      });
+      const formattedAns = ansParts.join('; ');
+
+      let fullQ = qLines.join('\n').trim();
+      if (col1.length > 0 || col2.length > 0) {
+        fullQ += '\n\n**Column I**\n' + col1.join('\n') + '\n\n**Column II**\n' + col2.join('\n');
+      }
+
+      return this.createBaseObject(block, meta, {
+        qType: 'matrix',
+        question: fullQ,
+        columnA: col1,
+        columnB: col2,
+        matrixAnswer: matrixAnswerMap,
+        answer: formattedAns,
+        solutionText: solLines.join('\n').trim(),
+      });
+    }
+
+    extractMatrixPair(line, map) {
+      const cleaned = stripAnsPrefix(line);
+      const regex = /([A-D])\s*(?:→|->|=>|-|:)\s*([1-4](?:\s*[,;&]\s*[1-4])*)/gi;
+      let match;
+      while ((match = regex.exec(cleaned)) !== null) {
+        const key = match[1].toUpperCase();
+        const vals = match[2].match(/[1-4]/g) || [];
+        if (!map[key]) map[key] = [];
+        vals.forEach(v => {
+          if (!map[key].includes(v)) map[key].push(v);
+        });
+      }
+    }
+  }
+
+  // 6. Match the Following Parser
+  class MatchFollowingParser extends MatrixMatchParser {
+    parse(block, meta) {
+      const res = super.parse(block, meta);
+      res.qType = 'match';
+      return res;
+    }
+  }
+
+  // 7. Numerical / Integer Parser
+  class NumericalParser extends BaseQuestionParser {
+    parse(block, meta) {
+      const lines = block.lines;
+      let qLines = [];
+      let solLines = [];
+      let answer = '';
+      let mode = 'q';
+
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].text.trim();
+        if (!line) continue;
+
+        if (i === 0) {
+          line = stripQNumber(line);
+        }
+
+        if (isAnsLine(line)) {
+          mode = 'ans';
+          const raw = stripAnsPrefix(line);
+          const m = raw.match(/[-+]?\d+(?:\.\d+)?/);
+          if (m) answer = m[0];
+          continue;
+        }
+
+        if (isSolLine(line)) {
+          mode = 'sol';
+          const rest = stripSolPrefix(line);
+          if (rest) solLines.push(rest);
+          continue;
+        }
+
+        if (mode === 'sol') solLines.push(line);
+        else if (mode === 'q') qLines.push(line);
+      }
+
+      const qText = qLines.join('\n').trim();
+      const isInt = /^[-+]?\d+$/.test(answer);
+
+      return this.createBaseObject(block, meta, {
+        qType: isInt ? 'integer' : 'numerical',
+        question: qText,
+        answer: answer,
+        numAnswer: answer,
+        solutionText: solLines.join('\n').trim(),
+      });
+    }
+  }
+
+  // 8. True / False Parser
+  class TrueFalseParser extends BaseQuestionParser {
+    parse(block, meta) {
+      const res = this.parseStandard(block, meta);
+      res.qType = 'true_false';
+      return res;
+    }
+  }
+
+  // 9. Case Study / Passage Parser
+  class CaseStudyParser extends BaseQuestionParser {
+    parse(block, meta) {
+      const res = this.parseStandard(block, meta);
+      res.qType = 'case_study';
+      return res;
+    }
+  }
+
+  // Modular Registry
+  const ParserRegistry = {
+    parsers: {
+      mcq_single:          new StandardMCQParser(),
+      mcq_multiple:        new MultipleCorrectParser(),
+      assertion_reason:    new AssertionReasonParser(),
+      statement_based:     new StatementBasedParser(),
+      matrix:              new MatrixMatchParser(),
+      match:               new MatchFollowingParser(),
+      numerical:           new NumericalParser(),
+      integer:             new NumericalParser(),
+      true_false:          new TrueFalseParser(),
+      case_study:          new CaseStudyParser(),
+      paragraph:           new CaseStudyParser(),
+      comprehension:       new CaseStudyParser(),
+      diagram:             new StandardMCQParser(),
+      image:               new StandardMCQParser(),
+      graph:               new StandardMCQParser(),
+      table:               new StandardMCQParser(),
+      sequence:            new StandardMCQParser(),
+      reasoning:           new StandardMCQParser(),
+      data_interpretation: new StandardMCQParser(),
+      fill_blank:          new NumericalParser(),
+      multi_part:          new StandardMCQParser(),
+    },
+    register(type, parserInstance) {
+      this.parsers[type] = parserInstance;
+    },
+    get(type) {
+      return this.parsers[type] || this.parsers['mcq_single'];
+    }
+  };
+
+  // ================================================================
+  // PIPELINE orchestrator
+  // ================================================================
+  function parseText(rawText) {
+    const meta = getMeta();
+    
+    // Stage 1: Question Boundary Detection
+    const rawBlocks = splitIntoRawBlocks(rawText);
+
+    // Stage 2 & 3: Type Detection & Dispatch to Dedicated Parser
+    const questions = rawBlocks.map(block => {
+      const qType = detectBlockType(block);
+      const parser = ParserRegistry.get(qType);
+      return parser.parse(block, meta);
+    });
 
     return questions;
   }
 
-  // ── VALIDATION & DUPLICATE CHECKING ────────────────────────────────
+  // ── VALIDATION ENGINE ─────────────────────────────────────────────
   function validateAll(questions) {
     const meta = getMeta();
     questions.forEach((q, idx) => {
@@ -390,11 +779,25 @@
       if (!q.klass && !meta.klass) q.errors.push(`Question #${num}: Class is required.`);
       if (!q.chapter && !meta.chapter) q.errors.push(`Question #${num}: Chapter is required.`);
       if (!q.question || q.question.length < 5) q.errors.push(`Question #${num}: Question text is missing or too short.`);
+
+      // TYPE-SPECIFIC VALIDATION RULES
       if (q.qType === 'mcq_single' || q.qType === 'mcq_multiple') {
         if (!q.optA) q.errors.push(`Question #${num}: Option A is missing.`);
         if (!q.optB) q.errors.push(`Question #${num}: Option B is missing.`);
+        if (!q.answer) q.errors.push(`Question #${num}: Correct answer is missing.`);
+      } else if (q.qType === 'matrix' || q.qType === 'match') {
+        const hasMatMap = q.matrixAnswer && Object.keys(q.matrixAnswer).length > 0;
+        if (!q.answer && !hasMatMap) {
+          q.errors.push(`Question #${num}: Matrix/Match answer is missing.`);
+        }
+      } else if (q.qType === 'numerical' || q.qType === 'integer') {
+        if (!q.answer && !q.numAnswer) {
+          q.errors.push(`Question #${num}: Numerical answer is missing.`);
+        }
+      } else if (q.qType === 'true_false') {
+        if (!q.answer) q.errors.push(`Question #${num}: Correct answer (True/False) is missing.`);
       }
-      if (!q.answer && q.qType !== 'numerical') q.errors.push(`Question #${num}: Correct answer is missing.`);
+
       q.isValid = q.errors.length === 0;
     });
   }
@@ -803,30 +1206,39 @@
   }
 
   function restoreSample() {
-    const sample = `1. Which of the following is diamagnetic in nature?
-(A) Zn2+
-(B) Ni2+
-(C) Co2+
-(D) Cu2+
-Answer: A
-Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10. All electrons become paired, making it diamagnetic.
+    const sample = `1. Matrix Match Question
+Column I
+A. Sodium
+B. Potassium
+C. Calcium
+D. Magnesium
 
-2. Which statement is correct regarding ionic compounds?
-(A) They have low melting points.
-(B) They conduct electricity in solid state.
-(C) They have high lattice energy.
-(D) They are non-polar.
-Answer: C
-Solution: Ionic compounds have strong electrostatic forces leading to high lattice energy.
+Column II
+1. Group 1
+2. Group 2
+3. Period 3
+4. Period 4
 
-3. Assertion: Light waves can travel through vacuum.
+Answer:
+A → 1,3
+B → 1,4
+C → 2,4
+D → 2,3
+
+Solution: Sodium is Group 1, Period 3. Potassium is Group 1, Period 4. Calcium is Group 2, Period 4. Magnesium is Group 2, Period 3.
+
+2. Assertion: Light waves can travel through vacuum.
 Reason: Light is an electromagnetic wave and does not require a material medium for propagation.
 (A) Both A and R are true and R is correct explanation.
 (B) Both A and R are true but R is not correct explanation.
 (C) A is true but R is false.
 (D) A is false but R is true.
 Answer: A
-Solution: Electromagnetic waves self-propagate through electric and magnetic field oscillations.`;
+Solution: Electromagnetic waves self-propagate through electric and magnetic field oscillations.
+
+3. Find the value of \\int_{0}^{2} x^3 dx.
+Answer: 4
+Solution: \\left[ \\frac{x^4}{4} \\right]_{0}^{2} = \\frac{16}{4} = 4.`;
 
     const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
     if (ta) {
@@ -947,8 +1359,8 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
       predefOptions: q.predefOptions || '',
       columnA: q.columnA || [],
       columnB: q.columnB || [],
-      matchOptions: q.matchOptions || {},
-      numAnswer: q.numAnswer || '',
+      matchOptions: q.matrixAnswer || q.matchOptions || {},
+      numAnswer: q.numAnswer || q.answer || '',
       correctOption: q.answer,
       solutionText: q.solutionText || '',
     }));
@@ -1012,7 +1424,13 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     if (conceptFilter) conceptFilter.addEventListener('change', (e) => { state.filterSearch = e.target.value; renderCards(); });
   }
 
-  window.BulkModule = {
+  const _global = typeof window !== 'undefined' ? window : globalThis;
+  _global.ParserRegistry = ParserRegistry;
+  _global.BaseQuestionParser = BaseQuestionParser;
+  _global.parseText = parseText;
+  _global.validateAll = validateAll;
+
+  _global.BulkModule = {
     init,
     runParse,
     openCardEditor,
