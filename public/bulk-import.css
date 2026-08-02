@@ -155,3 +155,22 @@ textarea.word-wrap{white-space:pre-wrap;word-break:break-word;}
 @media(max-width:900px){
   .bq-workspace-grid{grid-template-columns:1fr !important;}
 }
+/* Image attach button (bulk edit modal) */
+.bq-img-attach-btn{
+  background:transparent;
+  border:1px solid rgba(201,162,39,.3);
+  color:var(--gold);
+  font-size:11px;
+  font-weight:600;
+  padding:3px 9px;
+  border-radius:6px;
+  cursor:pointer;
+  font-family:inherit;
+  transition:all .15s;
+  white-space:nowrap;
+  flex-shrink:0;
+}
+.bq-img-attach-btn:hover{
+  background:rgba(201,162,39,.12);
+  border-color:rgba(201,162,39,.6);
+}

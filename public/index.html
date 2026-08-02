@@ -1054,24 +1054,112 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
         </div>
       </div>
 
-      <!-- INLINE CARD EDIT MODAL -->
-            <select id="bulkEditAnswer">
-              <option value="A">Option A</option>
-              <option value="B">Option B</option>
-              <option value="C">Option C</option>
-              <option value="D">Option D</option>
-            </select>
+      <!-- INLINE CARD EDIT MODAL (Bulk Import) -->
+      <div class="bulk-edit-modal" id="bqEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+        <div class="bulk-edit-box" style="background:#141822;border:1px solid #2e364a;border-radius:14px;padding:26px;width:700px;max-width:95vw;max-height:90vh;overflow-y:auto;position:relative;">
+          <button onclick="window.BulkModule.closeCardEditor()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#666;font-size:20px;cursor:pointer;line-height:1;" title="Close">✕</button>
+          <h3 style="color:#fff;margin-bottom:18px;font-size:15px;font-weight:700;">✎ Edit Question</h3>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Question Type</label>
+              <select id="bqEditQType" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:7px 10px;width:100%;font-size:13px;">
+                <option value="mcq_single">Standard MCQ</option>
+                <option value="mcq_multiple">Multiple Correct</option>
+                <option value="statement_based">Statement Based</option>
+                <option value="assertion_reason">Assertion Reason</option>
+                <option value="match">Match Following</option>
+                <option value="numerical">Numerical / Integer</option>
+                <option value="true_false">True / False</option>
+                <option value="case_study">Case Study</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Difficulty</label>
+              <select id="bqEditDifficulty" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:7px 10px;width:100%;font-size:13px;">
+                <option value="Easy">Easy</option>
+                <option value="Medium">Medium</option>
+                <option value="Hard">Hard</option>
+              </select>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Detailed Solution (LaTeX supported)</label>
-            <textarea id="bulkEditSolution" style="min-height:70px;"></textarea>
+
+          <div class="form-group" style="margin-bottom:12px;">
+            <label style="font-size:11px;color:#8f9bba;">Concept / Sub-Topic</label>
+            <input type="text" id="bqEditConcept" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:7px 10px;width:100%;font-size:13px;">
           </div>
-          <div class="modal-actions">
+
+          <!-- Question Text + Image -->
+          <div class="form-group" style="margin-bottom:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+              <label style="font-size:11px;color:#8f9bba;">Question Text (LaTeX supported)</label>
+              <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditQuestion" title="Attach Image to Question">📷 Attach Image</button>
+            </div>
+            <textarea id="bqEditQuestion" style="min-height:80px;background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:8px 10px;width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+            <div id="bqEditQuestionImgPreview" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+          </div>
+
+          <!-- Options Grid with Image Attach -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div class="form-group" style="margin:0;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                <label style="font-size:11px;color:#8f9bba;">Option A</label>
+                <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditOptA" title="Attach Image to Option A">📷</button>
+              </div>
+              <input type="text" id="bqEditOptA" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;width:100%;font-size:12px;">
+              <div id="bqEditOptAImgPreview" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;"></div>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                <label style="font-size:11px;color:#8f9bba;">Option B</label>
+                <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditOptB" title="Attach Image to Option B">📷</button>
+              </div>
+              <input type="text" id="bqEditOptB" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;width:100%;font-size:12px;">
+              <div id="bqEditOptBImgPreview" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;"></div>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                <label style="font-size:11px;color:#8f9bba;">Option C</label>
+                <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditOptC" title="Attach Image to Option C">📷</button>
+              </div>
+              <input type="text" id="bqEditOptC" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;width:100%;font-size:12px;">
+              <div id="bqEditOptCImgPreview" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;"></div>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                <label style="font-size:11px;color:#8f9bba;">Option D</label>
+                <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditOptD" title="Attach Image to Option D">📷</button>
+              </div>
+              <input type="text" id="bqEditOptD" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;width:100%;font-size:12px;">
+              <div id="bqEditOptDImgPreview" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;"></div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:12px;">
+            <label style="font-size:11px;color:#8f9bba;">Correct Answer (e.g. A, or A,B, or 4.5)</label>
+            <input type="text" id="bqEditAnswer" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:7px 10px;width:100%;font-size:13px;">
+          </div>
+
+          <!-- Solution + Image -->
+          <div class="form-group" style="margin-bottom:18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+              <label style="font-size:11px;color:#8f9bba;">Detailed Solution (LaTeX supported)</label>
+              <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditSolution" title="Attach Image to Solution">📷 Attach Image</button>
+            </div>
+            <textarea id="bqEditSolution" style="min-height:80px;background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:8px 10px;width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+            <div id="bqEditSolutionImgPreview" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end;gap:10px;">
             <button class="btn btn-ghost" onclick="window.BulkModule.closeCardEditor()">Cancel</button>
             <button class="btn btn-primary" onclick="window.BulkModule.saveCardEditor()">Save Changes</button>
           </div>
         </div>
       </div>
+
+      <!-- Hidden file input for bulk edit modal image uploads -->
+      <input type="file" id="bqHiddenImageInput" accept="image/*" style="display:none;">
+
 
       <!-- ── USERS ──────────────────────────────────────────── -->
       <div id="pageUsers" class="page-section">
@@ -2872,5 +2960,142 @@ window.Auth                 = Auth;   // useful for console debugging
 window.QP                   = QP;     // already assigned above
 </script>
 <script src="bulk-import.js"></script>
+<script>
+/* ================================================================
+   IMAGE ATTACH BUTTON HANDLERS
+   Wires up .img-link-btn / .attach-btn (single question form)
+   and .bq-img-attach-btn (bulk import card editor)
+   ================================================================ */
+(function initImageAttachHandlers() {
+
+  // ── SINGLE QUESTION FORM ────────────────────────────────────────
+  // The single question form uses contenteditable .eq-field elements.
+  // Clicking the 📷 button triggers the hidden file input,
+  // then processAndInsertImage() embeds the image as a chip.
+  const hiddenInput = document.getElementById('hiddenImageInput');
+  let _singleTarget = null;
+
+  if (hiddenInput) {
+    hiddenInput.addEventListener('change', async () => {
+      const file = hiddenInput.files && hiddenInput.files[0];
+      if (!file || !_singleTarget) return;
+      const el = document.getElementById(_singleTarget) || _singleTarget;
+      if (typeof processAndInsertImage === 'function') {
+        await processAndInsertImage(file, el);
+      }
+      hiddenInput.value = '';
+      _singleTarget = null;
+    });
+
+    // Delegate click on any .img-link-btn or .attach-btn in the page
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.img-link-btn, .attach-btn, .img-link-btn-flat');
+      if (!btn) return;
+      const targetId = btn.dataset.target;
+      if (!targetId) return;
+      _singleTarget = targetId;
+      hiddenInput.value = '';
+      hiddenInput.click();
+    });
+  }
+
+  // ── BULK IMPORT CARD EDITOR ─────────────────────────────────────
+  // Bulk edit modal uses plain <textarea> and <input type="text">.
+  // Images are stored as {{IMG::dataUrl}} text markers at the end
+  // of the field value, and displayed as thumbnail chips below the field.
+  const bqInput = document.getElementById('bqHiddenImageInput');
+  let _bqTarget = null;
+
+  function bqShowImgPreview(previewId, dataUrl) {
+    const preview = document.getElementById(previewId);
+    if (!preview) return;
+    const chip = document.createElement('div');
+    chip.style.cssText = 'position:relative;display:inline-block;';
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.cssText = 'max-width:80px;max-height:60px;border-radius:4px;border:1px solid #2e364a;';
+    const rm = document.createElement('button');
+    rm.textContent = '✕';
+    rm.title = 'Remove image';
+    rm.style.cssText = 'position:absolute;top:-4px;right:-4px;background:#e05252;color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;';
+    rm.onclick = () => {
+      // Remove {{IMG::...}} from the textarea/input value
+      const field = document.getElementById(_bqTargetId(previewId));
+      if (field) {
+        field.value = field.value.replace(new RegExp('\\{\\{IMG::' + escapeRegExp(dataUrl) + '\\}\\}', 'g'), '').trimEnd();
+      }
+      chip.remove();
+    };
+    chip.appendChild(img);
+    chip.appendChild(rm);
+    preview.appendChild(chip);
+  }
+
+  function _bqTargetId(previewId) {
+    // Preview id is like "bqEditQuestionImgPreview" → field is "bqEditQuestion"
+    return previewId.replace('ImgPreview', '');
+  }
+  function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  if (bqInput) {
+    bqInput.addEventListener('change', async () => {
+      const file = bqInput.files && bqInput.files[0];
+      if (!file || !_bqTarget) return;
+
+      // Read and compress the image
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const dataUrl = ev.target.result;
+        let compressed = dataUrl;
+        if (typeof compressImage === 'function') {
+          compressed = await compressImage(dataUrl);
+        }
+
+        // Append {{IMG::url}} marker to the field value
+        const field = document.getElementById(_bqTarget);
+        if (field) {
+          const marker = '{{IMG::' + compressed + '}}';
+          if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
+            field.value = (field.value || '') + (field.value ? ' ' : '') + marker;
+          }
+        }
+
+        // Show preview chip below the field
+        const previewId = _bqTarget + 'ImgPreview';
+        bqShowImgPreview(previewId, compressed);
+
+        if (typeof showToast === 'function') showToast('📷 Image attached!');
+      };
+      reader.readAsDataURL(file);
+      bqInput.value = '';
+      _bqTarget = null;
+    });
+
+    // Delegate click on .bq-img-attach-btn buttons
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.bq-img-attach-btn');
+      if (!btn) return;
+      _bqTarget = btn.dataset.bqTarget;
+      if (!_bqTarget) return;
+      bqInput.value = '';
+      bqInput.click();
+    });
+  }
+
+  // Clear image previews when bulk edit modal closes
+  const origClose = window.BulkModule && window.BulkModule.closeCardEditor;
+  if (origClose) {
+    window.BulkModule.closeCardEditor = function() {
+      origClose();
+      ['bqEditQuestionImgPreview','bqEditOptAImgPreview','bqEditOptBImgPreview',
+       'bqEditOptCImgPreview','bqEditOptDImgPreview','bqEditSolutionImgPreview']
+       .forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+    };
+  }
+
+})();
+</script>
 </body>
 </html>
