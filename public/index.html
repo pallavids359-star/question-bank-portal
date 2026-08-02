@@ -2391,6 +2391,76 @@ const DEFAULT_PREDEF_TEXT=
 function fillDefaultPredef(){const el=document.getElementById('predefOptions');if(!el)return;el.innerHTML='';el.appendChild(buildEquationFragment(DEFAULT_PREDEF_TEXT));}
 fillDefaultPredef();
 
+// ── FORM DROPDOWN INITIALIZATION ─────────────────────────────────────────────
+(function initFormDropdowns() {
+  // Populate Subject dropdown
+  const subjectEl = document.getElementById('subject');
+  if (subjectEl) {
+    subjectEl.innerHTML = '<option value="">Select Subject</option>';
+    SUBJECTS.forEach(function(s) {
+      var o = document.createElement('option');
+      o.value = s; o.textContent = s;
+      subjectEl.appendChild(o);
+    });
+  }
+
+  // Populate Class dropdown
+  const klassEl = document.getElementById('klass');
+  if (klassEl) {
+    klassEl.innerHTML = '<option value="">Select Class</option>';
+    CLASSES.forEach(function(c) {
+      var o = document.createElement('option');
+      o.value = c; o.textContent = 'Class ' + c;
+      klassEl.appendChild(o);
+    });
+  }
+
+  // Populate Exam Category toggles
+  const examTogglesEl = document.getElementById('examToggles');
+  if (examTogglesEl) {
+    examTogglesEl.innerHTML = '';
+    EXAMS.forEach(function(ex) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'toggle-btn';
+      btn.textContent = ex;
+      btn.addEventListener('click', function() {
+        if (selectedExams.has(ex)) {
+          selectedExams.delete(ex);
+          btn.classList.remove('active');
+        } else {
+          selectedExams.add(ex);
+          btn.classList.add('active');
+        }
+      });
+      examTogglesEl.appendChild(btn);
+    });
+  }
+
+  // Subject & Class change → update chapters
+  if (subjectEl) subjectEl.addEventListener('change', updateChapterOptions);
+  if (klassEl) klassEl.addEventListener('change', updateChapterOptions);
+})();
+
+function updateChapterOptions() {
+  var subjectEl = document.getElementById('subject');
+  var klassEl   = document.getElementById('klass');
+  var chapterEl = document.getElementById('chapter');
+  if (!chapterEl) return;
+  var subject = subjectEl ? subjectEl.value : '';
+  var klass   = klassEl   ? klassEl.value   : '';
+  chapterEl.innerHTML = '<option value="">Select Chapter</option>';
+  var key = subject + '-' + klass;
+  var chapters = NCERT_CHAPTERS[key] || [];
+  chapters.forEach(function(ch) {
+    var o = document.createElement('option');
+    o.value = ch; o.textContent = ch;
+    chapterEl.appendChild(o);
+  });
+}
+window.updateChapterOptions = updateChapterOptions;
+
+
 const qTypeSel=document.getElementById('qType');
 const mcqBlock=document.getElementById('mcqBlock');
 const arBlock=document.getElementById('arBlock');

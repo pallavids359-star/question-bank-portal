@@ -1177,7 +1177,7 @@ Medium
 
     // Map each parsed question into backend JSON contract
     const payloadArray = importList.map((q) => {
-      return {
+    return {
         subject: q.subject,
         klass: q.klass,
         chapter: q.chapter,
@@ -1185,10 +1185,10 @@ Medium
         exams: q.exams && q.exams.length ? q.exams : ['NEET'],
         qType: q.qType || 'mcq_single',
         question: q.question,
-        optA: q.optA,
-        optB: q.optB,
-        optC: q.optC,
-        optD: q.optD,
+        optA: q.optA || '',
+        optB: q.optB || '',
+        optC: q.optC || '',
+        optD: q.optD || '',
         assertion: q.assertion || '',
         reason: q.reason || '',
         statement1: q.statement1 || '',
@@ -1199,19 +1199,7 @@ Medium
         matchOptions: q.matchOptions || {},
         numAnswer: q.numAnswer || '',
         correctOption: q.answer,
-        solutionText: q.solutionText,
-        difficulty: q.difficulty || 'Medium',
-        marks: '4',
-        negMarks: '1',
-        language: 'English',
-        source: '',
-        author: '',
-        referenceBook: '',
-        status: 'Published',
-        tags: '',
-        year: '',
-        attemptLevel: '',
-        board: '',
+        solutionText: q.solutionText || '',
       };
     });
 
