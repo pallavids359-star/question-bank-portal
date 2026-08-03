@@ -2880,11 +2880,52 @@ function getCleanQuestionText(q){
 
 function ensureMathDelimiters(text) {
   if (!text || typeof text !== 'string') return text || '';
-  return text.replace(/(\\?(?:dfrac|frac|sqrt|int|sum|prod|lim|alpha|beta|gamma|theta|lambda|omega|pi|mu|sigma|phi|delta|epsilon|mathrm|mathbf|text|vec|hat|bar)\b[^\n$]*)/gi, (match) => {
-    if (match.startsWith('$') || match.startsWith('\\(') || match.startsWith('\\[')) return match;
-    return '$' + match.trim() + '$';
-  });
+  let i = 0;
+  const n = text.length;
+  let result = '';
+  let buf = '';
+  let hasDelimiters = false;
+
+  while (i < n) {
+    if (text[i] === '$') {
+      const isDisplay = text[i + 1] === '$';
+      const delim = isDisplay ? '$$' : '$';
+      const end = text.indexOf(delim, i + delim.length);
+      if (end !== -1) {
+        hasDelimiters = true;
+        if (buf) { result += buf; buf = ''; }
+        result += text.slice(i, end + delim.length);
+        i = end + delim.length;
+        continue;
+      }
+    }
+    if (text.startsWith('\\(', i) || text.startsWith('\\[', i)) {
+      const isDisplay = text.startsWith('\\[', i);
+      const closeDelim = isDisplay ? '\\]' : '\\)';
+      const end = text.indexOf(closeDelim, i + 2);
+      if (end !== -1) {
+        hasDelimiters = true;
+        if (buf) { result += buf; buf = ''; }
+        result += text.slice(i, end + closeDelim.length);
+        i = end + closeDelim.length;
+        continue;
+      }
+    }
+    buf += text[i];
+    i++;
+  }
+
+  if (buf) {
+    if (!hasDelimiters && /\\(?:dfrac|frac|sqrt|int|sum|prod|lim|alpha|beta|gamma|theta|lambda|omega|pi|mu|sigma|phi|delta|epsilon|mathrm|mathbf|text|vec|hat|bar|left|right)\b/.test(buf)) {
+      result += `$${buf.trim()}$`;
+    } else {
+      result += buf;
+    }
+  }
+
+  return result;
 }
+
 
 function renderStaticPreview(raw){
   const span=document.createElement('span');
