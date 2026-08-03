@@ -1089,18 +1089,30 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
             <input type="text" id="bqEditConcept" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:7px 10px;width:100%;font-size:13px;">
           </div>
 
-          <!-- Question Text + Image -->
-          <div class="form-group" style="margin-bottom:12px;">
+          <!-- Assertion & Reason Block -->
+          <div id="bqEditARBlock" style="display:none;margin-bottom:12px;">
+            <div class="form-group" style="margin-bottom:8px;">
+              <label style="font-size:11px;color:#8f9bba;">Assertion (A) (LaTeX supported)</label>
+              <textarea id="bqEditAssertion" style="min-height:50px;background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:8px 10px;width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+            </div>
+            <div class="form-group" style="margin-bottom:8px;">
+              <label style="font-size:11px;color:#8f9bba;">Reason (R) (LaTeX supported)</label>
+              <textarea id="bqEditReason" style="min-height:50px;background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:8px 10px;width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+            </div>
+          </div>
+
+          <!-- Question Text + Image (for MCQs, Numerical, Statement, etc.) -->
+          <div class="form-group" id="bqEditQuestionGroup" style="margin-bottom:12px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
-              <label style="font-size:11px;color:#8f9bba;">Question Text (LaTeX supported)</label>
+              <label style="font-size:11px;color:#8f9bba;" id="bqEditQuestionLabel">Question Text (LaTeX supported)</label>
               <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditQuestion" title="Attach Image to Question">📷 Attach Image</button>
             </div>
             <textarea id="bqEditQuestion" style="min-height:80px;background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:8px 10px;width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
             <div id="bqEditQuestionImgPreview" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
           </div>
 
-          <!-- Options Grid with Image Attach -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <!-- Options Grid with Image Attach (Hidden for Numerical & Integer questions) -->
+          <div id="bqEditOptionsBlock" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
             <div class="form-group" style="margin:0;">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                 <label style="font-size:11px;color:#8f9bba;">Option A</label>
@@ -1136,7 +1148,7 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
           </div>
 
           <div class="form-group" style="margin-bottom:12px;">
-            <label style="font-size:11px;color:#8f9bba;">Correct Answer (e.g. A, or A,B, or 4.5)</label>
+            <label style="font-size:11px;color:#8f9bba;" id="bqEditAnswerLabel">Correct Answer (e.g. A, or A,B, or 4.5)</label>
             <input type="text" id="bqEditAnswer" style="background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:7px 10px;width:100%;font-size:13px;">
           </div>
 
@@ -2866,7 +2878,21 @@ function getCleanQuestionText(q){
   return raw;
 }
 
-function renderStaticPreview(raw){const span=document.createElement('span');span.className='li-preview';span.appendChild(buildEquationFragment(raw||''));return span;}
+function ensureMathDelimiters(text) {
+  if (!text || typeof text !== 'string') return text || '';
+  return text.replace(/(\\?(?:dfrac|frac|sqrt|int|sum|prod|lim|alpha|beta|gamma|theta|lambda|omega|pi|mu|sigma|phi|delta|epsilon|mathrm|mathbf|text|vec|hat|bar)\b[^\n$]*)/gi, (match) => {
+    if (match.startsWith('$') || match.startsWith('\\(') || match.startsWith('\\[')) return match;
+    return '$' + match.trim() + '$';
+  });
+}
+
+function renderStaticPreview(raw){
+  const span=document.createElement('span');
+  span.className='li-preview';
+  const processed = ensureMathDelimiters(raw || '');
+  span.appendChild(buildEquationFragment(processed));
+  return span;
+}
 
 function renderList(){
   if(!Array.isArray(allQuestions)) allQuestions = [];
@@ -2954,6 +2980,33 @@ function renderList(){
     (q.exams||[]).forEach(ex=>{const pill=document.createElement('span');pill.className='tag-pill';pill.textContent=ex;examsLine.appendChild(pill);});
 
     main.appendChild(examsLine);
+
+    // Detailed Solution Toggle Button & Collapsible Solution Box
+    const solText = q.solutionText || q.solution_text || '';
+    const solToggleBtn = document.createElement('button');
+    solToggleBtn.type = 'button';
+    solToggleBtn.style.cssText = 'background:rgba(0,180,216,0.1);border:1px solid rgba(0,180,216,0.3);color:#00b4d8;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;margin-top:10px;display:inline-flex;align-items:center;gap:6px;font-weight:600;';
+    solToggleBtn.innerHTML = '💡 View Detailed Answer';
+
+    const solBox = document.createElement('div');
+    solBox.className = 'li-solution-box';
+    solBox.style.cssText = 'display:none;margin-top:8px;padding:10px 14px;background:rgba(0,180,216,0.06);border:1px solid rgba(0,180,216,0.25);border-radius:8px;font-size:13px;color:#e2e8f0;line-height:1.6;';
+
+    if (solText) {
+      solBox.appendChild(renderStaticPreview(solText));
+    } else {
+      solBox.innerHTML = '<em style="color:#8f9bba;">No detailed answer recorded for this question.</em>';
+    }
+
+    solToggleBtn.onclick = () => {
+      const isHidden = solBox.style.display === 'none';
+      solBox.style.display = isHidden ? 'block' : 'none';
+      solToggleBtn.innerHTML = isHidden ? '💡 Hide Solution' : '💡 View Detailed Answer';
+    };
+
+    main.appendChild(solToggleBtn);
+    main.appendChild(solBox);
+
     if(q.createdBy||q.updatedBy){
       const ownerLine=document.createElement('div');ownerLine.className='li-owner';
       if(q.createdBy)ownerLine.textContent='Added by '+q.createdBy;

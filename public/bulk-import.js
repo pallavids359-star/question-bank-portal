@@ -1561,16 +1561,69 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     const modal = document.getElementById('bqEditModal') || document.getElementById('bulkEditModal');
     if (!modal) return;
 
-    setVal('bqEditQuestion', q.question || '');
-    setVal('bqEditOptA', q.optA || '');
-    setVal('bqEditOptB', q.optB || '');
-    setVal('bqEditOptC', q.optC || '');
-    setVal('bqEditOptD', q.optD || '');
-    setVal('bqEditAnswer', q.numAnswer || q.answer || 'A');
-    setVal('bqEditSolution', q.solutionText || '');
-    setVal('bqEditConcept', q.concept || '');
+    const qType = q.qType || 'mcq_single';
+    setVal('bqEditQType', qType);
+    setVal('bqEditConcept', q.concept || q.topic || '');
     setVal('bqEditDifficulty', q.difficulty || 'Medium');
-    setVal('bqEditQType', q.qType || 'mcq_single');
+
+    const arBlock = document.getElementById('bqEditARBlock');
+    const qGroup = document.getElementById('bqEditQuestionGroup');
+    const optsBlock = document.getElementById('bqEditOptionsBlock');
+    const ansLabel = document.getElementById('bqEditAnswerLabel');
+
+    if (qType === 'assertion_reason') {
+      if (arBlock) arBlock.style.display = 'block';
+      if (qGroup) qGroup.style.display = 'none';
+      if (optsBlock) optsBlock.style.display = 'grid';
+      if (ansLabel) ansLabel.textContent = 'Correct Option (e.g. A, B, C, D)';
+
+      let ass = q.assertion || '';
+      let rea = q.reason || '';
+      if (!ass && q.question) {
+        const aM = q.question.match(/(?:Assertion|\(A\)|A)\s*[:\.-]\s*([^\n]+(?:\n(?!Reason|\(R\)|R:)[^\n]+)*)/i);
+        if (aM) ass = aM[1].trim();
+      }
+      if (!rea && q.question) {
+        const rM = q.question.match(/(?:Reason|\(R\)|R)\s*[:\.-]\s*([^\n]+)+/i);
+        if (rM) rea = rM[1].trim();
+      }
+      setVal('bqEditAssertion', ass);
+      setVal('bqEditReason', rea);
+
+      const defaultArOpts = {
+        A: 'Both Assertion (A) and Reason (R) are true and Reason (R) is the correct explanation of Assertion (A).',
+        B: 'Both Assertion (A) and Reason (R) are true but Reason (R) is NOT the correct explanation of Assertion (A).',
+        C: 'Assertion (A) is true but Reason (R) is false.',
+        D: 'Assertion (A) is false but Reason (R) is true.'
+      };
+      setVal('bqEditOptA', q.optA || defaultArOpts.A);
+      setVal('bqEditOptB', q.optB || defaultArOpts.B);
+      setVal('bqEditOptC', q.optC || defaultArOpts.C);
+      setVal('bqEditOptD', q.optD || defaultArOpts.D);
+      setVal('bqEditAnswer', q.answer || 'A');
+    } else if (qType === 'numerical' || qType === 'integer') {
+      if (arBlock) arBlock.style.display = 'none';
+      if (qGroup) qGroup.style.display = 'block';
+      if (optsBlock) optsBlock.style.display = 'none';
+      if (ansLabel) ansLabel.textContent = 'Correct Numerical Value (e.g. 0.759 or 12)';
+
+      setVal('bqEditQuestion', q.question || '');
+      setVal('bqEditAnswer', q.numAnswer || q.answer || '');
+    } else {
+      if (arBlock) arBlock.style.display = 'none';
+      if (qGroup) qGroup.style.display = 'block';
+      if (optsBlock) optsBlock.style.display = 'grid';
+      if (ansLabel) ansLabel.textContent = 'Correct Answer (e.g. A, or A,B, or 4.5)';
+
+      setVal('bqEditQuestion', q.question || '');
+      setVal('bqEditOptA', q.optA || '');
+      setVal('bqEditOptB', q.optB || '');
+      setVal('bqEditOptC', q.optC || '');
+      setVal('bqEditOptD', q.optD || '');
+      setVal('bqEditAnswer', q.answer || 'A');
+    }
+
+    setVal('bqEditSolution', q.solutionText || '');
 
     modal.style.display = 'flex';
     modal.classList.add('open');
@@ -1592,25 +1645,34 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
       return;
     }
     const q = state.parsedQuestions[idx];
-    q.question = gVal('bqEditQuestion');
-    q.optA = gVal('bqEditOptA');
-    q.optB = gVal('bqEditOptB');
-    q.optC = gVal('bqEditOptC');
-    q.optD = gVal('bqEditOptD');
-    q.answer = gVal('bqEditAnswer');
-    q.solutionText = gVal('bqEditSolution');
+    const newType = gVal('bqEditQType');
+    q.qType = newType;
     q.concept = gVal('bqEditConcept');
     q.topic = q.concept;
     q.difficulty = gVal('bqEditDifficulty');
-    q.qType = gVal('bqEditQType');
+    q.solutionText = gVal('bqEditSolution');
 
-    if (q.qType === 'assertion_reason') {
-      const aM = q.question.match(/Assertion\s*(?:\(A\))?\s*[:\.]?\s*([^\n]+(?:\n(?!Reason)[^\n]+)*)/i);
-      if (aM) q.assertion = aM[1].trim();
-      const rM = q.question.match(/Reason\s*(?:\(R\))?\s*[:\.]?\s*([^\n]+)+/i);
-      if (rM) q.reason = rM[1].trim();
-    } else if (q.qType === 'numerical' || q.qType === 'integer') {
-      q.numAnswer = q.answer;
+    if (newType === 'assertion_reason') {
+      q.assertion = gVal('bqEditAssertion');
+      q.reason = gVal('bqEditReason');
+      q.question = 'Assertion: ' + q.assertion + '\nReason: ' + q.reason;
+      q.optA = gVal('bqEditOptA') || 'Both Assertion (A) and Reason (R) are true and Reason (R) is the correct explanation of Assertion (A).';
+      q.optB = gVal('bqEditOptB') || 'Both Assertion (A) and Reason (R) are true but Reason (R) is NOT the correct explanation of Assertion (A).';
+      q.optC = gVal('bqEditOptC') || 'Assertion (A) is true but Reason (R) is false.';
+      q.optD = gVal('bqEditOptD') || 'Assertion (A) is false but Reason (R) is true.';
+      q.answer = gVal('bqEditAnswer') || 'A';
+    } else if (newType === 'numerical' || newType === 'integer') {
+      q.question = gVal('bqEditQuestion');
+      q.numAnswer = gVal('bqEditAnswer');
+      q.answer = q.numAnswer;
+      q.optA = ''; q.optB = ''; q.optC = ''; q.optD = '';
+    } else {
+      q.question = gVal('bqEditQuestion');
+      q.optA = gVal('bqEditOptA');
+      q.optB = gVal('bqEditOptB');
+      q.optC = gVal('bqEditOptC');
+      q.optD = gVal('bqEditOptD');
+      q.answer = gVal('bqEditAnswer');
     }
 
     validateAll(state.parsedQuestions);
