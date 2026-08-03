@@ -48,9 +48,11 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
         .order('updated_at', { ascending: false }).limit(5),
     ]);
 
-    // Compute derived values
-    const allSubjects = [...new Set((subjectsRes.data || []).map(q => q.subject).filter(Boolean))];
-    const allChapters = [...new Set((chaptersRes.data || []).map(q => q.chapter).filter(Boolean))];
+    // Compute derived values (filter valid PCMB subjects only)
+    const validPCMB = ['Physics', 'Chemistry', 'Mathematics', 'Maths', 'Biology'];
+    const rawSubjects = (subjectsRes.data || []).map(q => q.subject).filter(s => s && validPCMB.includes(s));
+    const allSubjects = [...new Set(rawSubjects.map(s => (s === 'Maths' ? 'Mathematics' : s)))];
+    const allChapters = [...new Set((chaptersRes.data || []).map(q => q.chapter).filter(c => c && c !== 'General'))];
 
     const users = usersRes.data || [];
     const byRole = { admin: 0, adder: 0, viewer: 0 };

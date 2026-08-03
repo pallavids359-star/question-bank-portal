@@ -10,20 +10,29 @@ const ADMIN_ONLY = [requireAuth, requireRole('admin')];
 
 // ── GET /api/users ─────────────────────────────────────────────────────────
 router.get('/', ...ADMIN_ONLY, async (req, res) => {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('users')
-    .select('id, name, email, role, status, is_active, created_at, last_login')
+    .select('id, name, email, role, subject, status, is_active, created_at, last_login')
     .order('created_at', { ascending: false });
+
+  if (error && error.message && error.message.includes('subject')) {
+    const fallback = await supabase
+      .from('users')
+      .select('id, name, email, role, status, is_active, created_at, last_login')
+      .order('created_at', { ascending: false });
+    data = (fallback.data || []).map(u => ({ ...u, subject: 'All' }));
+    error = fallback.error;
+  }
 
   if (error) {
     return res.status(500).json({ error: 'Failed to fetch users.', details: error.message });
   }
-  res.json(data);
+  res.json((data || []).map(u => ({ ...u, subject: u.subject || 'All' })));
 });
 
 // ── POST /api/users ────────────────────────────────────────────────────────
 router.post('/', ...ADMIN_ONLY, async (req, res) => {
-  const { name, email, password, role } = req.body || {};
+  const { name, email, password, role, subject } = req.body || {};
 
   if (!name || !email || !password || !role) {
     return res.status(400).json({ error: 'name, email, password and role are required.' });
@@ -43,18 +52,32 @@ router.post('/', ...ADMIN_ONLY, async (req, res) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  const { data, error } = await supabase
+  const userPayload = {
+    name:          name.trim(),
+    email:         email.toLowerCase().trim(),
+    password_hash: passwordHash,
+    role,
+    subject:       (subject || 'All').trim(),
+    status:        'active',
+    is_active:     true,
+  };
+
+  let { data, error } = await supabase
     .from('users')
-    .insert({
-      name:          name.trim(),
-      email:         email.toLowerCase().trim(),
-      password_hash: passwordHash,
-      role,
-      status:        'active',
-      is_active:     true,
-    })
-    .select('id, name, email, role, status, is_active, created_at')
+    .insert(userPayload)
+    .select('id, name, email, role, subject, status, is_active, created_at')
     .single();
+
+  if (error && error.message && error.message.includes('subject')) {
+    delete userPayload.subject;
+    const retry = await supabase
+      .from('users')
+      .insert(userPayload)
+      .select('id, name, email, role, status, is_active, created_at')
+      .single();
+    data = retry.data ? { ...retry.data, subject: 'All' } : null;
+    error = retry.error;
+  }
 
   if (error) {
     return res.status(400).json({ error: 'Failed to create user.', details: error.message });
@@ -63,7 +86,7 @@ router.post('/', ...ADMIN_ONLY, async (req, res) => {
   await writeAuditLog({
     userId: req.user.userId, userName: req.user.name,
     action: 'CREATE_USER', resourceType: 'user',
-    resourceId: data.id, details: { name: data.name, email: data.email, role },
+    resourceId: data.id, details: { name: data.name, email: data.email, role, subject: data.subject },
   });
 
   res.status(201).json(data);
@@ -71,20 +94,30 @@ router.post('/', ...ADMIN_ONLY, async (req, res) => {
 
 // ── GET /api/users/:id ────────────────────────────────────────────────────
 router.get('/:id', ...ADMIN_ONLY, async (req, res) => {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('users')
-    .select('id, name, email, role, status, is_active, created_at, last_login')
+    .select('id, name, email, role, subject, status, is_active, created_at, last_login')
     .eq('id', req.params.id)
     .maybeSingle();
 
+  if (error && error.message && error.message.includes('subject')) {
+    const fallback = await supabase
+      .from('users')
+      .select('id, name, email, role, status, is_active, created_at, last_login')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    data = fallback.data ? { ...fallback.data, subject: 'All' } : null;
+    error = fallback.error;
+  }
+
   if (error) return res.status(500).json({ error: error.message });
   if (!data)  return res.status(404).json({ error: 'User not found.' });
-  res.json(data);
+  res.json({ ...data, subject: data.subject || 'All' });
 });
 
 // ── PUT /api/users/:id ────────────────────────────────────────────────────
 router.put('/:id', ...ADMIN_ONLY, async (req, res) => {
-  const { name, email, role, status, is_active } = req.body || {};
+  const { name, email, role, subject, status, is_active } = req.body || {};
   const update = {};
 
   if (name      !== undefined) update.name      = name.trim();
@@ -95,6 +128,7 @@ router.put('/:id', ...ADMIN_ONLY, async (req, res) => {
     }
     update.role = role;
   }
+  if (subject   !== undefined) update.subject   = subject.trim();
   if (status    !== undefined) update.status    = status;
   if (is_active !== undefined) update.is_active = Boolean(is_active);
 
@@ -102,12 +136,24 @@ router.put('/:id', ...ADMIN_ONLY, async (req, res) => {
     return res.status(400).json({ error: 'No valid fields to update.' });
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('users')
     .update(update)
     .eq('id', req.params.id)
-    .select('id, name, email, role, status, is_active, created_at, last_login')
+    .select('id, name, email, role, subject, status, is_active, created_at, last_login')
     .maybeSingle();
+
+  if (error && error.message && error.message.includes('subject')) {
+    delete update.subject;
+    const retry = await supabase
+      .from('users')
+      .update(update)
+      .eq('id', req.params.id)
+      .select('id, name, email, role, status, is_active, created_at, last_login')
+      .maybeSingle();
+    data = retry.data ? { ...retry.data, subject: 'All' } : null;
+    error = retry.error;
+  }
 
   if (error) return res.status(400).json({ error: error.message });
   if (!data)  return res.status(404).json({ error: 'User not found.' });

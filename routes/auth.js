@@ -76,11 +76,13 @@ router.post('/login', async (req, res) => {
             .eq('id', activeUser.id);
         } catch (_) {}
 
+        const userSubject = activeUser.subject || 'All';
         const payload = {
           userId:         activeUser.id,
           email:          activeUser.email,
           name:           activeUser.name,
           role:           activeUser.role || 'admin',
+          subject:        userSubject,
           loginHistoryId: loginRecord?.id || null,
         };
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
@@ -94,7 +96,7 @@ router.post('/login', async (req, res) => {
 
         return res.json({
           token,
-          user: { id: activeUser.id, name: activeUser.name, email: activeUser.email, role: activeUser.role || 'admin' },
+          user: { id: activeUser.id, name: activeUser.name, email: activeUser.email, role: activeUser.role || 'admin', subject: userSubject },
         });
       }
     }

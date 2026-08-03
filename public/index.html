@@ -1174,12 +1174,12 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
           <table id="usersTable">
             <thead>
               <tr>
-                <th>Name</th><th>Email</th><th>Role</th><th>Status</th>
+                <th>Name</th><th>Email</th><th>Role</th><th>Subject Access</th><th>Status</th>
                 <th>Created</th><th>Last Login</th><th>Actions</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr class="empty-row"><td colspan="7">Loading users…</td></tr>
+              <tr class="empty-row"><td colspan="8">Loading users…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1219,55 +1219,15 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
       <!-- ── SETTINGS ───────────────────────────────────────── -->
       <div id="pageSettings" class="page-section">
         <div class="page-header">
-          <h2>Settings</h2>
-          <p>Configure system-wide difficulty distribution.</p>
+          <h2>System Settings</h2>
+          <p>Portal configuration and options.</p>
         </div>
         <div class="card" style="max-width:540px;">
-          <div class="section-title">Difficulty Distribution</div>
-          <p style="color:var(--muted);font-size:13px;margin-bottom:24px;line-height:1.6;">
-            Set the target percentage of Easy, Medium, and Hard questions.<br>The three values must always sum to 100%.
+          <div class="section-title">System Information</div>
+          <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:16px;">
+            Question Bank Portal v3.2<br>
+            All subject access and permissions are managed via User Management.
           </p>
-
-          <div class="diff-bar" id="diffBar">
-            <div class="diff-bar-easy"   id="dbEasy"   style="width:45%"></div>
-            <div class="diff-bar-medium" id="dbMedium" style="width:35%"></div>
-            <div class="diff-bar-hard"   id="dbHard"   style="width:20%"></div>
-          </div>
-
-          <div class="diff-slider-group">
-            <div class="diff-slider-label">
-              <span>🟢 Easy</span>
-              <span class="diff-pct pct-easy" id="easyPct">45%</span>
-            </div>
-            <input type="range" class="easy-range" id="easyRange" min="0" max="100" value="45"
-              oninput="onDiffSlider('easy',this.value)">
-          </div>
-          <div class="diff-slider-group">
-            <div class="diff-slider-label">
-              <span>🟡 Medium</span>
-              <span class="diff-pct pct-medium" id="mediumPct">35%</span>
-            </div>
-            <input type="range" class="medium-range" id="mediumRange" min="0" max="100" value="35"
-              oninput="onDiffSlider('medium',this.value)">
-          </div>
-          <div class="diff-slider-group">
-            <div class="diff-slider-label">
-              <span>🔴 Hard</span>
-              <span class="diff-pct pct-hard" id="hardPct">20%</span>
-            </div>
-            <input type="range" class="hard-range" id="hardRange" min="0" max="100" value="20"
-              oninput="onDiffSlider('hard',this.value)">
-          </div>
-
-          <div class="diff-total">
-            <span class="diff-total-label">Total</span>
-            <span class="diff-total-value" id="diffTotal">100%</span>
-          </div>
-          <div id="diffError" class="form-error">Percentages must sum to exactly 100%.</div>
-          <div style="display:flex;gap:10px;">
-            <button class="btn btn-primary" id="saveDiffBtn" onclick="saveDifficulty()">Save Settings</button>
-            <button class="btn btn-ghost" onclick="loadSettings()">Reset</button>
-          </div>
         </div>
       </div>
 
@@ -1323,6 +1283,15 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
         <option value="viewer">Question Viewer</option>
         <option value="adder">Question Adder (Editor)</option>
         <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Assigned Subject Access</label>
+      <select id="cuSubject">
+        <option value="All">All Subjects (Full Access)</option>
+        <option value="Physics">Physics</option>
+        <option value="Chemistry">Chemistry</option>
+        <option value="Mathematics">Mathematics</option>
+        <option value="Biology">Biology</option>
       </select>
     </div>
     <div class="form-error" id="cuError"></div>
@@ -1553,10 +1522,24 @@ function updateSidebarUser() {
 // ── ROLE RESTRICTIONS ────────────────────────────────────────
 // ============================================================
 function applyRoleRestrictions() {
+  const user = Auth.getUser() || {};
   const canEdit = Auth.can('edit');
   // Hide the question form card for viewers
   const formCard = document.getElementById('questionFormCard');
   if (formCard) formCard.style.display = canEdit ? '' : 'none';
+
+  // If teacher/user has specific subject assigned (e.g. Physics)
+  const subjectSel = document.getElementById('subject');
+  if (subjectSel) {
+    if (user.role !== 'admin' && user.subject && user.subject !== 'All') {
+      subjectSel.value = user.subject;
+      subjectSel.disabled = true;
+      subjectSel.title = `Your account is assigned to ${user.subject} only.`;
+      if (typeof updateChapterOptions === 'function') updateChapterOptions();
+    } else {
+      subjectSel.disabled = false;
+    }
+  }
 }
 
 // ============================================================
@@ -1703,7 +1686,7 @@ async function loadUsers() {
 function renderUsersTable(users) {
   const tbody = document.getElementById('usersTableBody');
   if (!users.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No users found.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No users found.</td></tr>';
     return;
   }
   const currentId = (Auth.getUser() || {}).id;
@@ -1712,6 +1695,7 @@ function renderUsersTable(users) {
       <td><strong style="color:#fff">${escapeHtml(u.name)}</strong></td>
       <td style="color:var(--muted)">${escapeHtml(u.email)}</td>
       <td><span class="badge role-${u.role}" style="text-transform:capitalize">${u.role}</span></td>
+      <td><span class="badge" style="background:rgba(0,180,216,0.15);color:#00b4d8;border:1px solid rgba(0,180,216,0.3);font-size:11px;padding:2px 8px;border-radius:12px;">${escapeHtml(u.subject || 'All')}</span></td>
       <td><span class="badge badge-${u.status}">${u.status}</span></td>
       <td style="color:var(--muted)">${fmtDate(u.created_at)}</td>
       <td style="color:var(--muted)">${u.last_login ? timeAgo(u.last_login) : 'Never'}</td>
@@ -1738,6 +1722,8 @@ function openCreateUserModal() {
   document.getElementById('cuEmail').value = '';
   document.getElementById('cuPassword').value = '';
   document.getElementById('cuRole').value = 'viewer';
+  const cuSub = document.getElementById('cuSubject');
+  if (cuSub) cuSub.value = 'All';
   document.getElementById('cuPasswordGroup').style.display = '';
   document.getElementById('cuError').classList.remove('visible');
   document.getElementById('createUserModal').classList.add('visible');
@@ -1754,6 +1740,8 @@ function openEditUserModal(userId) {
     document.getElementById('cuName').value  = u.name;
     document.getElementById('cuEmail').value = u.email;
     document.getElementById('cuRole').value  = u.role;
+    const cuSub = document.getElementById('cuSubject');
+    if (cuSub) cuSub.value = u.subject || 'All';
     document.getElementById('createUserModal').classList.add('visible');
   }).catch(e => showToast(e.message, true));
 }
@@ -1764,11 +1752,13 @@ function closeCreateUserModal() {
 }
 
 async function saveUser() {
-  const name  = document.getElementById('cuName').value.trim();
-  const email = document.getElementById('cuEmail').value.trim();
-  const pw    = document.getElementById('cuPassword').value;
-  const role  = document.getElementById('cuRole').value;
-  const errEl = document.getElementById('cuError');
+  const name    = document.getElementById('cuName').value.trim();
+  const email   = document.getElementById('cuEmail').value.trim();
+  const pw      = document.getElementById('cuPassword').value;
+  const role    = document.getElementById('cuRole').value;
+  const cuSubEl = document.getElementById('cuSubject');
+  const subject = cuSubEl ? cuSubEl.value : 'All';
+  const errEl   = document.getElementById('cuError');
   errEl.classList.remove('visible');
 
   if (!name || !email || !role) {
@@ -1783,12 +1773,12 @@ async function saveUser() {
   try {
     if (_editingUserId) {
       await apiReq(`/api/users/${_editingUserId}`, {
-        method: 'PUT', body: JSON.stringify({ name, email, role }),
+        method: 'PUT', body: JSON.stringify({ name, email, role, subject }),
       });
       showToast('User updated.');
     } else {
       await apiReq('/api/users', {
-        method: 'POST', body: JSON.stringify({ name, email, password: pw, role }),
+        method: 'POST', body: JSON.stringify({ name, email, password: pw, role, subject }),
       });
       showToast('User created successfully.');
     }
@@ -2050,17 +2040,19 @@ function timeAgo(iso) {
 // ── EXISTING QUESTION SYSTEM (LaTeX engine + form + list) ───
 // ============================================================
 
-const SUBJECTS = ["Physics","Chemistry","Biology","Maths"];
+const SUBJECTS = ["Physics","Chemistry","Mathematics","Biology"];
 const CLASSES  = ["11","12"];
 const NCERT_CHAPTERS = {
-  "Physics-11":["Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
-  "Physics-12":["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
-  "Chemistry-11":["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry: Some Basic Principles and Techniques","Hydrocarbons"],
-  "Chemistry-12":["Solutions","Electrochemistry","Chemical Kinetics","d- and f-Block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules"],
-  "Biology-11":["The Living World","Biological Classification","Plant Kingdom","Animal Kingdom","Morphology of Flowering Plants","Anatomy of Flowering Plants","Structural Organisation in Animals","Cell: The Unit of Life","Biomolecules","Cell Cycle and Cell Division","Transport in Plants","Mineral Nutrition","Photosynthesis in Higher Plants","Respiration in Plants","Plant Growth and Development","Digestion and Absorption","Breathing and Exchange of Gases","Body Fluids and Circulation","Excretory Products and their Elimination","Locomotion and Movement","Neural Control and Coordination","Chemical Coordination and Integration"],
-  "Biology-12":["Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health","Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution","Human Health and Disease","Microbes in Human Welfare","Biotechnology: Principles and Processes","Biotechnology and its Applications","Organisms and Populations","Ecosystem","Biodiversity and Conservation"],
-  "Maths-11":["Sets","Relations and Functions","Trigonometric Functions","Principle of Mathematical Induction","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three Dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
-  "Maths-12":["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"]
+  "Physics-11": ["Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
+  "Physics-12": ["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
+  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Chemical Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry – Some Basic Principles and Techniques","Hydrocarbons","The s-Block Elements","The p-Block Elements","Environmental Chemistry","Hydrogen"],
+  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f-Block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","Surface Chemistry","General Principles and Processes of Isolation of Elements","The Solid State"],
+  "Mathematics-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
+  "Maths-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
+  "Mathematics-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Applications of Derivatives","Integrals","Applications of Integrals","Differential Equations","Vector Algebra","Three-dimensional Geometry","Linear Programming","Probability"],
+  "Maths-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Applications of Derivatives","Integrals","Applications of Integrals","Differential Equations","Vector Algebra","Three-dimensional Geometry","Linear Programming","Probability"],
+  "Biology-11": ["The Living World","Biological Classification","Plant Kingdom","Animal Kingdom","Morphology of Flowering Plants","Anatomy of Flowering Plants","Structural Organisation in Animals","Cell: The Unit of Life","Biomolecules","Cell Cycle and Cell Division","Photosynthesis in Higher Plants","Respiration in Plants","Plant Growth and Development","Breathing and Exchange of Gases","Body Fluids and Circulation","Excretory Products and their Elimination","Locomotion and Movement","Neural Control and Coordination","Chemical Coordination and Integration"],
+  "Biology-12": ["Reproduction in Organisms","Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health","Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution","Human Health and Disease","Strategies for Enhancement in Food Production","Microbes in Human Welfare","Biotechnology: Principles and Processes","Biotechnology and Its Applications","Organisms and Populations"]
 };
 const EXAMS = ["NEET","JEE","KCET"];
 window.SUBJECTS = SUBJECTS;
@@ -2777,7 +2769,17 @@ function resetForm(){
   editingId=null;
   const ft=document.getElementById('formTitle');if(ft)ft.textContent='Add New Question';
   const sb=document.getElementById('saveBtn');if(sb)sb.textContent='Save Question';
-  const subjectSel=document.getElementById('subject');if(subjectSel)subjectSel.value='';
+  const user=Auth.getUser()||{};
+  const subjectSel=document.getElementById('subject');
+  if(subjectSel){
+    if(user.role !== 'admin' && user.subject && user.subject !== 'All'){
+      subjectSel.value = user.subject;
+      subjectSel.disabled = true;
+    }else{
+      subjectSel.value = '';
+      subjectSel.disabled = false;
+    }
+  }
   const klassSel=document.getElementById('klass');if(klassSel)klassSel.value='';
   if(typeof updateChapterOptions==='function') updateChapterOptions();
   const topEl=document.getElementById('topic');if(topEl)topEl.value='';
@@ -2797,9 +2799,17 @@ function renderFilterSubjects(){
   const fSubject=document.getElementById('fSubject');
   const fConcept=document.getElementById('fConcept');
   if(!fSubject) return;
-  const subs=Array.from(new Set(allQuestions.map(q=>q ? q.subject : ''))).filter(Boolean);const cur=fSubject.value;
+  const user=Auth.getUser()||{};
+  const subs=Array.from(new Set(allQuestions.map(q=>q ? q.subject : ''))).filter(s => s && s !== 'General');
+  const cur=fSubject.value;
   fSubject.innerHTML='<option value="">All Subjects</option>'+subs.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-  fSubject.value=subs.includes(cur)?cur:'';
+  if(user.role !== 'admin' && user.subject && user.subject !== 'All'){
+    fSubject.value = subs.includes(user.subject) ? user.subject : (user.subject || '');
+    fSubject.disabled = true;
+  }else{
+    fSubject.value = subs.includes(cur)?cur:'';
+    fSubject.disabled = false;
+  }
 
   if(fConcept){
     const concepts=Array.from(new Set(allQuestions.map(q=>q ? q.topic : ''))).filter(c => c && c !== 'General');

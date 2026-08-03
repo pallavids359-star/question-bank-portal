@@ -73,7 +73,8 @@ create table if not exists public.users (
   is_active       boolean     not null default true,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
-  last_login      timestamptz
+  last_login      timestamptz,
+  subject         text        not null default 'All'
 );
 
 create index if not exists users_email_idx on public.users (email);

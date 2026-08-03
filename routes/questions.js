@@ -124,8 +124,24 @@ router.get('/', ...READ_ROLES, async (req, res) => {
     .select('*')
     .order('created_at', { ascending: false });
 
-  if (req.query.subject) query = query.eq('subject', req.query.subject);
-  if (req.query.qType)   query = query.eq('q_type',  req.query.qType);
+  const userRole = (req.user?.role || 'admin').toLowerCase();
+  const userSub  = req.user?.subject || 'All';
+
+  if (userRole !== 'admin' && userSub && userSub !== 'All') {
+    if (userSub === 'Mathematics' || userSub === 'Maths') {
+      query = query.in('subject', ['Mathematics', 'Maths']);
+    } else {
+      query = query.eq('subject', userSub);
+    }
+  } else if (req.query.subject) {
+    if (req.query.subject === 'Mathematics' || req.query.subject === 'Maths') {
+      query = query.in('subject', ['Mathematics', 'Maths']);
+    } else {
+      query = query.eq('subject', req.query.subject);
+    }
+  }
+
+  if (req.query.qType) query = query.eq('q_type', req.query.qType);
 
   const { data, error } = await query;
   if (error) {

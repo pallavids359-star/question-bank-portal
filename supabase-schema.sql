@@ -81,4 +81,6 @@ alter table public.questions
   add column if not exists match_options  jsonb not null default '{"A":"","B":"","C":"","D":""}'::jsonb,
   add column if not exists num_answer     text not null default '';
 
+alter table public.users
+  add column if not exists subject text not null default 'All';
 
