@@ -93,6 +93,23 @@ function toDatabase(input) {
     out.exams = ['NEET'];
   }
 
+  // Fallback for num_answer if missing in payload
+  if ((!out.num_answer || out.num_answer === '') && input.answer && (out.q_type === 'numerical' || out.q_type === 'integer')) {
+    out.num_answer = input.answer;
+  }
+
+  // Fallback for assertion and reason if missing in payload but present in question text
+  if (out.q_type === 'assertion_reason') {
+    if (!out.assertion && (input.question || '')) {
+      const aM = input.question.match(/Assertion\s*(?:\(A\))?\s*[:\.]?\s*([^\n]+(?:\n(?!Reason)[^\n]+)*)/i);
+      if (aM) out.assertion = aM[1].trim();
+    }
+    if (!out.reason && (input.question || '')) {
+      const rM = input.question.match(/Reason\s*(?:\(R\))?\s*[:\.]?\s*([^\n]+)+/i);
+      if (rM) out.reason = rM[1].trim();
+    }
+  }
+
   return out;
 }
 
@@ -108,6 +125,9 @@ function toApi(row) {
   };
   for (const [apiField, dbField] of Object.entries(fieldMap)) {
     output[apiField] = row[dbField];
+  }
+  if (!output.numAnswer && row.answer && (row.q_type === 'numerical' || row.q_type === 'integer')) {
+    output.numAnswer = row.answer;
   }
   return output;
 }

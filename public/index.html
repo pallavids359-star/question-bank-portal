@@ -2704,7 +2704,7 @@ function validate(){
 }
 
 async function saveQuestion(){
-  if(!Auth.can('edit')){showToast('You do not have permission to add questions.',true);return;}
+  if(!Auth.can('edit')){showToast('Question Viewers do not have permission to edit or save questions.',true);return;}
   const err=validate();if(err){showToast(err,true);return;}
   const saveBtn=document.getElementById('saveBtn');saveBtn.disabled=true;saveBtn.textContent=editingId?'Updating…':'Saving…';
   const qType=document.getElementById('qType').value;
@@ -2717,7 +2717,7 @@ async function saveQuestion(){
 
   let mainQuestionText = eqVal('question');
   if(isNum) mainQuestionText = eqVal('numQuestion');
-  else if(isAR && !mainQuestionText) mainQuestionText = 'Assertion & Reason Question';
+  else if(isAR) mainQuestionText = 'Assertion: ' + eqVal('assertion') + '\nReason: ' + eqVal('reason');
   else if(isStatement && !mainQuestionText) mainQuestionText = 'Statement Based Question';
   else if(isMatch && !mainQuestionText) mainQuestionText = 'Match the Following Question';
 
@@ -2742,6 +2742,7 @@ async function saveQuestion(){
     columnB:isMatch?getRowValues('columnBRows').filter(v=>v):[],
     matchOptions:isMatch?{A:eqVal('matchOptA'),B:eqVal('matchOptB'),C:eqVal('matchOptC'),D:eqVal('matchOptD')}:{},
     numAnswer:isNum?eqVal('numAnswer'):'',
+    answer:isNum?eqVal('numAnswer'):'',
     correctOption:isNum?'':(document.getElementById('correctOption').value || 'A'),
     solutionText:eqVal('solutionText')
   };
@@ -2750,8 +2751,9 @@ async function saveQuestion(){
     const wasEditing=Boolean(editingId);
     const saved=wasEditing?await apiRequest('/'+encodeURIComponent(editingId),{method:'PUT',body:JSON.stringify(record)}):await apiRequest('',{method:'POST',body:JSON.stringify(record)});
     if(wasEditing){
-      const idx=allQuestions.findIndex(q=>q.id===editingId);
+      const idx=allQuestions.findIndex(q=>String(q.id)===String(editingId));
       if(idx>-1) allQuestions[idx]=saved;
+      else allQuestions.unshift(saved);
     }else{
       allQuestions.unshift(saved);
     }
@@ -2909,8 +2911,18 @@ function renderList(){
     const cleanQText = getCleanQuestionText(q);
 
     if(q.qType==='assertion_reason'){
-      const aLine=document.createElement('div');aLine.appendChild(document.createTextNode('A: '));aLine.appendChild(renderStaticPreview(q.assertion||''));main.appendChild(aLine);
-      const rLine=document.createElement('div');rLine.style.marginTop='4px';rLine.appendChild(document.createTextNode('R: '));rLine.appendChild(renderStaticPreview(q.reason||''));main.appendChild(rLine);
+      let ass = q.assertion || '';
+      let rea = q.reason || '';
+      if(!ass && q.question){
+        const aM = q.question.match(/(?:Assertion|\(A\)|A)\s*[:\.-]\s*([^\n]+(?:\n(?!Reason|\(R\)|R:)[^\n]+)*)/i);
+        if(aM) ass = aM[1].trim();
+      }
+      if(!rea && q.question){
+        const rM = q.question.match(/(?:Reason|\(R\)|R)\s*[:\.-]\s*([^\n]+)+/i);
+        if(rM) rea = rM[1].trim();
+      }
+      const aLine=document.createElement('div');aLine.appendChild(document.createTextNode('A: '));aLine.appendChild(renderStaticPreview(ass||''));main.appendChild(aLine);
+      const rLine=document.createElement('div');rLine.style.marginTop='4px';rLine.appendChild(document.createTextNode('R: '));rLine.appendChild(renderStaticPreview(rea||''));main.appendChild(rLine);
       const combo=document.createElement('div');combo.className='li-combo';combo.textContent='Correct: Option '+(q.correctOption||'—');main.appendChild(combo);
     }else if(q.qType==='statement_based'){
       if(cleanQText){const qL=document.createElement('div');qL.appendChild(renderStaticPreview(cleanQText));main.appendChild(qL);}
@@ -2930,7 +2942,8 @@ function renderList(){
       main.appendChild(optsLine);
     }else if(q.qType==='numerical'){
       const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
-      const ansLine=document.createElement('div');ansLine.className='li-combo correct';ansLine.appendChild(document.createTextNode('Correct Value: '));ansLine.appendChild(q.numAnswer?renderStaticPreview(q.numAnswer):document.createTextNode('—'));main.appendChild(ansLine);
+      const numVal = q.numAnswer || q.answer || '';
+      const ansLine=document.createElement('div');ansLine.className='li-combo correct';ansLine.appendChild(document.createTextNode('Correct Value: '));ansLine.appendChild(numVal?renderStaticPreview(numVal):document.createTextNode('—'));main.appendChild(ansLine);
     }else{
       const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
       const optsLine=document.createElement('div');optsLine.className='li-combo';
@@ -2966,8 +2979,8 @@ function setEqFieldElFromRaw(el,raw){el.innerHTML='';el.appendChild(buildEquatio
 
 window.QP={
   edit:function(id){
-    if(!Auth.can('edit'))return;
-    const q=allQuestions.find(x=>x.id===id);if(!q)return;editingId=id;
+    if(!Auth.can('edit')){showToast('Question Viewers do not have editing permissions.',true);return;}
+    const q=allQuestions.find(x=>String(x.id)===String(id));if(!q)return;editingId=id;
     const ft=document.getElementById('formTitle');if(ft)ft.textContent='Edit Question';
     const sb=document.getElementById('saveBtn');if(sb)sb.textContent='Update Question';
 
@@ -3040,11 +3053,11 @@ window.QP={
     if(qFormCard) qFormCard.scrollIntoView({behavior:'smooth'});
   },
   remove:async function(id){
-    if(!Auth.can('delete'))return;
+    if(!Auth.can('delete')){showToast('Question Viewers do not have permission to delete questions.',true);return;}
     if(!confirm('Delete this question? This cannot be undone.'))return;
     try{
       await apiRequest('/'+encodeURIComponent(id),{method:'DELETE'});
-      allQuestions=allQuestions.filter(x=>x.id!==id);renderFilterSubjects();renderList();showToast('Question deleted.');
+      allQuestions=allQuestions.filter(x=>String(x.id)!==String(id));renderFilterSubjects();renderList();showToast('Question deleted.');
     }catch(e){console.error('Delete failed:',e);showToast('Delete failed: '+e.message,true);}
   }
 };

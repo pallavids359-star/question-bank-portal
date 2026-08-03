@@ -662,16 +662,81 @@
   // 3. Assertion Reason Parser
   class AssertionReasonParser extends BaseQuestionParser {
     parse(block, meta) {
-      const res = this.parseStandard(block, meta);
-      res.qType = 'assertion_reason';
+      const inline = extractInlineMetadata(block.lines);
+      const lines = inline.cleanLines;
+      let assertion = '';
+      let reason = '';
+      let answer = '';
+      let options = {};
+      let solLines = [];
+      let fullRawText = [];
 
-      const text = res.question;
-      const aMatch = text.match(/Assertion\s*(?:\(A\))?\s*[:\.]?\s*([^\n]+(?:\n(?!Reason)[^\n]+)*)/i);
-      const rMatch = text.match(/Reason\s*(?:\(R\))?\s*[:\.]?\s*([^\n]+)+/i);
+      for (let i = 0; i < lines.length; i++) {
+        let line = (typeof lines[i] === 'string' ? lines[i] : lines[i].text).trim();
+        if (!line) continue;
+        if (i === 0) line = stripQNumber(line);
 
-      if (aMatch) res.assertion = aMatch[1].trim();
-      if (rMatch) res.reason = rMatch[1].trim();
-      return res;
+        // Check if line is Assertion
+        const aMatch = line.match(/^(?:Assertion|\(A\)|A)\s*[:\.-]\s*(.+)/i);
+        if (aMatch && !assertion) {
+          assertion = aMatch[1].trim();
+          continue;
+        }
+
+        // Check if line is Reason
+        const rMatch = line.match(/^(?:Reason|\(R\)|R)\s*[:\.-]\s*(.+)/i);
+        if (rMatch && !reason) {
+          reason = rMatch[1].trim();
+          continue;
+        }
+
+        if (isAnsLine(line)) {
+          let rawAns = stripAnsPrefix(line).toUpperCase();
+          const m = rawAns.match(/([A-D])/i);
+          if (m) answer = m[1].toUpperCase();
+          continue;
+        }
+
+        if (isSolLine(line)) {
+          solLines.push(stripSolPrefix(line));
+          continue;
+        }
+
+        const optKey = detectOptionKey(line, false);
+        if (optKey) {
+          options[optKey] = stripOptionPrefix(line);
+          continue;
+        }
+
+        fullRawText.push(line);
+      }
+
+      // Fallback extraction if A/R tags were inside full block text
+      const joined = fullRawText.join('\n');
+      if (!assertion) {
+        const m = joined.match(/(?:Assertion|\(A\))\s*[:\.-]\s*([^\n]+(?:\n(?!Reason|\(R\)|A:|R:)[^\n]+)*)/i);
+        if (m) assertion = m[1].trim();
+      }
+      if (!reason) {
+        const m = joined.match(/(?:Reason|\(R\))\s*[:\.-]\s*([^\n]+)+/i);
+        if (m) reason = m[1].trim();
+      }
+      if (!assertion && fullRawText.length > 0) {
+        assertion = fullRawText[0];
+        if (fullRawText.length > 1 && !reason) reason = fullRawText.slice(1).join('\n');
+      }
+
+      const qText = assertion ? `Assertion: ${assertion}\nReason: ${reason}` : joined;
+
+      return this.createBaseObject(block, meta, {
+        qType: 'assertion_reason',
+        question: qText,
+        assertion: assertion,
+        reason: reason,
+        options: options,
+        answer: answer || 'A',
+        solutionText: solLines.join('\n').trim(),
+      });
     }
   }
 
@@ -815,7 +880,6 @@
       let qLines = [];
       let solLines = [];
       let answer = '';
-      let mode = 'q';
 
       for (let i = 0; i < lines.length; i++) {
         let line = (typeof lines[i] === 'string' ? lines[i] : lines[i].text).trim();
@@ -826,32 +890,31 @@
         }
 
         if (isAnsLine(line)) {
-          mode = 'ans';
-          const raw = stripAnsPrefix(line);
-          const m = raw.match(/[-+]?\d+(?:\.\d+)?/);
-          if (m) answer = m[0];
+          answer = stripAnsPrefix(line).trim();
           continue;
         }
 
         if (isSolLine(line)) {
-          mode = 'sol';
           const rest = stripSolPrefix(line);
           if (rest) solLines.push(rest);
-          continue;
+          for (let j = i + 1; j < lines.length; j++) {
+            const sLine = (typeof lines[j] === 'string' ? lines[j] : lines[j].text).trim();
+            if (sLine) solLines.push(sLine);
+          }
+          break;
         }
 
-        if (mode === 'sol') solLines.push(line);
-        else if (mode === 'q') qLines.push(line);
+        qLines.push(line);
       }
 
       const qText = qLines.join('\n').trim();
-      const isInt = /^[-+]?\d+$/.test(answer);
+      const numVal = answer.trim();
 
       return this.createBaseObject(block, meta, {
-        qType: isInt ? 'integer' : 'numerical',
+        qType: 'numerical',
         question: qText,
-        answer: answer,
-        numAnswer: answer,
+        answer: numVal,
+        numAnswer: numVal,
         solutionText: solLines.join('\n').trim(),
       });
     }
@@ -1487,6 +1550,10 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
   }
 
   function openCardEditor(idx) {
+    if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('edit')) {
+      if (typeof showToast === 'function') showToast('Viewers cannot edit questions.', true);
+      return;
+    }
     state.editingIndex = idx;
     const q = state.parsedQuestions[idx];
     if (!q) return;
@@ -1499,7 +1566,7 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     setVal('bqEditOptB', q.optB || '');
     setVal('bqEditOptC', q.optC || '');
     setVal('bqEditOptD', q.optD || '');
-    setVal('bqEditAnswer', q.answer || 'A');
+    setVal('bqEditAnswer', q.numAnswer || q.answer || 'A');
     setVal('bqEditSolution', q.solutionText || '');
     setVal('bqEditConcept', q.concept || '');
     setVal('bqEditDifficulty', q.difficulty || 'Medium');
@@ -1536,6 +1603,15 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     q.topic = q.concept;
     q.difficulty = gVal('bqEditDifficulty');
     q.qType = gVal('bqEditQType');
+
+    if (q.qType === 'assertion_reason') {
+      const aM = q.question.match(/Assertion\s*(?:\(A\))?\s*[:\.]?\s*([^\n]+(?:\n(?!Reason)[^\n]+)*)/i);
+      if (aM) q.assertion = aM[1].trim();
+      const rM = q.question.match(/Reason\s*(?:\(R\))?\s*[:\.]?\s*([^\n]+)+/i);
+      if (rM) q.reason = rM[1].trim();
+    } else if (q.qType === 'numerical' || q.qType === 'integer') {
+      q.numAnswer = q.answer;
+    }
 
     validateAll(state.parsedQuestions);
     closeCardEditor();
