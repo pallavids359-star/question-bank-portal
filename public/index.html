@@ -807,8 +807,11 @@ textarea{resize:vertical;min-height:70px;}
                 </div>
                 <div class="eq-field multiline" id="question" data-placeholder="Type the question..." contenteditable="true" spellcheck="false"></div>
               </div>
-              <label class="field-label">Options <span class="req">*</span></label>
-              <div class="grid2">
+              <label class="field-label" id="mcqOptionsLabel">
+  Options <span class="req">*</span>
+</label>
+
+<div class="grid2" id="mcqOptionsGrid">
                 <div class="mcq-row" style="margin:0;"><div class="mcq-tag">A</div><div class="mcq-input-col"><div class="eq-wrap"><div class="eq-field" id="optA" data-placeholder="Option A" contenteditable="true" spellcheck="false"></div><button type="button" class="img-link-btn" data-target="optA" title="Attach Image">📎</button></div></div></div>
                 <div class="mcq-row" style="margin:0;"><div class="mcq-tag">B</div><div class="mcq-input-col"><div class="eq-wrap"><div class="eq-field" id="optB" data-placeholder="Option B" contenteditable="true" spellcheck="false"></div><button type="button" class="img-link-btn" data-target="optB" title="Attach Image">📎</button></div></div></div>
                 <div class="mcq-row" style="margin:0;"><div class="mcq-tag">C</div><div class="mcq-input-col"><div class="eq-wrap"><div class="eq-field" id="optC" data-placeholder="Option C" contenteditable="true" spellcheck="false"></div><button type="button" class="img-link-btn" data-target="optC" title="Attach Image">📎</button></div></div></div>
@@ -841,7 +844,9 @@ textarea{resize:vertical;min-height:70px;}
             </div>
 
             <div class="field" style="margin-top:20px;" id="correctOptionWrap">
-              <label class="field-label">Correct Option <span class="req">*</span></label>
+              <label class="field-label" id="correctOptionLabel">
+  Correct Option <span class="req">*</span>
+</label>
               <select id="correctOption">
                 <option value="">Select Correct Option</option>
                 <option value="A">Option A</option><option value="B">Option B</option>
@@ -869,19 +874,26 @@ textarea{resize:vertical;min-height:70px;}
               <h1 style="font-size:18px;">Saved Questions</h1>
             </div>
             <div class="filters">
-              <select id="fSubject"><option value="">All Subjects</option></select>
-              <select id="fConcept"><option value="">All Concepts</option></select>
-              <select id="fType">
-                <option value="">All Types</option>
-                <option value="mcq_single">MCQ (Single Correct)</option>
-                <option value="assertion_reason">Assertion &amp; Reason</option>
-                <option value="match">Match the Following</option>
-                <option value="numerical">Numerical / Integer Type</option>
-                <option value="true_false">True / False</option>
-                <option value="diagram_based">Diagram Based Question</option>
-                <option value="statement_based">Statement Based Question</option>
-              </select>
-            </div>
+  <select id="fSubject">
+    <option value="">All Subjects</option>
+  </select>
+
+  <select id="fClass">
+    <option value="">All Classes</option>
+  </select>
+
+  <select id="fChapter">
+    <option value="">All Chapters</option>
+  </select>
+
+  <select id="fConcept">
+    <option value="">All Concepts</option>
+  </select>
+
+  <select id="fType">
+    <option value="">All Question Types</option>
+  </select>
+</div>
             <div class="count-line" id="countLine"></div>
             <div id="listContainer"></div>
           </div>
@@ -2716,39 +2728,149 @@ const correctOptionWrap=document.getElementById('correctOptionWrap');
 
 function updateTypeVisibility(){
   if(!qTypeSel) return;
-  const type=qTypeSel.value;
-  const isAR=type==='assertion_reason';
-  const isMatch=type==='match';
-  const isNum=type==='numerical';
-  const isStatement=type==='statement_based';
-  const isTF=type==='true_false';
 
-  if(mcqBlock) mcqBlock.style.display=(isAR||isMatch||isNum||isTF)?'none':'';
-  if(arBlock) arBlock.style.display=isAR?'':'none';
-  if(matchBlock) matchBlock.style.display=isMatch?'':'none';
-  if(numBlock) numBlock.style.display=isNum?'':'none';
-  if(statementBlock) statementBlock.style.display=(isStatement||isTF)?'':'none';
-  if(correctOptionWrap) correctOptionWrap.style.display=(isNum||isTF)?'none':'';
+  const type=qTypeSel.value;
+
+  const isAssertionReason=
+    type==='assertion_reason';
+
+  const isMatch=
+    type==='match';
+
+  const isNumerical=
+    type==='numerical';
+
+  const isStatement=
+    type==='statement_based';
+
+  const isTrueFalse=
+    type==='true_false';
+    const mcqOptionsLabel=
+  document.getElementById('mcqOptionsLabel');
+
+const mcqOptionsGrid=
+  document.getElementById('mcqOptionsGrid');
+
+const correctOptionLabel=
+  document.getElementById('correctOptionLabel');
+
+  /*
+   * Standard MCQ, True/False, Statement Based
+   * and Diagram Based use the main MCQ block.
+   */
+  if(mcqBlock){
+    mcqBlock.style.display=
+      (
+        isAssertionReason ||
+        isMatch ||
+        isNumerical
+      )
+        ? 'none'
+        : '';
+  }
+  
+
+  if(arBlock){
+    arBlock.style.display=
+      isAssertionReason ? '' : 'none';
+  }
+
+  if(matchBlock){
+    matchBlock.style.display=
+      isMatch ? '' : 'none';
+  }
+
+  if(numBlock){
+    numBlock.style.display=
+      isNumerical ? '' : 'none';
+  }
+
+  /*
+   * True/False must not display Statement I
+   * and Statement II.
+   */
+  if(statementBlock){
+    statementBlock.style.display=
+      isStatement ? '' : 'none';
+  }
+
+  /*
+   * Only Numerical questions hide the
+   * Correct Option dropdown.
+   */
+  if(correctOptionWrap){
+    correctOptionWrap.style.display=
+      isNumerical ? 'none' : '';
+  }
+  /*
+ * Hide A–D options for True/False.
+ * The hidden fields still retain True and False
+ * for database compatibility.
+ */
+if(mcqOptionsLabel){
+  mcqOptionsLabel.style.display=
+    isTrueFalse ? 'none' : '';
+}
+
+if(mcqOptionsGrid){
+  mcqOptionsGrid.style.display=
+    isTrueFalse ? 'none' : '';
+}
+
+if(correctOptionLabel){
+  correctOptionLabel.innerHTML=
+    isTrueFalse
+      ? 'Correct Answer <span class="req">*</span>'
+      : 'Correct Option <span class="req">*</span>';
+}
 
   if(isStatement){
-    const optA = document.getElementById('optA');
-    const optB = document.getElementById('optB');
-    const optC = document.getElementById('optC');
-    const optD = document.getElementById('optD');
-    if(optA && !getFieldRaw(optA)) setEqFieldElFromRaw(optA, 'Both Statement I and Statement II are correct');
-    if(optB && !getFieldRaw(optB)) setEqFieldElFromRaw(optB, 'Both Statement I and Statement II are incorrect');
-    if(optC && !getFieldRaw(optC)) setEqFieldElFromRaw(optC, 'Statement I is correct but Statement II is incorrect');
-    if(optD && !getFieldRaw(optD)) setEqFieldElFromRaw(optD, 'Statement I is incorrect but Statement II is correct');
-  } else if(type==='true_false'){
-    const optA = document.getElementById('optA');
-    const optB = document.getElementById('optB');
-    const optC = document.getElementById('optC');
-    const optD = document.getElementById('optD');
-    if(optA && !getFieldRaw(optA)) setEqFieldElFromRaw(optA, 'True');
-    if(optB && !getFieldRaw(optB)) setEqFieldElFromRaw(optB, 'False');
-    if(optC && !getFieldRaw(optC)) setEqFieldElFromRaw(optC, '-');
-    if(optD && !getFieldRaw(optD)) setEqFieldElFromRaw(optD, '-');
+    const optA=document.getElementById('optA');
+    const optB=document.getElementById('optB');
+    const optC=document.getElementById('optC');
+    const optD=document.getElementById('optD');
+
+    if(optA && !getFieldRaw(optA)){
+      setEqFieldElFromRaw(
+        optA,
+        'Both Statement I and Statement II are correct'
+      );
+    }
+
+    if(optB && !getFieldRaw(optB)){
+      setEqFieldElFromRaw(
+        optB,
+        'Both Statement I and Statement II are incorrect'
+      );
+    }
+
+    if(optC && !getFieldRaw(optC)){
+      setEqFieldElFromRaw(
+        optC,
+        'Statement I is correct but Statement II is incorrect'
+      );
+    }
+
+    if(optD && !getFieldRaw(optD)){
+      setEqFieldElFromRaw(
+        optD,
+        'Statement I is incorrect but Statement II is correct'
+      );
+    }
   }
+
+  if(isTrueFalse){
+    const optA=document.getElementById('optA');
+    const optB=document.getElementById('optB');
+    const optC=document.getElementById('optC');
+    const optD=document.getElementById('optD');
+
+    setEqFieldElFromRaw(optA,'True');
+    setEqFieldElFromRaw(optB,'False');
+    setEqFieldElFromRaw(optC,'');
+    setEqFieldElFromRaw(optD,'');
+  }
+
   updateCorrectOptionChoices();
 }
 if(qTypeSel){ qTypeSel.addEventListener('change',updateTypeVisibility); updateTypeVisibility(); }
@@ -2786,11 +2908,70 @@ function resetCombos(count){const container=document.getElementById('matchOption
 if(document.getElementById('matchOptionsRows')) resetCombos(4);
 
 function updateCorrectOptionChoices(){
-  const sel=document.getElementById('correctOption');if(!sel)return;const isMatch=qTypeSel?qTypeSel.value==='match':false;
-  const matchContainer=document.getElementById('matchOptionsRows');
-  const count=(isMatch&&matchContainer)?matchContainer.children.length:4;const current=sel.value;
-  sel.innerHTML='<option value="">Select Correct Option</option>'+Array.from({length:count},(_,i)=>{const letter=comboLabel(i);return`<option value="${letter}">Option ${letter}</option>`;}).join('');
-  if(Array.from(sel.options).some(o=>o.value===current))sel.value=current;
+  const select=
+    document.getElementById('correctOption');
+
+  if(!select) return;
+
+  const questionType=
+    qTypeSel ? qTypeSel.value : '';
+
+  const isMatch=
+    questionType==='match';
+
+  const isTrueFalse=
+    questionType==='true_false';
+
+  const currentValue=select.value;
+
+  /*
+   * True/False only requires two answers.
+   */
+  if(isTrueFalse){
+    select.innerHTML=`
+      <option value="">Select Correct Answer</option>
+      <option value="A">True</option>
+      <option value="B">False</option>
+    `;
+
+    if(
+      currentValue==='A' ||
+      currentValue==='B'
+    ){
+      select.value=currentValue;
+    }
+
+    return;
+  }
+
+  const matchContainer=
+    document.getElementById('matchOptionsRows');
+
+  const optionCount=
+    isMatch && matchContainer
+      ? matchContainer.children.length
+      : 4;
+
+  select.innerHTML=
+    '<option value="">Select Correct Option</option>';
+
+  for(let index=0;index<optionCount;index++){
+    const letter=String.fromCharCode(65+index);
+    const option=document.createElement('option');
+
+    option.value=letter;
+    option.textContent='Option '+letter;
+
+    select.appendChild(option);
+  }
+
+  if(
+    Array.from(select.options).some(
+      option=>option.value===currentValue
+    )
+  ){
+    select.value=currentValue;
+  }
 }
 
 function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
@@ -2833,8 +3014,13 @@ function validate(){
   }else{
     if(!eqVal('question')) return 'Please enter the Question.';
     if(!eqVal('optA')||!eqVal('optB')||!eqVal('optC')||!eqVal('optD')) return 'All four options are required.';
-  }
-  if(qType!=='numerical'&&qType!=='true_false'&&!document.getElementById('correctOption').value) return 'Please select the Correct Option.';
+  }if(
+  qType!=='numerical' &&
+  !document.getElementById('correctOption').value
+){
+  return 'Please select the Correct Answer.';
+}
+  
   return null;
 }
 
@@ -2941,28 +3127,228 @@ if(document.getElementById('saveBtn')) document.getElementById('saveBtn').addEve
 if(document.getElementById('resetBtn')) document.getElementById('resetBtn').addEventListener('click',resetForm);
 
 function renderFilterSubjects(){
-  if(!Array.isArray(allQuestions)) allQuestions = [];
-  const fSubject=document.getElementById('fSubject');
-  const fConcept=document.getElementById('fConcept');
-  if(!fSubject) return;
-  const user=Auth.getUser()||{};
-  const subs=Array.from(new Set(allQuestions.map(q=>q ? q.subject : ''))).filter(s => s && s !== 'General');
-  const cur=fSubject.value;
-  fSubject.innerHTML='<option value="">All Subjects</option>'+subs.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-  if(user.role !== 'admin' && user.subject && user.subject !== 'All'){
-    fSubject.value = subs.includes(user.subject) ? user.subject : (user.subject || '');
-    fSubject.disabled = true;
-  }else{
-    fSubject.value = subs.includes(cur)?cur:'';
-    fSubject.disabled = false;
+  if(!Array.isArray(allQuestions)){
+    allQuestions=[];
   }
 
-  if(fConcept){
-    const concepts=Array.from(new Set(allQuestions.map(q=>q ? q.topic : ''))).filter(c => c && c !== 'General');
-    const curC = fConcept.value;
-    fConcept.innerHTML='<option value="">All Concepts</option>'+concepts.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-    fConcept.value=concepts.includes(curC)?curC:'';
+  const fSubject=document.getElementById('fSubject');
+  const fClass=document.getElementById('fClass');
+  const fChapter=document.getElementById('fChapter');
+  const fConcept=document.getElementById('fConcept');
+  const fType=document.getElementById('fType');
+
+  if(
+    !fSubject ||
+    !fClass ||
+    !fChapter ||
+    !fConcept ||
+    !fType
+  ){
+    return;
   }
+
+  const user=Auth.getUser()||{};
+
+  function uniqueSorted(values){
+    return Array.from(
+      new Set(values.filter(Boolean))
+    ).sort((a,b)=>
+      String(a).localeCompare(String(b))
+    );
+  }
+
+  function normalizedClass(value){
+    return String(value||'')
+      .replace(/^class\s*/i,'')
+      .trim();
+  }
+
+  function fillFilter(
+    select,
+    placeholder,
+    values,
+    currentValue
+  ){
+    select.innerHTML='';
+
+    const allOption=document.createElement('option');
+    allOption.value='';
+    allOption.textContent=placeholder;
+    select.appendChild(allOption);
+
+    values.forEach(value=>{
+      const option=document.createElement('option');
+      option.value=value;
+      option.textContent=value;
+      select.appendChild(option);
+    });
+
+    select.value=values.includes(currentValue)
+      ? currentValue
+      : '';
+  }
+
+  const currentSubject=fSubject.value;
+  const currentClass=fClass.value;
+  const currentChapter=fChapter.value;
+  const currentConcept=fConcept.value;
+  const currentType=fType.value;
+
+  /*
+   * SUBJECT
+   */
+  const subjects=uniqueSorted(
+    allQuestions
+      .map(question=>question&&question.subject)
+      .filter(subject=>
+        subject &&
+        subject!=='General'
+      )
+  );
+
+  fillFilter(
+    fSubject,
+    'All Subjects',
+    subjects,
+    currentSubject
+  );
+
+  if(
+    user.role!=='admin' &&
+    user.subject &&
+    user.subject!=='All'
+  ){
+    fSubject.value=subjects.includes(user.subject)
+      ? user.subject
+      : user.subject;
+
+    fSubject.disabled=true;
+  }else{
+    fSubject.disabled=false;
+  }
+
+  /*
+   * CLASS – based on Subject
+   */
+  const selectedSubject=fSubject.value;
+
+  const subjectQuestions=allQuestions.filter(question=>
+    question &&
+    (
+      !selectedSubject ||
+      question.subject===selectedSubject
+    )
+  );
+
+  const classes=uniqueSorted(
+    subjectQuestions
+      .map(question=>
+        normalizedClass(question.klass)
+      )
+      .filter(Boolean)
+  );
+
+  fillFilter(
+    fClass,
+    'All Classes',
+    classes,
+    currentClass
+  );
+
+  Array.from(fClass.options).forEach(option=>{
+    if(option.value){
+      option.textContent='Class '+option.value;
+    }
+  });
+
+  /*
+   * CHAPTER – based on Subject and Class
+   */
+  const selectedClass=fClass.value;
+
+  const classQuestions=subjectQuestions.filter(question=>
+    !selectedClass ||
+    normalizedClass(question.klass)===selectedClass
+  );
+
+  const chapters=uniqueSorted(
+    classQuestions
+      .map(question=>question.chapter)
+      .filter(chapter=>
+        chapter &&
+        chapter!=='General'
+      )
+  );
+
+  fillFilter(
+    fChapter,
+    'All Chapters',
+    chapters,
+    currentChapter
+  );
+
+  /*
+   * CONCEPT – based on Subject, Class and Chapter
+   */
+  const selectedChapter=fChapter.value;
+
+  const chapterQuestions=classQuestions.filter(question=>
+    !selectedChapter ||
+    question.chapter===selectedChapter
+  );
+
+  const concepts=uniqueSorted(
+    chapterQuestions
+      .map(question=>question.topic)
+      .filter(concept=>
+        concept &&
+        concept!=='General'
+      )
+  );
+
+  fillFilter(
+    fConcept,
+    'All Concepts',
+    concepts,
+    currentConcept
+  );
+
+  /*
+   * QUESTION TYPE – based on all previous filters
+   */
+  const selectedConcept=fConcept.value;
+
+  const conceptQuestions=chapterQuestions.filter(question=>
+    !selectedConcept ||
+    question.topic===selectedConcept
+  );
+
+  const questionTypes=uniqueSorted(
+    conceptQuestions
+      .map(question=>question.qType)
+      .filter(Boolean)
+  );
+
+  fType.innerHTML='';
+
+  const allTypesOption=document.createElement('option');
+  allTypesOption.value='';
+  allTypesOption.textContent='All Question Types';
+  fType.appendChild(allTypesOption);
+
+  questionTypes.forEach(type=>{
+    const option=document.createElement('option');
+    option.value=type;
+    option.textContent=
+      QTYPE_LABELS[type] ||
+      type;
+
+    fType.appendChild(option);
+  });
+
+  fType.value=questionTypes.includes(currentType)
+    ? currentType
+    : '';
 }
 
 function filterByConcept(conceptName){
@@ -3140,15 +3526,112 @@ function renderList(){
       ['A','B','C','D'].forEach(l=>{const isCorrect=q.correctOption===l;const span=document.createElement('span');if(isCorrect)span.className='correct';span.appendChild(document.createTextNode(l+': '));span.appendChild(renderStaticPreview(mo[l]||''));if(isCorrect)span.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(span);optsLine.appendChild(document.createTextNode('  '));});
       main.appendChild(optsLine);
     }else if(q.qType==='numerical'){
-      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
-      const numVal = q.numAnswer || q.answer || '';
-      const ansLine=document.createElement('div');ansLine.className='li-combo correct';ansLine.appendChild(document.createTextNode('Correct Value: '));ansLine.appendChild(numVal?renderStaticPreview(numVal):document.createTextNode('—'));main.appendChild(ansLine);
-    }else{
-      const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
-      const optsLine=document.createElement('div');optsLine.className='li-combo';
-      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]||''));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
-      main.appendChild(optsLine);
+  const qLine=document.createElement('div');
+  qLine.appendChild(
+    renderStaticPreview(cleanQText||'')
+  );
+  main.appendChild(qLine);
+
+  const numVal=
+    q.numAnswer ||
+    q.answer ||
+    q.correctOption ||
+    q.correct_option ||
+    '';
+
+  const ansLine=document.createElement('div');
+  ansLine.className='li-combo correct';
+  ansLine.appendChild(
+    document.createTextNode('Correct Value: ')
+  );
+  ansLine.appendChild(
+    numVal
+      ? renderStaticPreview(numVal)
+      : document.createTextNode('—')
+  );
+  main.appendChild(ansLine);
+
+}else if(q.qType==='true_false'){
+  const qLine=document.createElement('div');
+  qLine.appendChild(
+    renderStaticPreview(cleanQText||'')
+  );
+  main.appendChild(qLine);
+
+  const rawAnswer=String(
+    q.correctOption ||
+    q.correct_option ||
+    q.answer ||
+    ''
+  ).trim().toLowerCase();
+
+  let trueFalseAnswer='—';
+
+  if(
+    rawAnswer==='a' ||
+    rawAnswer==='true' ||
+    rawAnswer==='t'
+  ){
+    trueFalseAnswer='True';
+  }
+
+  if(
+    rawAnswer==='b' ||
+    rawAnswer==='false' ||
+    rawAnswer==='f'
+  ){
+    trueFalseAnswer='False';
+  }
+
+  const answerLine=document.createElement('div');
+  answerLine.className='li-combo correct';
+  answerLine.textContent=
+    'Answer: '+trueFalseAnswer+' ✓';
+
+  main.appendChild(answerLine);
+
+}else{
+  const qLine=document.createElement('div');
+  qLine.appendChild(
+    renderStaticPreview(cleanQText||'')
+  );
+  main.appendChild(qLine);
+
+  const optsLine=document.createElement('div');
+  optsLine.className='li-combo';
+
+  ['A','B','C','D'].forEach(letter=>{
+    const row=document.createElement('span');
+    row.style.display='block';
+
+    const isCorrect=
+      q.correctOption===letter;
+
+    if(isCorrect){
+      row.className='correct';
     }
+
+    row.appendChild(
+      document.createTextNode(letter+': ')
+    );
+
+    row.appendChild(
+      renderStaticPreview(
+        q['opt'+letter]||''
+      )
+    );
+
+    if(isCorrect){
+      row.appendChild(
+        document.createTextNode(' ✓')
+      );
+    }
+
+    optsLine.appendChild(row);
+  });
+
+  main.appendChild(optsLine);
+}
     const examsLine=document.createElement('div');examsLine.style.marginTop='8px';examsLine.style.display='flex';examsLine.style.flexWrap='wrap';examsLine.style.gap='6px';
     (q.exams||[]).forEach(ex=>{const pill=document.createElement('span');pill.className='tag-pill';pill.textContent=ex;examsLine.appendChild(pill);});
 
@@ -3258,7 +3741,7 @@ window.QP={
       ['A','B','C','D'].forEach(l=>setFieldFromRaw('matchOpt'+l,mo[l]||''));
     }else if(normType==='numerical'){
       setFieldFromRaw('numQuestion',q.question||'');
-      setFieldFromRaw('numAnswer',q.numAnswer||q.answer||'');
+      setFieldFromRaw('numAnswer',q.numAnswer||q.answer||q.correctOption||q.correct_option||'');
     }else{
       setFieldFromRaw('question',q.question||'');
       setFieldFromRaw('optA',q.optA||'');
@@ -3563,6 +4046,365 @@ window.QP                   = QP;     // already assigned above
 
 })();
 </script>
+<script>
+(function(){
+  function normalizeClass(value){
+    return String(value || '')
+      .replace(/^class\s*/i, '')
+      .trim();
+  }
+
+  function uniqueSorted(values){
+    return Array.from(
+      new Set(values.filter(Boolean))
+    ).sort(function(a,b){
+      return String(a).localeCompare(String(b));
+    });
+  }
+
+  function fillDropdown(
+    select,
+    placeholder,
+    values,
+    currentValue,
+    labelFunction
+  ){
+    if(!select) return;
+
+    select.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = placeholder;
+    select.appendChild(allOption);
+
+    values.forEach(function(value){
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = labelFunction
+        ? labelFunction(value)
+        : value;
+
+      select.appendChild(option);
+    });
+
+    select.value = values.includes(currentValue)
+      ? currentValue
+      : '';
+  }
+
+  function populateSavedQuestionFilters(){
+    if(!Array.isArray(allQuestions)){
+      allQuestions = [];
+    }
+
+    const subjectSelect =
+      document.getElementById('fSubject');
+
+    const classSelect =
+      document.getElementById('fClass');
+
+    const chapterSelect =
+      document.getElementById('fChapter');
+
+    const conceptSelect =
+      document.getElementById('fConcept');
+
+    const typeSelect =
+      document.getElementById('fType');
+
+    if(
+      !subjectSelect ||
+      !classSelect ||
+      !chapterSelect ||
+      !conceptSelect ||
+      !typeSelect
+    ){
+      return;
+    }
+
+    const currentSubject = subjectSelect.value;
+    const currentClass = classSelect.value;
+    const currentChapter = chapterSelect.value;
+    const currentConcept = conceptSelect.value;
+    const currentType = typeSelect.value;
+
+    /*
+     * SUBJECT
+     */
+    const subjects = uniqueSorted(
+      allQuestions
+        .map(function(question){
+          return question && question.subject;
+        })
+        .filter(function(value){
+          return value && value !== 'General';
+        })
+    );
+
+    fillDropdown(
+      subjectSelect,
+      'All Subjects',
+      subjects,
+      currentSubject
+    );
+
+    const currentUser =
+      typeof Auth !== 'undefined'
+        ? Auth.getUser() || {}
+        : {};
+
+    if(
+      currentUser.role !== 'admin' &&
+      currentUser.subject &&
+      currentUser.subject !== 'All'
+    ){
+      subjectSelect.value = currentUser.subject;
+      subjectSelect.disabled = true;
+    }else{
+      subjectSelect.disabled = false;
+    }
+
+    /*
+     * CLASS
+     */
+    const selectedSubject = subjectSelect.value;
+
+    const subjectQuestions = allQuestions.filter(
+      function(question){
+        return question && (
+          !selectedSubject ||
+          question.subject === selectedSubject
+        );
+      }
+    );
+
+    const classes = uniqueSorted(
+      subjectQuestions.map(function(question){
+        return normalizeClass(question.klass);
+      })
+    );
+
+    fillDropdown(
+      classSelect,
+      'All Classes',
+      classes,
+      currentClass,
+      function(value){
+        return 'Class ' + value;
+      }
+    );
+
+    /*
+     * CHAPTER
+     */
+    const selectedClass = classSelect.value;
+
+    const classQuestions = subjectQuestions.filter(
+      function(question){
+        return (
+          !selectedClass ||
+          normalizeClass(question.klass) === selectedClass
+        );
+      }
+    );
+
+    const chapters = uniqueSorted(
+      classQuestions
+        .map(function(question){
+          return question.chapter;
+        })
+        .filter(function(value){
+          return value && value !== 'General';
+        })
+    );
+
+    fillDropdown(
+      chapterSelect,
+      'All Chapters',
+      chapters,
+      currentChapter
+    );
+
+    /*
+     * CONCEPT
+     */
+    const selectedChapter = chapterSelect.value;
+
+    const chapterQuestions = classQuestions.filter(
+      function(question){
+        return (
+          !selectedChapter ||
+          question.chapter === selectedChapter
+        );
+      }
+    );
+
+    const concepts = uniqueSorted(
+      chapterQuestions
+        .map(function(question){
+          return question.topic;
+        })
+        .filter(function(value){
+          return value && value !== 'General';
+        })
+    );
+
+    fillDropdown(
+      conceptSelect,
+      'All Concepts',
+      concepts,
+      currentConcept
+    );
+
+    /*
+     * QUESTION TYPE
+     */
+    const selectedConcept = conceptSelect.value;
+
+    const conceptQuestions = chapterQuestions.filter(
+      function(question){
+        return (
+          !selectedConcept ||
+          question.topic === selectedConcept
+        );
+      }
+    );
+
+    const questionTypes = uniqueSorted(
+      conceptQuestions
+        .map(function(question){
+          return question.qType;
+        })
+        .filter(Boolean)
+    );
+
+    fillDropdown(
+      typeSelect,
+      'All Question Types',
+      questionTypes,
+      currentType,
+      function(value){
+        if(
+          typeof QTYPE_LABELS !== 'undefined' &&
+          QTYPE_LABELS[value]
+        ){
+          return QTYPE_LABELS[value];
+        }
+
+        return value;
+      }
+    );
+  }
+
+  const originalRenderList = renderList;
+
+  renderList = function(){
+    const classSelect =
+      document.getElementById('fClass');
+
+    const chapterSelect =
+      document.getElementById('fChapter');
+
+    const selectedClass =
+      classSelect ? classSelect.value : '';
+
+    const selectedChapter =
+      chapterSelect ? chapterSelect.value : '';
+
+    const originalQuestions = allQuestions;
+
+    allQuestions = originalQuestions.filter(
+      function(question){
+        if(!question) return false;
+
+        const classMatches =
+          !selectedClass ||
+          normalizeClass(question.klass) === selectedClass;
+
+        const chapterMatches =
+          !selectedChapter ||
+          question.chapter === selectedChapter;
+
+        return classMatches && chapterMatches;
+      }
+    );
+
+    try{
+      originalRenderList();
+    }finally{
+      allQuestions = originalQuestions;
+    }
+  };
+
+  renderFilterSubjects = populateSavedQuestionFilters;
+
+  const subjectSelect =
+    document.getElementById('fSubject');
+
+  const classSelect =
+    document.getElementById('fClass');
+
+  const chapterSelect =
+    document.getElementById('fChapter');
+
+  const conceptSelect =
+    document.getElementById('fConcept');
+
+  const typeSelect =
+    document.getElementById('fType');
+
+  if(subjectSelect){
+    subjectSelect.addEventListener('change', function(){
+      classSelect.value = '';
+      chapterSelect.value = '';
+      conceptSelect.value = '';
+      typeSelect.value = '';
+
+      populateSavedQuestionFilters();
+      renderList();
+    });
+  }
+
+  if(classSelect){
+    classSelect.addEventListener('change', function(){
+      chapterSelect.value = '';
+      conceptSelect.value = '';
+      typeSelect.value = '';
+
+      populateSavedQuestionFilters();
+      renderList();
+    });
+  }
+
+  if(chapterSelect){
+    chapterSelect.addEventListener('change', function(){
+      conceptSelect.value = '';
+      typeSelect.value = '';
+
+      populateSavedQuestionFilters();
+      renderList();
+    });
+  }
+
+  if(conceptSelect){
+    conceptSelect.addEventListener('change', function(){
+      typeSelect.value = '';
+
+      populateSavedQuestionFilters();
+      renderList();
+    });
+  }
+
+  if(typeSelect){
+    typeSelect.addEventListener('change', function(){
+      renderList();
+    });
+  }
+
+  populateSavedQuestionFilters();
+  renderList();
+})();
+</script>
 </body>
 </html>
-

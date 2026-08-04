@@ -4,6 +4,7 @@ const bcrypt   = require('bcryptjs');
 const supabase = require('../lib/supabase');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
+const { encodeRoleSubject, toLogicalUser } = require('../lib/user-role');
 
 const router = express.Router();
 const ADMIN_ONLY = [requireAuth, requireRole('admin')];
@@ -27,7 +28,7 @@ router.get('/', ...ADMIN_ONLY, async (req, res) => {
   if (error) {
     return res.status(500).json({ error: 'Failed to fetch users.', details: error.message });
   }
-  res.json((data || []).map(u => ({ ...u, subject: u.subject || 'All' })));
+  res.json((data || []).map(toLogicalUser));
 });
 
 // ── POST /api/users ────────────────────────────────────────────────────────
@@ -37,8 +38,8 @@ router.post('/', ...ADMIN_ONLY, async (req, res) => {
   if (!name || !email || !password || !role) {
     return res.status(400).json({ error: 'name, email, password and role are required.' });
   }
-  if (!['adder', 'viewer', 'admin'].includes(role)) {
-    return res.status(400).json({ error: 'role must be admin, adder, or viewer.' });
+  if (!['adder', 'editor', 'viewer', 'admin'].includes(role)) {
+    return res.status(400).json({ error: 'role must be admin, adder, editor, or viewer.' });
   }
   if (password.length < 6) {
     return res.status(400).json({ error: 'Password must be at least 6 characters.' });
@@ -52,12 +53,13 @@ router.post('/', ...ADMIN_ONLY, async (req, res) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const storedAccess = encodeRoleSubject(role, subject);
   const userPayload = {
     name:          name.trim(),
     email:         email.toLowerCase().trim(),
     password_hash: passwordHash,
-    role,
-    subject:       (subject || 'All').trim(),
+    role:           storedAccess.role,
+    subject:        storedAccess.subject,
     status:        'active',
     is_active:     true,
   };
@@ -89,7 +91,7 @@ router.post('/', ...ADMIN_ONLY, async (req, res) => {
     resourceId: data.id, details: { name: data.name, email: data.email, role, subject: data.subject },
   });
 
-  res.status(201).json(data);
+  res.status(201).json(toLogicalUser(data));
 });
 
 // ── GET /api/users/:id ────────────────────────────────────────────────────
@@ -112,7 +114,7 @@ router.get('/:id', ...ADMIN_ONLY, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   if (!data)  return res.status(404).json({ error: 'User not found.' });
-  res.json({ ...data, subject: data.subject || 'All' });
+  res.json(toLogicalUser(data));
 });
 
 // ── PUT /api/users/:id ────────────────────────────────────────────────────
@@ -123,12 +125,14 @@ router.put('/:id', ...ADMIN_ONLY, async (req, res) => {
   if (name      !== undefined) update.name      = name.trim();
   if (email     !== undefined) update.email     = email.toLowerCase().trim();
   if (role      !== undefined) {
-    if (!['admin','adder','viewer'].includes(role)) {
+    if (!['admin','adder','editor','viewer'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role.' });
     }
-    update.role = role;
+    const storedAccess = encodeRoleSubject(role, subject || 'All');
+    update.role = storedAccess.role;
+    update.subject = storedAccess.subject;
   }
-  if (subject   !== undefined) update.subject   = subject.trim();
+  if (subject !== undefined && role === undefined) update.subject = subject.trim();
   if (status    !== undefined) update.status    = status;
   if (is_active !== undefined) update.is_active = Boolean(is_active);
 
@@ -164,7 +168,7 @@ router.put('/:id', ...ADMIN_ONLY, async (req, res) => {
     resourceId: req.params.id, details: update,
   });
 
-  res.json(data);
+  res.json(toLogicalUser(data));
 });
 
 // ── PUT /api/users/:id/reset-password ────────────────────────────────────
@@ -197,15 +201,25 @@ router.put('/:id/reset-password', ...ADMIN_ONLY, async (req, res) => {
 // ── PUT /api/users/:id/role ──────────────────────────────────────────────
 router.put('/:id/role', ...ADMIN_ONLY, async (req, res) => {
   const { role } = req.body || {};
-  if (!['admin','adder','viewer'].includes(role)) {
-    return res.status(400).json({ error: 'role must be admin, adder, or viewer.' });
+  if (!['admin','adder','editor','viewer'].includes(role)) {
+    return res.status(400).json({ error: 'role must be admin, adder, editor, or viewer.' });
   }
 
+  const { data: currentUser, error: currentError } = await supabase
+    .from('users')
+    .select('subject')
+    .eq('id', req.params.id)
+    .maybeSingle();
+  if (currentError) return res.status(400).json({ error: currentError.message });
+  if (!currentUser) return res.status(404).json({ error: 'User not found.' });
+
+  const logicalCurrent = toLogicalUser({ role: 'viewer', subject: currentUser.subject });
+  const storedAccess = encodeRoleSubject(role, logicalCurrent.subject);
   const { data, error } = await supabase
     .from('users')
-    .update({ role })
+    .update(storedAccess)
     .eq('id', req.params.id)
-    .select('id, name, role')
+    .select('id, name, role, subject')
     .maybeSingle();
 
   if (error) return res.status(400).json({ error: error.message });
@@ -217,7 +231,7 @@ router.put('/:id/role', ...ADMIN_ONLY, async (req, res) => {
     resourceId: req.params.id, details: { newRole: role, targetUser: data.name },
   });
 
-  res.json(data);
+  res.json(toLogicalUser(data));
 });
 
 // ── DELETE /api/users/:id ─────────────────────────────────────────────────

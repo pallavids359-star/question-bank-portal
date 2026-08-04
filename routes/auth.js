@@ -5,6 +5,7 @@ const jwt      = require('jsonwebtoken');
 const supabase = require('../lib/supabase');
 const { requireAuth } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
+const { toLogicalUser } = require('../lib/user-role');
 
 const router       = express.Router();
 const JWT_SECRET   = process.env.JWT_SECRET || 'manchester-tech-question-bank-portal-super-secret-jwt-key-2026';
@@ -68,6 +69,7 @@ router.post('/login', async (req, res) => {
       }
 
       if (passwordValid && activeUser.status !== 'disabled' && activeUser.is_active !== false) {
+        const logicalUser = toLogicalUser(activeUser);
         const loginRecord = await logLogin(activeUser.id, req, 'success');
         try {
           await supabase
@@ -76,12 +78,12 @@ router.post('/login', async (req, res) => {
             .eq('id', activeUser.id);
         } catch (_) {}
 
-        const userSubject = activeUser.subject || 'All';
+        const userSubject = logicalUser.subject || 'All';
         const payload = {
           userId:         activeUser.id,
           email:          activeUser.email,
           name:           activeUser.name,
-          role:           activeUser.role || 'admin',
+          role:           logicalUser.role || 'viewer',
           subject:        userSubject,
           loginHistoryId: loginRecord?.id || null,
         };
@@ -96,7 +98,7 @@ router.post('/login', async (req, res) => {
 
         return res.json({
           token,
-          user: { id: activeUser.id, name: activeUser.name, email: activeUser.email, role: activeUser.role || 'admin', subject: userSubject },
+          user: { id: activeUser.id, name: activeUser.name, email: activeUser.email, role: logicalUser.role || 'viewer', subject: userSubject },
         });
       }
     }
@@ -177,14 +179,14 @@ router.post('/logout', requireAuth, async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   const { data: user, error } = await supabase
     .from('users')
-    .select('id, name, email, role, status, last_login, created_at')
+    .select('id, name, email, role, subject, status, last_login, created_at')
     .eq('id', req.user.userId)
     .maybeSingle();
 
   if (error || !user) {
     return res.status(404).json({ error: 'User not found.' });
   }
-  res.json(user);
+  res.json(toLogicalUser(user));
 });
 
 // ── PUT /api/auth/change-password ─────────────────────────────────────────

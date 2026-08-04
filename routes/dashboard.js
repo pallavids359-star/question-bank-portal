@@ -2,6 +2,7 @@
 const express  = require('express');
 const supabase = require('../lib/supabase');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { toLogicalUser } = require('../lib/user-role');
 
 const router = express.Router();
 
@@ -31,7 +32,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       // Distinct chapters
       supabase.from('questions').select('chapter'),
       // All users (for role breakdown)
-      supabase.from('users').select('id, name, email, role, created_at, last_login'),
+      supabase.from('users').select('id, name, email, role, subject, created_at, last_login'),
       // Questions added today
       supabase.from('questions').select('*', { count: 'exact', head: true }).gte('created_at', today),
       // Questions added this week
@@ -54,8 +55,8 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
     const allSubjects = [...new Set(rawSubjects.map(s => (s === 'Maths' ? 'Mathematics' : s)))];
     const allChapters = [...new Set((chaptersRes.data || []).map(q => q.chapter).filter(c => c && c !== 'General'))];
 
-    const users = usersRes.data || [];
-    const byRole = { admin: 0, adder: 0, viewer: 0 };
+    const users = (usersRes.data || []).map(toLogicalUser);
+    const byRole = { admin: 0, adder: 0, editor: 0, viewer: 0 };
     users.forEach(u => { if (byRole[u.role] !== undefined) byRole[u.role]++; });
 
     // Most active user: find who has the most created questions
@@ -79,6 +80,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       totalChapters:   allChapters.length,
       totalAdmins:     byRole.admin,
       totalAdders:     byRole.adder,
+      totalEditors:    byRole.editor,
       totalViewers:    byRole.viewer,
       totalUsers:      users.length,
       questionsToday:  todayRes.count  || 0,
