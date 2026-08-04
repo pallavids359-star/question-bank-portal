@@ -55,10 +55,14 @@ app.get('/health', async (req, res) => {
 // ── Static frontend ──────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── Start server ─────────────────────────────────────────────────────────────
-app.listen(PORT, async () => {
-  console.log('Connected to Supabase');
-  console.log(`Question Bank API running on http://localhost:${PORT}`);
-  // Seed default admin if this is a fresh database
-  await seedAdmin();
-});
+// ── Export app & conditional startup for Vercel serverless functions ─────────
+module.exports = app;
+
+if (require.main === module) {
+  app.listen(PORT, async () => {
+    console.log('Connected to Supabase');
+    console.log(`Question Bank API running on http://localhost:${PORT}`);
+    // Seed default admin if this is a fresh database
+    await seedAdmin();
+  });
+}
