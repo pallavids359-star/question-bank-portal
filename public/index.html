@@ -2543,10 +2543,11 @@ fillDefaultPredef();
   const examTogglesEl = document.getElementById('examToggles');
   if (examTogglesEl) {
     examTogglesEl.innerHTML = '';
+    selectedExams.add('NEET');
     EXAMS.forEach(function(ex) {
       var btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'toggle-btn';
+      btn.className = 'toggle-btn' + (ex === 'NEET' ? ' active' : '');
       btn.textContent = ex;
       btn.addEventListener('click', function() {
         if (selectedExams.has(ex)) {
@@ -2611,13 +2612,14 @@ function updateTypeVisibility(){
   const isMatch=type==='match';
   const isNum=type==='numerical';
   const isStatement=type==='statement_based';
+  const isTF=type==='true_false';
 
-  if(mcqBlock) mcqBlock.style.display=(isAR||isMatch||isNum)?'none':'';
+  if(mcqBlock) mcqBlock.style.display=(isAR||isMatch||isNum||isTF)?'none':'';
   if(arBlock) arBlock.style.display=isAR?'':'none';
   if(matchBlock) matchBlock.style.display=isMatch?'':'none';
   if(numBlock) numBlock.style.display=isNum?'':'none';
-  if(statementBlock) statementBlock.style.display=isStatement?'':'none';
-  if(correctOptionWrap) correctOptionWrap.style.display=isNum?'none':'';
+  if(statementBlock) statementBlock.style.display=(isStatement||isTF)?'':'none';
+  if(correctOptionWrap) correctOptionWrap.style.display=(isNum||isTF)?'none':'';
 
   if(isStatement){
     const optA = document.getElementById('optA');
@@ -2628,6 +2630,15 @@ function updateTypeVisibility(){
     if(optB && !getFieldRaw(optB)) setEqFieldElFromRaw(optB, 'Both Statement I and Statement II are incorrect');
     if(optC && !getFieldRaw(optC)) setEqFieldElFromRaw(optC, 'Statement I is correct but Statement II is incorrect');
     if(optD && !getFieldRaw(optD)) setEqFieldElFromRaw(optD, 'Statement I is incorrect but Statement II is correct');
+  } else if(type==='true_false'){
+    const optA = document.getElementById('optA');
+    const optB = document.getElementById('optB');
+    const optC = document.getElementById('optC');
+    const optD = document.getElementById('optD');
+    if(optA && !getFieldRaw(optA)) setEqFieldElFromRaw(optA, 'True');
+    if(optB && !getFieldRaw(optB)) setEqFieldElFromRaw(optB, 'False');
+    if(optC && !getFieldRaw(optC)) setEqFieldElFromRaw(optC, '-');
+    if(optD && !getFieldRaw(optD)) setEqFieldElFromRaw(optD, '-');
   }
   updateCorrectOptionChoices();
 }
@@ -2687,7 +2698,7 @@ function validate(){
   if(!klassSel||!klassSel.value){ if(klassSel) klassSel.focus(); return 'Please select a Class.'; }
   if(!val('chapter')){ if(chapterEl) chapterEl.focus(); return 'Please select or enter a Chapter.'; }
   if(!val('topic')){ if(topicEl) topicEl.focus(); return 'Please enter a Topic.'; }
-  if(selectedExams.size===0) return 'Please select an Exam Category (NEET, JEE, or KCET).';
+  if(selectedExams.size===0) selectedExams.add('NEET');
   const qType=qTypeEl ? qTypeEl.value : '';
   if(!qType){ if(qTypeEl) qTypeEl.focus(); return 'Please select a Question Type.'; }
 
@@ -2707,11 +2718,14 @@ function validate(){
   }else if(qType==='numerical'){
     if(!eqVal('numQuestion')) return 'Please enter the Numerical Question.';
     if(!eqVal('numAnswer')) return 'Please enter the Correct Numerical Value.';
+  }else if(qType==='true_false'){
+    if(!eqVal('question')) return 'Please enter the Question.';
+    if(!eqVal('optA')||!eqVal('optB')) return 'Options A (True) and B (False) are required.';
   }else{
     if(!eqVal('question')) return 'Please enter the Question.';
     if(!eqVal('optA')||!eqVal('optB')||!eqVal('optC')||!eqVal('optD')) return 'All four options are required.';
   }
-  if(qType!=='numerical'&&!document.getElementById('correctOption').value) return 'Please select the Correct Option.';
+  if(qType!=='numerical'&&qType!=='true_false'&&!document.getElementById('correctOption').value) return 'Please select the Correct Option.';
   return null;
 }
 
@@ -2723,6 +2737,7 @@ async function saveQuestion(){
   const isAR=qType==='assertion_reason';
   const isMatch=qType==='match';
   const isNum=qType==='numerical';
+  const isTF=qType==='true_false';
   const isStatement=qType==='statement_based';
   const subjectSel=document.getElementById('subject');
   const klassSel=document.getElementById('klass');
@@ -2730,23 +2745,25 @@ async function saveQuestion(){
   let mainQuestionText = eqVal('question');
   if(isNum) mainQuestionText = eqVal('numQuestion');
   else if(isAR) mainQuestionText = 'Assertion: ' + eqVal('assertion') + '\nReason: ' + eqVal('reason');
-  else if(isStatement && !mainQuestionText) mainQuestionText = 'Statement Based Question';
+  else if((isStatement||isTF) && !mainQuestionText) mainQuestionText = 'Question';
   else if(isMatch && !mainQuestionText) mainQuestionText = 'Match the Following Question';
+
+  const activeExams = Array.from(selectedExams.size > 0 ? selectedExams : ['NEET']);
 
   const record={
     subject:subjectSel.value,
     klass:klassSel.value,
     chapter:val('chapter'),
     topic:val('topic'),
-    exams:Array.from(selectedExams),
+    exams:activeExams,
     qType,
     question:mainQuestionText,
     statement1:isStatement?eqVal('statement1'):'',
     statement2:isStatement?eqVal('statement2'):'',
     optA:(isAR||isMatch||isNum)?'':eqVal('optA'),
     optB:(isAR||isMatch||isNum)?'':eqVal('optB'),
-    optC:(isAR||isMatch||isNum)?'':eqVal('optC'),
-    optD:(isAR||isMatch||isNum)?'':eqVal('optD'),
+    optC:(isAR||isMatch||isNum||isTF)?'':eqVal('optC'),
+    optD:(isAR||isMatch||isNum||isTF)?'':eqVal('optD'),
     assertion:isAR?eqVal('assertion'):'',
     reason:isAR?eqVal('reason'):'',
     predefOptions:isAR?eqVal('predefOptions'):'',
@@ -2798,7 +2815,13 @@ function resetForm(){
   if(typeof updateChapterOptions==='function') updateChapterOptions();
   const topEl=document.getElementById('topic');if(topEl)topEl.value='';
   selectedExams.clear();
-  const examTogglesEl=document.getElementById('examToggles');if(examTogglesEl)examTogglesEl.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'));
+  selectedExams.add('NEET');
+  const examTogglesEl=document.getElementById('examToggles');
+  if(examTogglesEl){
+    examTogglesEl.querySelectorAll('.toggle-btn').forEach(b => {
+      b.classList.toggle('active', b.textContent === 'NEET');
+    });
+  }
   const qts=document.getElementById('qType');if(qts)qts.value='';
   ['question','optA','optB','optC','optD','solutionText','assertion','reason','numQuestion','numAnswer','statement1','statement2'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
   fillDefaultPredef();resetColumnRows('columnARows',columnALabel,4);resetColumnRows('columnBRows',columnBLabel,4);resetCombos(4);

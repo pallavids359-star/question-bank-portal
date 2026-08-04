@@ -1148,6 +1148,7 @@
       q.collapsed = !q.collapsed;
       renderCards();
     }));
+    acts.appendChild(createToolBtn('💾 Save', 'Import this question to Database', () => saveSingleQuestionToDb(idx)));
     acts.appendChild(createToolBtn('✎', 'Edit', () => openCardEditor(idx)));
     acts.appendChild(createToolBtn('✕', 'Delete', () => {
       state.parsedQuestions.splice(idx, 1);
@@ -1678,6 +1679,65 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     validateAll(state.parsedQuestions);
     closeCardEditor();
     renderCards();
+  }
+
+  async function saveSingleQuestionToDb(idx) {
+    if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('edit')) {
+      if (typeof showToast === 'function') showToast('You do not have permission to save questions.', true);
+      return;
+    }
+    const q = state.parsedQuestions[idx];
+    if (!q) return;
+
+    if (!q.isValid) {
+      if (typeof showToast === 'function') showToast(`Question #${idx + 1} has validation issues: ${(q.errors || []).join(', ')}`, true);
+      return;
+    }
+
+    const meta = getMeta();
+    const payload = {
+      subject: q.subject || meta.subject,
+      klass: q.klass || meta.klass,
+      chapter: q.chapter || meta.chapter,
+      topic: q.concept || q.topic || 'General',
+      exams: q.exams && q.exams.length ? q.exams : meta.exams,
+      qType: q.qType || 'mcq_single',
+      question: q.question,
+      optA: q.optA || '',
+      optB: q.optB || '',
+      optC: q.optC || '',
+      optD: q.optD || '',
+      assertion: q.assertion || '',
+      reason: q.reason || '',
+      statement1: q.statement1 || '',
+      statement2: q.statement2 || '',
+      predefOptions: q.predefOptions || '',
+      columnA: q.columnA || [],
+      columnB: q.columnB || [],
+      matchOptions: q.matrixAnswer || q.matchOptions || {},
+      numAnswer: q.numAnswer || q.answer || '',
+      correctOption: q.answer || q.correctOption || 'A',
+      solutionText: q.solutionText || '',
+    };
+
+    try {
+      await apiReq('/api/questions', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (typeof showToast === 'function') {
+        showToast(`Question #${idx + 1} saved successfully to database!`);
+      }
+      q.isDuplicate = true;
+      renderCards();
+      if (typeof window.loadQuestions === 'function') {
+        window.loadQuestions();
+      }
+    } catch (err) {
+      console.error('Save single question error:', err);
+      if (typeof showToast === 'function') showToast('Failed to save question: ' + err.message, true);
+    }
   }
 
   function setVal(id, v) {

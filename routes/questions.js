@@ -68,6 +68,36 @@ const DB_QTYPE_MAP = {
   multi_part:          'mcq_single',
 };
 
+const isValidUuid = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+const CORE_FIELDS = [
+  'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
+  'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d', 'assertion', 'reason',
+  'statement1', 'statement2',
+  'predef_options', 'column_a', 'column_b', 'match_options',
+  'num_answer', 'correct_option', 'solution_text',
+  'difficulty', 'marks', 'neg_marks', 'language', 'source', 'author', 'reference_book',
+  'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
+];
+
+const BASIC_LEGACY_FIELDS = [
+  'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
+  'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d',
+  'correct_option', 'solution_text', 'difficulty', 'marks', 'neg_marks',
+  'language', 'source', 'author', 'reference_book',
+  'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
+];
+
+function sanitizeRecord(record, fieldList) {
+  const clean = {};
+  for (const key of fieldList) {
+    if (Object.prototype.hasOwnProperty.call(record, key) && record[key] !== undefined && record[key] !== null) {
+      clean[key] = record[key];
+    }
+  }
+  return clean;
+}
+
 function normalizeQType(qType) {
   if (!qType) return 'mcq_single';
   return DB_QTYPE_MAP[qType.toLowerCase()] || 'mcq_single';
@@ -91,6 +121,11 @@ function toDatabase(input) {
   if (!out.topic)   out.topic   = 'General';
   if (!out.exams || !Array.isArray(out.exams) || out.exams.length === 0) {
     out.exams = ['NEET'];
+  }
+
+  // Fallback for correct_option if missing
+  if (!out.correct_option && input.answer) {
+    out.correct_option = input.answer;
   }
 
   // Fallback for num_answer if missing in payload
@@ -189,11 +224,13 @@ router.get('/:id', ...READ_ROLES, async (req, res) => {
 router.post('/', ...WRITE_ROLES, async (req, res) => {
   const payload = toDatabase(req.body);
 
-  // Inject ownership from the authenticated user
-  payload.created_by      = req.user.userId;
-  payload.created_by_name = req.user.name;
-  payload.updated_by      = req.user.userId;
-  payload.updated_by_name = req.user.name;
+  // Inject ownership safely
+  if (isValidUuid(req.user?.userId)) {
+    payload.created_by = req.user.userId;
+    payload.updated_by = req.user.userId;
+  }
+  payload.created_by_name = req.user?.name || '';
+  payload.updated_by_name = req.user?.name || '';
 
   let { data, error } = await supabase
     .from('questions')
@@ -219,11 +256,12 @@ router.post('/', ...WRITE_ROLES, async (req, res) => {
   }
 
   await writeAuditLog({
-    userId: req.user.userId, userName: req.user.name,
+    userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
+    userName: req.user?.name || 'User',
     action: 'CREATE_QUESTION', resourceType: 'question',
     resourceId: data.id,
     details: { subject: data.subject, qType: data.q_type, chapter: data.chapter },
-  });
+  }).catch(err => console.warn('Audit log failed:', err.message));
 
   res.status(201).json(toApi(data));
 });
@@ -239,40 +277,14 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
   const userId = req.user.userId;
   const userName = req.user.name;
 
-  const CORE_FIELDS = [
-    'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
-    'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d', 'assertion', 'reason',
-    'statement1', 'statement2',
-    'predef_options', 'column_a', 'column_b', 'match_options',
-    'num_answer', 'correct_option', 'solution_text',
-    'difficulty', 'marks', 'neg_marks', 'language', 'source', 'author', 'reference_book',
-    'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
-  ];
-
-  const BASIC_LEGACY_FIELDS = [
-    'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
-    'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d',
-    'correct_option', 'solution_text', 'difficulty', 'marks', 'neg_marks',
-    'language', 'source', 'author', 'reference_book',
-    'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
-  ];
-
-  function sanitizeRecord(record, fieldList) {
-    const clean = {};
-    for (const key of fieldList) {
-      if (Object.prototype.hasOwnProperty.call(record, key) && record[key] !== undefined && record[key] !== null) {
-        clean[key] = record[key];
-      }
-    }
-    return clean;
-  }
-
   const recordsToInsert = items.map(item => {
     const payload = toDatabase(item);
-    payload.created_by      = userId;
-    payload.created_by_name = userName;
-    payload.updated_by      = userId;
-    payload.updated_by_name = userName;
+    if (isValidUuid(userId)) {
+      payload.created_by = userId;
+      payload.updated_by = userId;
+    }
+    payload.created_by_name = userName || '';
+    payload.updated_by_name = userName || '';
     return sanitizeRecord(payload, CORE_FIELDS);
   });
 
@@ -341,11 +353,12 @@ router.post('/batch', ...WRITE_ROLES, async (req, res) => {
 
 
   await writeAuditLog({
-    userId, userName,
+    userId: isValidUuid(userId) ? userId : null,
+    userName: userName || 'User',
     action: 'BULK_CREATE_QUESTIONS', resourceType: 'question',
     resourceId: `batch_${insertedData.length}`,
     details: { totalImported: insertedData.length },
-  });
+  }).catch(err => console.warn('Audit log failed:', err.message));
 
   res.status(201).json({
     success: true,
@@ -363,9 +376,11 @@ router.put('/:id', ...WRITE_ROLES, async (req, res) => {
     return res.status(400).json({ error: 'No valid fields supplied.' });
   }
 
-  // Record who last edited
-  payload.updated_by      = req.user.userId;
-  payload.updated_by_name = req.user.name;
+  // Record who last edited safely
+  if (isValidUuid(req.user?.userId)) {
+    payload.updated_by = req.user.userId;
+  }
+  payload.updated_by_name = req.user?.name || '';
 
   let { data, error } = await supabase
     .from('questions')
@@ -394,11 +409,12 @@ router.put('/:id', ...WRITE_ROLES, async (req, res) => {
   if (!data) return res.status(404).json({ error: 'Question not found.' });
 
   await writeAuditLog({
-    userId: req.user.userId, userName: req.user.name,
+    userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
+    userName: req.user?.name || 'User',
     action: 'UPDATE_QUESTION', resourceType: 'question',
     resourceId: req.params.id,
     details: { subject: data.subject, qType: data.q_type },
-  });
+  }).catch(err => console.warn('Audit log failed:', err.message));
 
   res.json(toApi(data));
 });
@@ -419,11 +435,12 @@ router.delete('/:id', ...WRITE_ROLES, async (req, res) => {
   if (!data) return res.status(404).json({ error: 'Question not found.' });
 
   await writeAuditLog({
-    userId: req.user.userId, userName: req.user.name,
+    userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
+    userName: req.user?.name || 'User',
     action: 'DELETE_QUESTION', resourceType: 'question',
     resourceId: req.params.id,
     details: { subject: data.subject, qType: data.q_type },
-  });
+  }).catch(err => console.warn('Audit log failed:', err.message));
 
   res.json({ success: true, deletedId: data.id });
 });
