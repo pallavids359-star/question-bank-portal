@@ -67,7 +67,7 @@ create table if not exists public.users (
   email           text        unique not null,
   password_hash   text        not null,
   role            text        not null default 'viewer'
-                              check (role in ('admin','adder','viewer')),
+                              check (role in ('admin','adder','editor','viewer')),
   status          text        not null default 'active'
                               check (status in ('active','disabled')),
   is_active       boolean     not null default true,
@@ -175,4 +175,3 @@ alter table public.questions
   add column if not exists board          text not null default '',
   add column if not exists statement1     text not null default '',
   add column if not exists statement2     text not null default '';
-
