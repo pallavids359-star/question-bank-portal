@@ -1318,7 +1318,8 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
     <div class="form-group"><label>Role</label>
       <select id="cuRole">
         <option value="viewer">Question Viewer</option>
-        <option value="adder">Question Adder (Editor)</option>
+        <option value="adder">Question Adder</option>
+        <option value="editor">Question Editor</option>
         <option value="admin">Admin</option>
       </select>
     </div>
@@ -1407,8 +1408,9 @@ const Auth = {
   can(action)  {
     const role = this.getRole();
     const map = {
-      admin:  ['view','edit','delete','manage_users','dashboard','audit','settings','bulk_import'],
-      adder:  ['view','edit','delete','bulk_import'],
+      admin:  ['view','add','edit','delete','manage_users','dashboard','audit','settings','bulk_import'],
+      adder:  ['view','add','edit','bulk_import'],
+      editor: ['view','edit'],
       viewer: ['view'],
     };
     return (map[role] || []).includes(action);
@@ -1513,7 +1515,7 @@ function buildSidebar() {
   const items = [
     { label: 'Main', items: [
       { icon:'🏠', text:'Dashboard',           page:'pageDashboard',  roles:['admin'] },
-      { icon:'📚', text:'Questions',           page:'pageQuestions',  roles:['admin','adder','viewer'] },
+      { icon:'📚', text:'Questions',           page:'pageQuestions',  roles:['admin','adder','editor','viewer'] },
       { icon:'📥', text:'Bulk Question Import', page:'pageBulkImport', roles:['admin','adder'] },
     ]},
     { label: 'Administration', items: [
@@ -1522,7 +1524,7 @@ function buildSidebar() {
       { icon:'⚙️', text:'Settings',          page:'pageSettings',  roles:['admin'] },
     ]},
     { label: 'Account', items: [
-      { icon:'👤', text:'My Profile',        page:'pageProfile',   roles:['admin','adder','viewer'] },
+      { icon:'👤', text:'My Profile',        page:'pageProfile',   roles:['admin','adder','editor','viewer'] },
     ]},
   ];
 
@@ -1560,10 +1562,10 @@ function updateSidebarUser() {
 // ============================================================
 function applyRoleRestrictions() {
   const user = Auth.getUser() || {};
-  const canEdit = Auth.can('edit');
-  // Hide the question form card for viewers
+  const canAdd = Auth.can('add');
+  // Editors open the form only after selecting an existing question to edit.
   const formCard = document.getElementById('questionFormCard');
-  if (formCard) formCard.style.display = canEdit ? '' : 'none';
+  if (formCard) formCard.style.display = canAdd ? '' : 'none';
 
   // If teacher/user has specific subject assigned (e.g. Physics)
   const subjectSel = document.getElementById('subject');
@@ -2603,7 +2605,7 @@ function attachEquationField(idOrEl){
 
 // Global paste listener for question creators (Admin & Question Adder)
 document.addEventListener('paste', async (e) => {
-  if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('edit')) return;
+  if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('add') && !Auth.can('edit')) return;
 
   // Skip if already focused inside an equation field (handled by field's own paste listener)
   const active = document.activeElement;
@@ -2782,6 +2784,19 @@ if(
       correctOptionWrap
     );
   }
+}
+
+function setDifficultyOnlyMode(enabled) {
+  const card = document.getElementById('questionFormCard');
+  if (!card) return;
+  card.querySelectorAll('input, select, button, [contenteditable]').forEach(el => {
+    const allowed = el.id === 'difficulty' || el.id === 'saveBtn' || el.id === 'resetBtn';
+    if (el.hasAttribute('contenteditable')) {
+      el.setAttribute('contenteditable', enabled && !allowed ? 'false' : 'true');
+    } else if ('disabled' in el && !allowed) {
+      el.disabled = Boolean(enabled);
+    }
+  });
 }
 
   /*
@@ -3058,8 +3073,11 @@ function validate(){
 }
 
 async function saveQuestion(){
-  if(!Auth.can('edit')){showToast('Question Viewers do not have permission to edit or save questions.',true);return;}
-  const err=validate();if(err){showToast(err,true);return;}
+  const isUpdating=Boolean(editingId);
+  const difficultyOnly=Auth.getRole()==='editor';
+  if(isUpdating&&!Auth.can('edit')){showToast('Only an Adder, Editor, or Admin can update questions.',true);return;}
+  if(!isUpdating&&!Auth.can('add')){showToast('Only a Question Adder or Admin can add questions.',true);return;}
+  if(!difficultyOnly){const err=validate();if(err){showToast(err,true);return;}}
   const saveBtn=document.getElementById('saveBtn');saveBtn.disabled=true;saveBtn.textContent=editingId?'Updating…':'Saving…';
   const qType=document.getElementById('qType').value;
   const isAR=qType==='assertion_reason';
@@ -3106,7 +3124,8 @@ async function saveQuestion(){
 
   try{
     const wasEditing=Boolean(editingId);
-    const saved=wasEditing?await apiRequest('/'+encodeURIComponent(editingId),{method:'PUT',body:JSON.stringify(record)}):await apiRequest('',{method:'POST',body:JSON.stringify(record)});
+    const updateRecord=difficultyOnly?{difficulty:val('difficulty')||'Medium'}:record;
+    const saved=wasEditing?await apiRequest('/'+encodeURIComponent(editingId),{method:'PUT',body:JSON.stringify(updateRecord)}):await apiRequest('',{method:'POST',body:JSON.stringify(record)});
     if(wasEditing){
       const idx=allQuestions.findIndex(q=>String(q.id)===String(editingId));
       if(idx>-1) allQuestions[idx]=saved;
@@ -3125,6 +3144,7 @@ async function saveQuestion(){
 }
 
 function resetForm(){
+  setDifficultyOnlyMode(false);
   editingId=null;
   const ft=document.getElementById('formTitle');if(ft)ft.textContent='Add New Question';
   const sb=document.getElementById('saveBtn');if(sb)sb.textContent='Save Question';
@@ -3154,6 +3174,8 @@ function resetForm(){
   ['question','optA','optB','optC','optD','solutionText','assertion','reason','numQuestion','numAnswer','statement1','statement2'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
   fillDefaultPredef();resetColumnRows('columnARows',columnALabel,4);resetColumnRows('columnBRows',columnBLabel,4);resetCombos(4);
   const co=document.getElementById('correctOption');if(co)co.value='';updateTypeVisibility();
+  const formCard=document.getElementById('questionFormCard');
+  if(formCard&&!Auth.can('add')) formCard.style.display='none';
 }
 
 if(document.getElementById('saveBtn')) document.getElementById('saveBtn').addEventListener('click',saveQuestion);
@@ -3503,6 +3525,7 @@ function renderList(){
   if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';return;}
 
   const canEdit = Auth.can('edit');
+  const canDelete = Auth.can('delete');
 
   let renderErrors = 0;
   filtered.forEach(q=>{
@@ -3707,6 +3730,8 @@ function renderList(){
     const btns=document.createElement('div');btns.className='li-btns';
     if(canEdit){
       const editBtn=document.createElement('button');editBtn.className='icon-btn';editBtn.title='Edit';editBtn.textContent='✎';editBtn.addEventListener('click',()=>QP.edit(q.id));btns.appendChild(editBtn);
+    }
+    if(canDelete){
       const delBtn=document.createElement('button');delBtn.className='icon-btn del';delBtn.title='Delete';delBtn.textContent='✕';delBtn.addEventListener('click',()=>QP.remove(q.id));btns.appendChild(delBtn);
     }
     top.appendChild(main);top.appendChild(btns);item.appendChild(top);listContainer.appendChild(item);
@@ -3729,10 +3754,13 @@ function extractStatementPairForForm(questionText){
 
 window.QP={
   edit:function(id){
-    if(!Auth.can('edit')){showToast('Question Viewers do not have editing permissions.',true);return;}
+    if(!Auth.can('edit')){showToast('Only an Adder, Editor, or Admin can edit questions.',true);return;}
     const q=allQuestions.find(x=>String(x.id)===String(id));if(!q)return;editingId=id;
-    const ft=document.getElementById('formTitle');if(ft)ft.textContent='Edit Question';
-    const sb=document.getElementById('saveBtn');if(sb)sb.textContent='Update Question';
+    const qFormCard=document.getElementById('questionFormCard');
+    if(qFormCard) qFormCard.style.display='';
+    const difficultyOnly=Auth.getRole()==='editor';
+    const ft=document.getElementById('formTitle');if(ft)ft.textContent=difficultyOnly?'Edit Difficulty Level':'Edit Question';
+    const sb=document.getElementById('saveBtn');if(sb)sb.textContent=difficultyOnly?'Update Difficulty':'Update Question';
 
     const subjectSel=document.getElementById('subject');
     const klassSel=document.getElementById('klass');
@@ -3799,11 +3827,12 @@ window.QP={
     }
     setFieldFromRaw('solutionText',q.solutionText||'');
 
-    const qFormCard=document.getElementById('questionFormCard');
+    setDifficultyOnlyMode(difficultyOnly);
+
     if(qFormCard) qFormCard.scrollIntoView({behavior:'smooth'});
   },
   remove:async function(id){
-    if(!Auth.can('delete')){showToast('Question Viewers do not have permission to delete questions.',true);return;}
+    if(!Auth.can('delete')){showToast('Only an Admin can delete questions.',true);return;}
     if(!confirm('Delete this question? This cannot be undone.'))return;
     try{
       await apiRequest('/'+encodeURIComponent(id),{method:'DELETE'});

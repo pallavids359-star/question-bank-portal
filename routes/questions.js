@@ -390,7 +390,7 @@ function toApi(row) {
 const READ_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor', 'viewer')];
 // Adders create/import questions; editors update existing questions.
 const CREATE_ROLES = [requireAuth, requireRole('admin', 'adder')];
-const EDIT_ROLES   = [requireAuth, requireRole('admin', 'editor')];
+const EDIT_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor')];
 const DELETE_ROLES = [requireAuth, requireRole('admin')];
 
 // ── GET /api/questions?subject=X&qType=Y ──────────────────────────────────
@@ -612,19 +612,50 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
 
 // ── PUT /api/questions/:id ─────────────────────────────────────────────────
 router.put('/:id', ...EDIT_ROLES, async (req, res) => {
-  const payload = toDatabase(req.body);
-  if (Object.keys(payload).length === 0) {
-    return res.status(400).json({ error: 'No valid fields supplied.' });
-  }
-
   const { data: existingQuestion, error: existingError } = await supabase
     .from('questions')
-    .select('id, subject')
+    .select('*')
     .eq('id', req.params.id)
     .maybeSingle();
   if (existingError) return res.status(500).json({ error: existingError.message });
   if (!existingQuestion) return res.status(404).json({ error: 'Question not found.' });
-  if (!hasSubjectAccess(req.user, existingQuestion.subject) || !hasSubjectAccess(req.user, payload.subject)) {
+
+  const userRole = String(req.user?.role || '').toLowerCase();
+  let payload;
+
+  if (userRole === 'editor') {
+    const requestedDifficulty = String(req.body?.difficulty || '').trim();
+    if (!/^(easy|medium|hard)$/i.test(requestedDifficulty)) {
+      return res.status(400).json({ error: 'Editors may change only the difficulty to Easy, Medium, or Hard.' });
+    }
+    const normalizedDifficulty = requestedDifficulty.charAt(0).toUpperCase() + requestedDifficulty.slice(1).toLowerCase();
+    const storedType = readLegacyQuestionType(existingQuestion.solution_text) || existingQuestion.q_type || 'mcq_single';
+    const storedSpecialData = readLegacyData(existingQuestion.solution_text);
+
+    // Editors are deliberately limited to difficulty. Preserve every other
+    // value exactly as stored, including compatibility metadata.
+    payload = {
+      solution_text: storeLegacyMetadata(
+        existingQuestion.solution_text,
+        normalizedDifficulty,
+        storedType,
+        storedSpecialData
+      )
+    };
+    if (Object.prototype.hasOwnProperty.call(existingQuestion, 'difficulty')) {
+      payload.difficulty = normalizedDifficulty;
+    }
+  } else {
+    // Admins and Adders can fully edit the question.
+    payload = toDatabase(req.body);
+  }
+
+  if (Object.keys(payload).length === 0) {
+    return res.status(400).json({ error: 'No valid fields supplied.' });
+  }
+
+  if (!hasSubjectAccess(req.user, existingQuestion.subject) ||
+      (payload.subject && !hasSubjectAccess(req.user, payload.subject))) {
     return res.status(403).json({ error: 'You can edit questions only in your assigned subject.' });
   }
 
@@ -663,7 +694,7 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
   await writeAuditLog({
     userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
     userName: req.user?.name || 'User',
-    action: 'UPDATE_QUESTION', resourceType: 'question',
+    action: userRole === 'editor' ? 'UPDATE_QUESTION_DIFFICULTY' : 'UPDATE_QUESTION', resourceType: 'question',
     resourceId: req.params.id,
     details: { subject: data.subject, qType: data.q_type },
   }).catch(err => console.warn('Audit log failed:', err.message));
