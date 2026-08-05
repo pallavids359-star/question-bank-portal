@@ -69,13 +69,13 @@ body{
   background:radial-gradient(circle, rgba(201,162,39,.08) 0%, transparent 70%);
 }
 .mt-logo{
-  width:80px; height:80px; border-radius:50%;
-  background:linear-gradient(135deg,#c9a227,#8a6e18);
+  width:150px; height:150px; border-radius:18px; overflow:hidden;
+  background:#050505;
   display:flex; align-items:center; justify-content:center;
-  font-size:28px; font-weight:800; color:#0a0a0a; letter-spacing:-2px;
   box-shadow:0 8px 32px rgba(201,162,39,.4); position:relative; z-index:1;
   flex-shrink:0;
 }
+.mt-logo img{width:100%;height:100%;object-fit:cover;display:block;}
 .brand-name{
   font-size:22px; font-weight:700; color:#fff;
   text-align:center; position:relative; z-index:1; line-height:1.3;
@@ -150,11 +150,11 @@ body{
   display:flex; align-items:center; gap:12px;
 }
 .sb-logo{
-  width:36px; height:36px; border-radius:8px; flex-shrink:0;
-  background:linear-gradient(135deg,#c9a227,#8a6e18);
+  width:40px; height:40px; border-radius:9px; flex-shrink:0;overflow:hidden;
+  background:#050505;
   display:flex; align-items:center; justify-content:center;
-  font-size:13px; font-weight:800; color:#0a0a0a; letter-spacing:-1px;
 }
+.sb-logo img{width:100%;height:100%;object-fit:cover;display:block;transform:scale(1.6);transform-origin:50% 35%;}
 .sb-brand-text{ min-width:0; }
 .sb-brand-name{ font-size:13px; font-weight:700; color:#fff; line-height:1.2; }
 .sb-brand-sub{  font-size:10px; color:var(--gold); font-weight:500;
@@ -662,7 +662,7 @@ textarea{resize:vertical;min-height:70px;}
 <div id="loginPage">
   <div class="login-outer">
     <div class="login-brand">
-      <div class="mt-logo">MT</div>
+      <div class="mt-logo"><img src="/manchester-logo.jpeg" alt="Manchester Technologies logo"></div>
       <div class="brand-name">Manchester<br>Technologies</div>
       <div class="brand-divider"></div>
       <div class="brand-sub">Question Bank Portal</div>
@@ -694,7 +694,7 @@ textarea{resize:vertical;min-height:70px;}
     <!-- SIDEBAR -->
     <aside id="sidebar">
       <div class="sidebar-brand">
-        <div class="sb-logo">MT</div>
+        <div class="sb-logo"><img src="/manchester-logo.jpeg" alt="Manchester Technologies logo"></div>
         <div class="sb-brand-text">
           <div class="sb-brand-name">Manchester Tech</div>
           <div class="sb-brand-sub">Question Bank</div>
@@ -734,7 +734,8 @@ textarea{resize:vertical;min-height:70px;}
         </div>
         <div class="stat-grid">
           <div class="stat-card purple clickable-stat" onclick="filterUsersByRole('admin')" title="Click to view Admin users"><div class="stat-icon">👑</div><div class="stat-value" id="dAdmins">—</div><div class="stat-label">Admins</div></div>
-          <div class="stat-card green clickable-stat" onclick="filterUsersByRole('adder')" title="Click to view Editor users"><div class="stat-icon">✏️</div><div class="stat-value" id="dAdders">—</div><div class="stat-label">Editors</div></div>
+          <div class="stat-card green clickable-stat" onclick="filterUsersByRole('adder')" title="Click to view Question Adders"><div class="stat-icon">➕</div><div class="stat-value" id="dAdders">—</div><div class="stat-label">Adders</div></div>
+          <div class="stat-card teal clickable-stat" onclick="filterUsersByRole('editor')" title="Click to view Question Editors"><div class="stat-icon">✏️</div><div class="stat-value" id="dEditors">—</div><div class="stat-label">Editors</div></div>
           <div class="stat-card clickable-stat" style="border-color:#2a2a2a;" onclick="filterUsersByRole('viewer')" title="Click to view Viewer users"><div class="stat-icon">👁️</div><div class="stat-value" id="dViewers">—</div><div class="stat-label">Viewers</div></div>
           <div class="stat-card gold clickable-stat" onclick="showMostActiveDetails()" title="Click to view most active contributor details"><div class="stat-icon">🏆</div><div class="stat-value" id="dActiveUser" style="font-size:14px;line-height:1.3;">—</div><div class="stat-label">Most Active</div></div>
         </div>
@@ -800,7 +801,7 @@ textarea{resize:vertical;min-height:70px;}
             </div>
 
             <div id="mcqBlock">
-              <div class="field">
+              <div class="field" id="mcqQuestionField">
                 <div class="label-row">
                   <label class="field-label">Question <span class="req">*</span></label>
                   <button type="button" class="attach-btn img-link-btn-flat" data-target="question">📎 Attach Image</button>
@@ -1672,15 +1673,17 @@ function showToast(msg, isError) {
 async function loadDashboard() {
   try {
     const d = await apiReq('/api/dashboard');
-    document.getElementById('dTotalQ').textContent    = d.totalQuestions;
-    document.getElementById('dTotalSub').textContent  = d.totalSubjects;
-    document.getElementById('dTotalCh').textContent   = d.totalChapters;
-    document.getElementById('dToday').textContent     = d.questionsToday;
-    document.getElementById('dWeek').textContent      = d.questionsWeek;
-    document.getElementById('dMonth').textContent     = d.questionsMonth;
-    document.getElementById('dAdmins').textContent    = d.totalAdmins;
-    document.getElementById('dAdders').textContent    = d.totalAdders;
-    document.getElementById('dViewers').textContent   = d.totalViewers;
+    const realCount=value=>Number.isFinite(Number(value))?Number(value):'—';
+    document.getElementById('dTotalQ').textContent    = realCount(d.totalQuestions);
+    document.getElementById('dTotalSub').textContent  = realCount(d.totalSubjects);
+    document.getElementById('dTotalCh').textContent   = realCount(d.totalChapters);
+    document.getElementById('dToday').textContent     = realCount(d.questionsToday);
+    document.getElementById('dWeek').textContent      = realCount(d.questionsWeek);
+    document.getElementById('dMonth').textContent     = realCount(d.questionsMonth);
+    document.getElementById('dAdmins').textContent    = realCount(d.totalAdmins);
+    document.getElementById('dAdders').textContent    = realCount(d.totalAdders);
+    const editors=document.getElementById('dEditors');if(editors)editors.textContent=realCount(d.totalEditors);
+    document.getElementById('dViewers').textContent   = realCount(d.totalViewers);
     document.getElementById('dActiveUser').textContent = d.mostActiveUser
       ? `${d.mostActiveUser.name} (${d.mostActiveUser.count})`
       : '—';
@@ -1688,6 +1691,10 @@ async function loadDashboard() {
     renderRecentList('dashRecentAdded',  d.recentAdded,  'createdAt',  'created_by_name');
     renderRecentList('dashRecentEdited', d.recentEdited, 'updatedAt', 'updated_by_name');
   } catch(e) {
+    ['dTotalQ','dTotalSub','dTotalCh','dToday','dWeek','dMonth','dAdmins','dAdders','dEditors','dViewers','dActiveUser']
+      .forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});
+    const added=document.getElementById('dashRecentAdded');if(added)added.innerHTML='<div class="empty-state">Could not load live data.</div>';
+    const edited=document.getElementById('dashRecentEdited');if(edited)edited.innerHTML='<div class="empty-state">Could not load live data.</div>';
     showToast('Dashboard load failed: ' + e.message, true);
   }
 }
@@ -2754,6 +2761,29 @@ const mcqOptionsGrid=
 const correctOptionLabel=
   document.getElementById('correctOptionLabel');
 
+const mcqQuestionField=
+  document.getElementById('mcqQuestionField');
+
+/* Statement Based order: Statement I, Statement II, Options, Correct Option. */
+if(
+  statementBlock &&
+  mcqBlock &&
+  correctOptionWrap &&
+  mcqBlock.parentNode
+){
+  if(isStatement){
+    mcqBlock.parentNode.insertBefore(
+      statementBlock,
+      mcqBlock
+    );
+  }else{
+    correctOptionWrap.parentNode.insertBefore(
+      statementBlock,
+      correctOptionWrap
+    );
+  }
+}
+
   /*
    * Standard MCQ, True/False, Statement Based
    * and Diagram Based use the main MCQ block.
@@ -2768,8 +2798,6 @@ const correctOptionLabel=
         ? 'none'
         : '';
   }
-  
-
   if(arBlock){
     arBlock.style.display=
       isAssertionReason ? '' : 'none';
@@ -2822,6 +2850,11 @@ if(correctOptionLabel){
     isTrueFalse
       ? 'Correct Answer <span class="req">*</span>'
       : 'Correct Option <span class="req">*</span>';
+}
+
+if(mcqQuestionField){
+  mcqQuestionField.style.display=
+    isStatement ? 'none' : '';
 }
 
   if(isStatement){
@@ -3510,9 +3543,11 @@ function renderList(){
       const rLine=document.createElement('div');rLine.style.marginTop='4px';rLine.appendChild(document.createTextNode('R: '));rLine.appendChild(renderStaticPreview(rea||''));main.appendChild(rLine);
       const combo=document.createElement('div');combo.className='li-combo';combo.textContent='Correct: Option '+(q.correctOption||'—');main.appendChild(combo);
     }else if(q.qType==='statement_based'){
-      if(cleanQText){const qL=document.createElement('div');qL.appendChild(renderStaticPreview(cleanQText));main.appendChild(qL);}
-      if(q.statement1){const s1L=document.createElement('div');s1L.style.marginTop='4px';s1L.appendChild(document.createTextNode('Statement I: '));s1L.appendChild(renderStaticPreview(q.statement1));main.appendChild(s1L);}
-      if(q.statement2){const s2L=document.createElement('div');s2L.style.marginTop='4px';s2L.appendChild(document.createTextNode('Statement II: '));s2L.appendChild(renderStaticPreview(q.statement2));main.appendChild(s2L);}
+      const statementFallback=extractStatementPairForForm(q.question||'');
+      const visibleStatement1=q.statement1||statementFallback.statement1||'';
+      const visibleStatement2=q.statement2||statementFallback.statement2||'';
+      if(visibleStatement1){const s1L=document.createElement('div');s1L.style.marginTop='4px';s1L.appendChild(document.createTextNode('Statement I: '));s1L.appendChild(renderStaticPreview(visibleStatement1));main.appendChild(s1L);}
+      if(visibleStatement2){const s2L=document.createElement('div');s2L.style.marginTop='4px';s2L.appendChild(document.createTextNode('Statement II: '));s2L.appendChild(renderStaticPreview(visibleStatement2));main.appendChild(s2L);}
       const optsLine=document.createElement('div');optsLine.className='li-combo';
       ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]||''));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
       main.appendChild(optsLine);
@@ -3685,6 +3720,12 @@ function renderList(){
 
 function setFieldFromRaw(id,raw){const el=document.getElementById(id);if(!el)return;el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
 function setEqFieldElFromRaw(el,raw){el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
+function extractStatementPairForForm(questionText){
+  const text=String(questionText||'').replace(/\r\n?/g,'\n').trim();
+  const first=text.match(/(?:^|\n)\s*@?Statement\s*(?:I|1|A)\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*(?:II|2|B)\b)/i);
+  const second=text.match(/(?:^|\n)\s*@?Statement\s*(?:II|2|B)\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*(?:\(?[A-D]\)?\s*[).:\-]|(?:Ans|Answer|Solution|Explanation)\s*[:.\-])|$)/i);
+  return {statement1:first?first[1].trim():'',statement2:second?second[1].trim():''};
+}
 
 window.QP={
   edit:function(id){
@@ -3722,9 +3763,9 @@ window.QP={
       setFieldFromRaw('reason',q.reason||'');
       if(q.predefOptions)setFieldFromRaw('predefOptions',q.predefOptions);
     }else if(normType==='statement_based'){
-      if(q.question) setFieldFromRaw('question',q.question);
-      setFieldFromRaw('statement1',q.statement1||'');
-      setFieldFromRaw('statement2',q.statement2||'');
+      const extractedStatements=extractStatementPairForForm(q.question||'');
+      setFieldFromRaw('statement1',q.statement1||extractedStatements.statement1||'');
+      setFieldFromRaw('statement2',q.statement2||extractedStatements.statement2||'');
       setFieldFromRaw('optA',q.optA||'');
       setFieldFromRaw('optB',q.optB||'');
       setFieldFromRaw('optC',q.optC||'');
