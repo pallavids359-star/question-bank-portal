@@ -5,91 +5,116 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { toLogicalUser } = require('../lib/user-role');
 
 const router = express.Router();
+const PAGE_SIZE = 1000;
 
-// ── GET /api/dashboard ────────────────────────────────────────────────────
+// Read every real row without naming optional columns. Older installations may
+// not yet have ownership/difficulty fields, but the dashboard must still load.
+async function readAll(table) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw new Error(`${table}: ${error.message}`);
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+function timeValue(value) {
+  const valueAsTime = value ? new Date(value).getTime() : NaN;
+  return Number.isFinite(valueAsTime) ? valueAsTime : 0;
+}
+
+function isOnOrAfter(value, cutoff) {
+  const valueAsTime = timeValue(value);
+  return valueAsTime > 0 && valueAsTime >= cutoff.getTime();
+}
+
+function recentRows(rows, field) {
+  return rows
+    .filter(row => timeValue(row[field]) > 0)
+    .sort((a, b) => timeValue(b[field]) - timeValue(a[field]))
+    .slice(0, 5);
+}
+
+// GET /api/dashboard
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const now   = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-    const week  = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).toISOString();
-    const month = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
-    const [
-      questionsRes,
-      subjectsRes,
-      chaptersRes,
-      usersRes,
-      todayRes,
-      weekRes,
-      monthRes,
-      recentAddedRes,
-      recentEditedRes,
-    ] = await Promise.all([
-      // Total question count
-      supabase.from('questions').select('*', { count: 'exact', head: true }),
-      // Distinct subjects
-      supabase.from('questions').select('subject'),
-      // Distinct chapters
-      supabase.from('questions').select('chapter'),
-      // All users (for role breakdown)
-      supabase.from('users').select('id, name, email, role, subject, created_at, last_login'),
-      // Questions added today
-      supabase.from('questions').select('*', { count: 'exact', head: true }).gte('created_at', today),
-      // Questions added this week
-      supabase.from('questions').select('*', { count: 'exact', head: true }).gte('created_at', week),
-      // Questions added this month
-      supabase.from('questions').select('*', { count: 'exact', head: true }).gte('created_at', month),
-      // 5 most recently added
-      supabase.from('questions')
-        .select('id, subject, chapter, topic, q_type, created_at, created_by_name')
-        .order('created_at', { ascending: false }).limit(5),
-      // 5 most recently edited
-      supabase.from('questions')
-        .select('id, subject, chapter, topic, q_type, updated_at, updated_by_name')
-        .order('updated_at', { ascending: false }).limit(5),
+    const [questions, rawUsers] = await Promise.all([
+      readAll('questions'),
+      readAll('users'),
     ]);
 
-    // Compute derived values (filter valid PCMB subjects only)
-    const validPCMB = ['Physics', 'Chemistry', 'Mathematics', 'Maths', 'Biology'];
-    const rawSubjects = (subjectsRes.data || []).map(q => q.subject).filter(s => s && validPCMB.includes(s));
-    const allSubjects = [...new Set(rawSubjects.map(s => (s === 'Maths' ? 'Mathematics' : s)))];
-    const allChapters = [...new Set((chaptersRes.data || []).map(q => q.chapter).filter(c => c && c !== 'General'))];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const mondayOffset = (now.getDay() + 6) % 7;
+    const week = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
+    const month = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const users = (usersRes.data || []).map(toLogicalUser);
-    const byRole = { admin: 0, adder: 0, editor: 0, viewer: 0 };
-    users.forEach(u => { if (byRole[u.role] !== undefined) byRole[u.role]++; });
-
-    // Most active user: find who has the most created questions
-    const { data: ownerCounts } = await supabase
-      .from('questions')
-      .select('created_by_name')
-      .not('created_by_name', 'eq', '');
-
-    const activityMap = {};
-    (ownerCounts || []).forEach(q => {
-      if (q.created_by_name) {
-        activityMap[q.created_by_name] = (activityMap[q.created_by_name] || 0) + 1;
+    const subjects = new Set();
+    const chapters = new Set();
+    questions.forEach(question => {
+      const rawSubject = String(question.subject || '').trim();
+      const subject = rawSubject === 'Maths' ? 'Mathematics' : rawSubject;
+      const chapter = String(question.chapter || '').trim();
+      if (subject && subject !== 'General') subjects.add(subject);
+      if (chapter && chapter !== 'General') {
+        chapters.add(`${subject || 'General'}::${chapter}`);
       }
     });
-    const mostActive = Object.entries(activityMap)
-      .sort((a, b) => b[1] - a[1])[0] || null;
+
+    const users = rawUsers.map(toLogicalUser);
+    const byRole = { admin: 0, adder: 0, editor: 0, viewer: 0 };
+    users.forEach(user => {
+      if (Object.prototype.hasOwnProperty.call(byRole, user.role)) {
+        byRole[user.role] += 1;
+      }
+    });
+
+    const userNamesById = new Map(
+      users.filter(user => user.id).map(user => [String(user.id), user.name || user.email || 'Unknown user'])
+    );
+    const activityMap = new Map();
+    questions.forEach(question => {
+      const owner = String(
+        question.created_by_name ||
+        userNamesById.get(String(question.created_by || '')) ||
+        ''
+      ).trim();
+      if (owner) activityMap.set(owner, (activityMap.get(owner) || 0) + 1);
+    });
+    const mostActiveEntry = [...activityMap.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    // Supply a name when ownership IDs exist but the denormalized name columns do not.
+    const displayRows = questions.map(question => ({
+      ...question,
+      created_by_name: question.created_by_name || userNamesById.get(String(question.created_by || '')) || '',
+      updated_by_name: question.updated_by_name || userNamesById.get(String(question.updated_by || '')) || '',
+    }));
 
     res.json({
-      totalQuestions:  questionsRes.count  || 0,
-      totalSubjects:   allSubjects.length,
-      totalChapters:   allChapters.length,
-      totalAdmins:     byRole.admin,
-      totalAdders:     byRole.adder,
-      totalEditors:    byRole.editor,
-      totalViewers:    byRole.viewer,
-      totalUsers:      users.length,
-      questionsToday:  todayRes.count  || 0,
-      questionsWeek:   weekRes.count   || 0,
-      questionsMonth:  monthRes.count  || 0,
-      mostActiveUser:  mostActive ? { name: mostActive[0], count: mostActive[1] } : null,
-      recentAdded:     recentAddedRes.data  || [],
-      recentEdited:    recentEditedRes.data || [],
-      allUsers:        users,
+      totalQuestions: questions.length,
+      totalSubjects: subjects.size,
+      totalChapters: chapters.size,
+      totalAdmins: byRole.admin,
+      totalAdders: byRole.adder,
+      totalEditors: byRole.editor,
+      totalViewers: byRole.viewer,
+      totalUsers: users.length,
+      questionsToday: questions.filter(q => isOnOrAfter(q.created_at, today)).length,
+      questionsWeek: questions.filter(q => isOnOrAfter(q.created_at, week)).length,
+      questionsMonth: questions.filter(q => isOnOrAfter(q.created_at, month)).length,
+      mostActiveUser: mostActiveEntry
+        ? { name: mostActiveEntry[0], count: mostActiveEntry[1] }
+        : null,
+      recentAdded: recentRows(displayRows, 'created_at'),
+      recentEdited: recentRows(displayRows, 'updated_at'),
+      allUsers: users,
     });
   } catch (err) {
     console.error('[dashboard]', err);
