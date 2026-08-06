@@ -13,6 +13,35 @@ const JWT_EXPIRES  = process.env.JWT_EXPIRES_IN || '8h';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
+async function findAuthenticatedUser(req, columns) {
+  let lastError = null;
+
+  if (req.user?.userId) {
+    const byId = await supabase
+      .from('users')
+      .select(columns)
+      .eq('id', req.user.userId)
+      .maybeSingle();
+
+    if (byId.data) return byId;
+    lastError = byId.error || lastError;
+  }
+
+  const email = String(req.user?.email || '').trim().toLowerCase();
+  if (email) {
+    const byEmail = await supabase
+      .from('users')
+      .select(columns)
+      .eq('email', email)
+      .maybeSingle();
+
+    if (byEmail.data) return byEmail;
+    lastError = byEmail.error || lastError;
+  }
+
+  return { data: null, error: lastError };
+}
+
 async function logLogin(userId, req, status) {
   try {
     const ua = req.headers['user-agent'] || '';
@@ -177,11 +206,10 @@ router.post('/logout', requireAuth, async (req, res) => {
 
 // ── GET /api/auth/me ───────────────────────────────────────────────────────
 router.get('/me', requireAuth, async (req, res) => {
-  const { data: user, error } = await supabase
-    .from('users')
-    .select('id, name, email, role, subject, status, last_login, created_at')
-    .eq('id', req.user.userId)
-    .maybeSingle();
+  const { data: user, error } = await findAuthenticatedUser(
+    req,
+    'id, name, email, role, subject, status, last_login, created_at'
+  );
 
   if (error || !user) {
     return res.status(404).json({ error: 'User not found.' });
@@ -199,11 +227,10 @@ router.put('/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'New password must be at least 6 characters.' });
   }
 
-  const { data: user, error } = await supabase
-    .from('users')
-    .select('password_hash')
-    .eq('id', req.user.userId)
-    .maybeSingle();
+  const { data: user, error } = await findAuthenticatedUser(
+    req,
+    'id, name, email, password_hash'
+  );
 
   if (error || !user) {
     return res.status(404).json({ error: 'User not found.' });
@@ -218,16 +245,16 @@ router.put('/change-password', requireAuth, async (req, res) => {
   const { error: updateError } = await supabase
     .from('users')
     .update({ password_hash: newHash })
-    .eq('id', req.user.userId);
+    .eq('id', user.id);
 
   if (updateError) {
     return res.status(500).json({ error: 'Failed to update password.' });
   }
 
   await writeAuditLog({
-    userId: req.user.userId, userName: req.user.name,
+    userId: user.id, userName: user.name || req.user.name,
     action: 'CHANGE_PASSWORD', resourceType: 'user',
-    resourceId: req.user.userId, details: {},
+    resourceId: user.id, details: {},
   });
 
   res.json({ message: 'Password changed successfully.' });
