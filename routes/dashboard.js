@@ -124,14 +124,16 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
     const mostActiveEntry = [...activityMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
     const adderStats = users
-      .filter(user => user.role === 'adder')
+      .filter(user => user.role === 'adder' || user.role === 'admin')
       .map(user => ({
         id: user.id,
-        name: user.name || user.email || 'Unnamed Adder',
+        name: user.name || user.email || 'Unnamed Contributor',
         email: user.email || '',
+        role: user.role,
         subject: user.subject || 'All',
         questionCount: questions.filter(question => questionBelongsToUser(question, user)).length,
       }))
+      .filter(user => user.questionCount > 0)
       .sort((a, b) => b.questionCount - a.questionCount || a.name.localeCompare(b.name));
 
     // Supply a name when ownership IDs exist but the denormalized name columns do not.
@@ -168,6 +170,8 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
 });
 
 // GET /api/dashboard/adders/:userId/questions
+// Kept at the original URL for compatibility, but supports both Adders and
+// Admins who have created questions.
 router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const [questions, rawUsers] = await Promise.all([
@@ -177,8 +181,8 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
     const user = rawUsers.map(toLogicalUser)
       .find(candidate => String(candidate.id) === String(req.params.userId));
 
-    if (!user || user.role !== 'adder') {
-      return res.status(404).json({ error: 'Adder not found.' });
+    if (!user || !['adder', 'admin'].includes(user.role)) {
+      return res.status(404).json({ error: 'Question contributor not found.' });
     }
 
     const ownedQuestions = questions
@@ -189,8 +193,9 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
     res.json({
       adder: {
         id: user.id,
-        name: user.name || user.email || 'Unnamed Adder',
+        name: user.name || user.email || 'Unnamed Contributor',
         email: user.email || '',
+        role: user.role,
         subject: user.subject || 'All',
         questionCount: ownedQuestions.length,
       },
