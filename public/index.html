@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Question Bank Portal — Manchester Technologies</title>
+<title>Question Bank Portal — Manchester Technologies</title><!-- dashboard-v8 -->
 <meta name="description" content="Manchester Technologies Question Bank Portal — Role-based educational question management system.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -299,6 +299,15 @@ body{
 .recent-title{ font-size:13px; color:var(--text); font-weight:500; }
 .recent-sub{ font-size:11px; color:var(--muted); margin-top:2px; }
 .recent-time{ font-size:11px; color:var(--muted); flex-shrink:0; }
+.adder-performance-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
+.adder-performance-item{width:100%;text-align:left;background:var(--field);border:1px solid var(--border);border-radius:10px;padding:14px 16px;color:var(--text);cursor:pointer;font-family:inherit;transition:border-color .15s,transform .15s;}
+.adder-performance-item:hover{border-color:var(--gold);transform:translateY(-2px);}
+.adder-performance-name{font-size:14px;font-weight:700;color:#fff;}
+.adder-performance-meta{font-size:11px;color:var(--muted);margin-top:3px;}
+.adder-performance-count{font-size:20px;font-weight:800;color:var(--gold);margin-top:8px;}
+.adder-question-item{padding:14px 0;border-bottom:1px solid var(--border);}
+.adder-question-item:last-child{border-bottom:none;}
+.adder-question-text{font-size:13px;color:var(--text);line-height:1.55;margin-top:6px;white-space:pre-wrap;}
 
 /* ============================================================
    USERS PAGE
@@ -734,10 +743,14 @@ textarea{resize:vertical;min-height:70px;}
         </div>
         <div class="stat-grid">
           <div class="stat-card purple clickable-stat" onclick="filterUsersByRole('admin')" title="Click to view Admin users"><div class="stat-icon">👑</div><div class="stat-value" id="dAdmins">—</div><div class="stat-label">Admins</div></div>
-          <div class="stat-card green clickable-stat" onclick="filterUsersByRole('adder')" title="Click to view Question Adders"><div class="stat-icon">➕</div><div class="stat-value" id="dAdders">—</div><div class="stat-label">Adders</div></div>
+          <div class="stat-card green clickable-stat" onclick="showAdderPerformance()" title="Click to view Adders and their question counts"><div class="stat-icon">➕</div><div class="stat-value" id="dAdders">—</div><div class="stat-label">Adders</div></div>
           <div class="stat-card teal clickable-stat" onclick="filterUsersByRole('editor')" title="Click to view Question Editors"><div class="stat-icon">✏️</div><div class="stat-value" id="dEditors">—</div><div class="stat-label">Editors</div></div>
           <div class="stat-card clickable-stat" style="border-color:#2a2a2a;" onclick="filterUsersByRole('viewer')" title="Click to view Viewer users"><div class="stat-icon">👁️</div><div class="stat-value" id="dViewers">—</div><div class="stat-label">Viewers</div></div>
           <div class="stat-card gold clickable-stat" onclick="showMostActiveDetails()" title="Click to view most active contributor details"><div class="stat-icon">🏆</div><div class="stat-value" id="dActiveUser" style="font-size:14px;line-height:1.3;">—</div><div class="stat-label">Most Active</div></div>
+        </div>
+        <div class="card" id="adderPerformanceCard">
+          <div class="section-title">Adder Performance</div>
+          <div id="adderPerformanceList"><div class="empty-state">Loading…</div></div>
         </div>
         <div class="dash-grid">
           <div class="card">
@@ -1318,7 +1331,8 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
     <div class="form-group"><label>Role</label>
       <select id="cuRole">
         <option value="viewer">Question Viewer</option>
-        <option value="adder">Question Adder (Editor)</option>
+        <option value="adder">Question Adder</option>
+        <option value="editor">Question Editor</option>
         <option value="admin">Admin</option>
       </select>
     </div>
@@ -1336,6 +1350,16 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
       <button class="btn btn-ghost" onclick="closeCreateUserModal()">Cancel</button>
       <button class="btn btn-primary" id="cuSaveBtn" onclick="saveUser()">Create User</button>
     </div>
+  </div>
+</div>
+
+<!-- ADDER QUESTIONS MODAL -->
+<div class="modal-overlay" id="adderQuestionsModal" onclick="if(event.target===this)closeAdderQuestionsModal()">
+  <div class="modal" style="max-width:850px;">
+    <h3 id="adderQuestionsTitle">Questions Added</h3>
+    <div id="adderQuestionsSummary" style="color:var(--muted);font-size:13px;margin-top:-10px;margin-bottom:14px;"></div>
+    <div id="adderQuestionsList"><div class="empty-state">Loading…</div></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeAdderQuestionsModal()">Close</button></div>
   </div>
 </div>
 
@@ -1365,6 +1389,7 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
 var allQuestions  = [];
 var selectedExams = new Set();
 var editingId     = null;
+var dashboardAdderStats = [];
 
 // fillSelect: used by bulk-import.js
 function fillSelect(id, options, placeholder) {
@@ -1407,8 +1432,9 @@ const Auth = {
   can(action)  {
     const role = this.getRole();
     const map = {
-      admin:  ['view','edit','delete','manage_users','dashboard','audit','settings','bulk_import'],
-      adder:  ['view','edit','delete','bulk_import'],
+      admin:  ['view','add','edit','delete','manage_users','dashboard','audit','settings','bulk_import'],
+      adder:  ['view','add','edit','bulk_import'],
+      editor: ['view','edit'],
       viewer: ['view'],
     };
     return (map[role] || []).includes(action);
@@ -1513,7 +1539,7 @@ function buildSidebar() {
   const items = [
     { label: 'Main', items: [
       { icon:'🏠', text:'Dashboard',           page:'pageDashboard',  roles:['admin'] },
-      { icon:'📚', text:'Questions',           page:'pageQuestions',  roles:['admin','adder','viewer'] },
+      { icon:'📚', text:'Questions',           page:'pageQuestions',  roles:['admin','adder','editor','viewer'] },
       { icon:'📥', text:'Bulk Question Import', page:'pageBulkImport', roles:['admin','adder'] },
     ]},
     { label: 'Administration', items: [
@@ -1522,7 +1548,7 @@ function buildSidebar() {
       { icon:'⚙️', text:'Settings',          page:'pageSettings',  roles:['admin'] },
     ]},
     { label: 'Account', items: [
-      { icon:'👤', text:'My Profile',        page:'pageProfile',   roles:['admin','adder','viewer'] },
+      { icon:'👤', text:'My Profile',        page:'pageProfile',   roles:['admin','adder','editor','viewer'] },
     ]},
   ];
 
@@ -1560,10 +1586,10 @@ function updateSidebarUser() {
 // ============================================================
 function applyRoleRestrictions() {
   const user = Auth.getUser() || {};
-  const canEdit = Auth.can('edit');
-  // Hide the question form card for viewers
+  const canAdd = Auth.can('add');
+  // Editors open the form only after selecting an existing question to edit.
   const formCard = document.getElementById('questionFormCard');
-  if (formCard) formCard.style.display = canEdit ? '' : 'none';
+  if (formCard) formCard.style.display = canAdd ? '' : 'none';
 
   // If teacher/user has specific subject assigned (e.g. Physics)
   const subjectSel = document.getElementById('subject');
@@ -1690,11 +1716,14 @@ async function loadDashboard() {
 
     renderRecentList('dashRecentAdded',  d.recentAdded,  'createdAt',  'created_by_name');
     renderRecentList('dashRecentEdited', d.recentEdited, 'updatedAt', 'updated_by_name');
+    dashboardAdderStats = Array.isArray(d.adderStats) ? d.adderStats : [];
+    renderAdderPerformance(dashboardAdderStats);
   } catch(e) {
     ['dTotalQ','dTotalSub','dTotalCh','dToday','dWeek','dMonth','dAdmins','dAdders','dEditors','dViewers','dActiveUser']
       .forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});
     const added=document.getElementById('dashRecentAdded');if(added)added.innerHTML='<div class="empty-state">Could not load live data.</div>';
     const edited=document.getElementById('dashRecentEdited');if(edited)edited.innerHTML='<div class="empty-state">Could not load live data.</div>';
+    const adders=document.getElementById('adderPerformanceList');if(adders)adders.innerHTML='<div class="empty-state">Could not load Adder details.</div>';
     showToast('Dashboard load failed: ' + e.message, true);
   }
 }
@@ -2603,7 +2632,7 @@ function attachEquationField(idOrEl){
 
 // Global paste listener for question creators (Admin & Question Adder)
 document.addEventListener('paste', async (e) => {
-  if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('edit')) return;
+  if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('add') && !Auth.can('edit')) return;
 
   // Skip if already focused inside an equation field (handled by field's own paste listener)
   const active = document.activeElement;
@@ -2782,6 +2811,73 @@ if(
       correctOptionWrap
     );
   }
+}
+
+function renderAdderPerformance(adders) {
+  const container=document.getElementById('adderPerformanceList');
+  if(!container)return;
+  if(!adders||!adders.length){container.innerHTML='<div class="empty-state">No Question Adders found.</div>';return;}
+  container.className='adder-performance-list';
+  container.innerHTML=adders.map(adder=>`
+    <button type="button" class="adder-performance-item" onclick="openAdderQuestions('${escapeHtml(String(adder.id||''))}')">
+      <div class="adder-performance-name">${escapeHtml(adder.name||'Unnamed Adder')}</div>
+      <div class="adder-performance-meta">${escapeHtml(adder.email||'')} · ${escapeHtml(adder.subject||'All Subjects')}</div>
+      <div class="adder-performance-count">${Number(adder.questionCount)||0}</div>
+      <div class="adder-performance-meta">question${Number(adder.questionCount)===1?'':'s'} added · Click to view</div>
+    </button>`).join('');
+}
+
+function showAdderPerformance(){
+  const card=document.getElementById('adderPerformanceCard');
+  if(card)card.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function openAdderQuestions(userId){
+  const modal=document.getElementById('adderQuestionsModal');
+  const title=document.getElementById('adderQuestionsTitle');
+  const summary=document.getElementById('adderQuestionsSummary');
+  const list=document.getElementById('adderQuestionsList');
+  if(!modal||!list)return;
+  modal.classList.add('visible');
+  title.textContent='Questions Added';
+  summary.textContent='Loading Adder details…';
+  list.innerHTML='<div class="empty-state">Loading questions…</div>';
+  try{
+    const data=await apiReq('/api/dashboard/adders/'+encodeURIComponent(userId)+'/questions');
+    const adder=data.adder||{};
+    const questions=Array.isArray(data.questions)?data.questions:[];
+    title.textContent='Questions Added by '+(adder.name||'Adder');
+    summary.textContent=(adder.email||'')+' · '+questions.length+' question'+(questions.length===1?'':'s');
+    if(!questions.length){list.innerHTML='<div class="empty-state">This Adder has not added any questions yet.</div>';return;}
+    list.innerHTML=questions.map((q,index)=>`
+      <div class="adder-question-item">
+        <div class="recent-title">${index+1}. ${escapeHtml(q.subject||'')} · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(q.chapter||'')}</div>
+        <div class="recent-sub">${escapeHtml(QTYPE_LABELS[q.qType]||q.qType||'')} · ${escapeHtml(q.difficulty||'Medium')} · ${escapeHtml(q.topic||'General')}</div>
+        <div class="adder-question-text">${escapeHtml(q.question||'Question text unavailable')}</div>
+        <div class="recent-sub">Correct answer: ${escapeHtml(q.correctAnswer||'—')} · Added ${timeAgo(q.createdAt)}</div>
+      </div>`).join('');
+  }catch(error){
+    summary.textContent='Could not load this Adder’s questions.';
+    list.innerHTML='<div class="empty-state">'+escapeHtml(error.message||'Request failed')+'</div>';
+  }
+}
+
+function closeAdderQuestionsModal(){
+  const modal=document.getElementById('adderQuestionsModal');
+  if(modal)modal.classList.remove('visible');
+}
+
+function setDifficultyOnlyMode(enabled) {
+  const card = document.getElementById('questionFormCard');
+  if (!card) return;
+  card.querySelectorAll('input, select, button, [contenteditable]').forEach(el => {
+    const allowed = el.id === 'difficulty' || el.id === 'saveBtn' || el.id === 'resetBtn';
+    if (el.hasAttribute('contenteditable')) {
+      el.setAttribute('contenteditable', enabled && !allowed ? 'false' : 'true');
+    } else if ('disabled' in el && !allowed) {
+      el.disabled = Boolean(enabled);
+    }
+  });
 }
 
   /*
@@ -3058,8 +3154,11 @@ function validate(){
 }
 
 async function saveQuestion(){
-  if(!Auth.can('edit')){showToast('Question Viewers do not have permission to edit or save questions.',true);return;}
-  const err=validate();if(err){showToast(err,true);return;}
+  const isUpdating=Boolean(editingId);
+  const difficultyOnly=Auth.getRole()==='editor';
+  if(isUpdating&&!Auth.can('edit')){showToast('Only an Adder, Editor, or Admin can update questions.',true);return;}
+  if(!isUpdating&&!Auth.can('add')){showToast('Only a Question Adder or Admin can add questions.',true);return;}
+  if(!difficultyOnly){const err=validate();if(err){showToast(err,true);return;}}
   const saveBtn=document.getElementById('saveBtn');saveBtn.disabled=true;saveBtn.textContent=editingId?'Updating…':'Saving…';
   const qType=document.getElementById('qType').value;
   const isAR=qType==='assertion_reason';
@@ -3106,7 +3205,8 @@ async function saveQuestion(){
 
   try{
     const wasEditing=Boolean(editingId);
-    const saved=wasEditing?await apiRequest('/'+encodeURIComponent(editingId),{method:'PUT',body:JSON.stringify(record)}):await apiRequest('',{method:'POST',body:JSON.stringify(record)});
+    const updateRecord=difficultyOnly?{difficulty:val('difficulty')||'Medium'}:record;
+    const saved=wasEditing?await apiRequest('/'+encodeURIComponent(editingId),{method:'PUT',body:JSON.stringify(updateRecord)}):await apiRequest('',{method:'POST',body:JSON.stringify(record)});
     if(wasEditing){
       const idx=allQuestions.findIndex(q=>String(q.id)===String(editingId));
       if(idx>-1) allQuestions[idx]=saved;
@@ -3125,6 +3225,7 @@ async function saveQuestion(){
 }
 
 function resetForm(){
+  setDifficultyOnlyMode(false);
   editingId=null;
   const ft=document.getElementById('formTitle');if(ft)ft.textContent='Add New Question';
   const sb=document.getElementById('saveBtn');if(sb)sb.textContent='Save Question';
@@ -3154,6 +3255,8 @@ function resetForm(){
   ['question','optA','optB','optC','optD','solutionText','assertion','reason','numQuestion','numAnswer','statement1','statement2'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
   fillDefaultPredef();resetColumnRows('columnARows',columnALabel,4);resetColumnRows('columnBRows',columnBLabel,4);resetCombos(4);
   const co=document.getElementById('correctOption');if(co)co.value='';updateTypeVisibility();
+  const formCard=document.getElementById('questionFormCard');
+  if(formCard&&!Auth.can('add')) formCard.style.display='none';
 }
 
 if(document.getElementById('saveBtn')) document.getElementById('saveBtn').addEventListener('click',saveQuestion);
@@ -3503,6 +3606,7 @@ function renderList(){
   if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';return;}
 
   const canEdit = Auth.can('edit');
+  const canDelete = Auth.can('delete');
 
   let renderErrors = 0;
   filtered.forEach(q=>{
@@ -3707,6 +3811,8 @@ function renderList(){
     const btns=document.createElement('div');btns.className='li-btns';
     if(canEdit){
       const editBtn=document.createElement('button');editBtn.className='icon-btn';editBtn.title='Edit';editBtn.textContent='✎';editBtn.addEventListener('click',()=>QP.edit(q.id));btns.appendChild(editBtn);
+    }
+    if(canDelete){
       const delBtn=document.createElement('button');delBtn.className='icon-btn del';delBtn.title='Delete';delBtn.textContent='✕';delBtn.addEventListener('click',()=>QP.remove(q.id));btns.appendChild(delBtn);
     }
     top.appendChild(main);top.appendChild(btns);item.appendChild(top);listContainer.appendChild(item);
@@ -3729,10 +3835,13 @@ function extractStatementPairForForm(questionText){
 
 window.QP={
   edit:function(id){
-    if(!Auth.can('edit')){showToast('Question Viewers do not have editing permissions.',true);return;}
+    if(!Auth.can('edit')){showToast('Only an Adder, Editor, or Admin can edit questions.',true);return;}
     const q=allQuestions.find(x=>String(x.id)===String(id));if(!q)return;editingId=id;
-    const ft=document.getElementById('formTitle');if(ft)ft.textContent='Edit Question';
-    const sb=document.getElementById('saveBtn');if(sb)sb.textContent='Update Question';
+    const qFormCard=document.getElementById('questionFormCard');
+    if(qFormCard) qFormCard.style.display='';
+    const difficultyOnly=Auth.getRole()==='editor';
+    const ft=document.getElementById('formTitle');if(ft)ft.textContent=difficultyOnly?'Edit Difficulty Level':'Edit Question';
+    const sb=document.getElementById('saveBtn');if(sb)sb.textContent=difficultyOnly?'Update Difficulty':'Update Question';
 
     const subjectSel=document.getElementById('subject');
     const klassSel=document.getElementById('klass');
@@ -3799,11 +3908,12 @@ window.QP={
     }
     setFieldFromRaw('solutionText',q.solutionText||'');
 
-    const qFormCard=document.getElementById('questionFormCard');
+    setDifficultyOnlyMode(difficultyOnly);
+
     if(qFormCard) qFormCard.scrollIntoView({behavior:'smooth'});
   },
   remove:async function(id){
-    if(!Auth.can('delete')){showToast('Question Viewers do not have permission to delete questions.',true);return;}
+    if(!Auth.can('delete')){showToast('Only an Admin can delete questions.',true);return;}
     if(!confirm('Delete this question? This cannot be undone.'))return;
     try{
       await apiRequest('/'+encodeURIComponent(id),{method:'DELETE'});
