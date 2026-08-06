@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Question Bank Portal — Manchester Technologies</title><!-- dashboard-v8 -->
+<title>Question Bank Portal — Manchester Technologies</title><!-- dashboard-v9 -->
 <meta name="description" content="Manchester Technologies Question Bank Portal — Role-based educational question management system.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1741,6 +1741,73 @@ function renderRecentList(containerId, items, timeField, byField) {
     </div>`).join('');
 }
 
+function renderAdderPerformance(adders) {
+  const container=document.getElementById('adderPerformanceList');
+  if(!container)return;
+  if(!adders||!adders.length){container.innerHTML='<div class="empty-state">No Question Adders found.</div>';return;}
+  container.className='adder-performance-list';
+  container.innerHTML=adders.map(adder=>`
+    <button type="button" class="adder-performance-item" onclick="openAdderQuestions('${escapeHtml(String(adder.id||''))}')">
+      <div class="adder-performance-name">${escapeHtml(adder.name||'Unnamed Adder')}</div>
+      <div class="adder-performance-meta">${escapeHtml(adder.email||'')} · ${escapeHtml(adder.subject||'All Subjects')}</div>
+      <div class="adder-performance-count">${Number(adder.questionCount)||0}</div>
+      <div class="adder-performance-meta">question${Number(adder.questionCount)===1?'':'s'} added · Click to view</div>
+    </button>`).join('');
+}
+
+function showAdderPerformance(){
+  const card=document.getElementById('adderPerformanceCard');
+  if(card)card.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function openAdderQuestions(userId){
+  const modal=document.getElementById('adderQuestionsModal');
+  const title=document.getElementById('adderQuestionsTitle');
+  const summary=document.getElementById('adderQuestionsSummary');
+  const list=document.getElementById('adderQuestionsList');
+  if(!modal||!list)return;
+  modal.classList.add('visible');
+  title.textContent='Questions Added';
+  summary.textContent='Loading Adder details…';
+  list.innerHTML='<div class="empty-state">Loading questions…</div>';
+  try{
+    const data=await apiReq('/api/dashboard/adders/'+encodeURIComponent(userId)+'/questions');
+    const adder=data.adder||{};
+    const questions=Array.isArray(data.questions)?data.questions:[];
+    title.textContent='Questions Added by '+(adder.name||'Adder');
+    summary.textContent=(adder.email||'')+' · '+questions.length+' question'+(questions.length===1?'':'s');
+    if(!questions.length){list.innerHTML='<div class="empty-state">This Adder has not added any questions yet.</div>';return;}
+    list.innerHTML=questions.map((q,index)=>`
+      <div class="adder-question-item">
+        <div class="recent-title">${index+1}. ${escapeHtml(q.subject||'')} · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(q.chapter||'')}</div>
+        <div class="recent-sub">${escapeHtml(QTYPE_LABELS[q.qType]||q.qType||'')} · ${escapeHtml(q.difficulty||'Medium')} · ${escapeHtml(q.topic||'General')}</div>
+        <div class="adder-question-text">${escapeHtml(q.question||'Question text unavailable')}</div>
+        <div class="recent-sub">Correct answer: ${escapeHtml(q.correctAnswer||'—')} · Added ${timeAgo(q.createdAt)}</div>
+      </div>`).join('');
+  }catch(error){
+    summary.textContent='Could not load this Adder’s questions.';
+    list.innerHTML='<div class="empty-state">'+escapeHtml(error.message||'Request failed')+'</div>';
+  }
+}
+
+function closeAdderQuestionsModal(){
+  const modal=document.getElementById('adderQuestionsModal');
+  if(modal)modal.classList.remove('visible');
+}
+
+function setDifficultyOnlyMode(enabled) {
+  const card = document.getElementById('questionFormCard');
+  if (!card) return;
+  card.querySelectorAll('input, select, button, [contenteditable]').forEach(el => {
+    const allowed = el.id === 'difficulty' || el.id === 'saveBtn' || el.id === 'resetBtn';
+    if (el.hasAttribute('contenteditable')) {
+      el.setAttribute('contenteditable', enabled && !allowed ? 'false' : 'true');
+    } else if ('disabled' in el && !allowed) {
+      el.disabled = Boolean(enabled);
+    }
+  });
+}
+
 // ── DASHBOARD INTERACTIVE STAT CARD HANDLERS ─────────────────
 function navigateToQuestions(focusTarget) {
   showPage('pageQuestions');
@@ -2811,73 +2878,6 @@ if(
       correctOptionWrap
     );
   }
-}
-
-function renderAdderPerformance(adders) {
-  const container=document.getElementById('adderPerformanceList');
-  if(!container)return;
-  if(!adders||!adders.length){container.innerHTML='<div class="empty-state">No Question Adders found.</div>';return;}
-  container.className='adder-performance-list';
-  container.innerHTML=adders.map(adder=>`
-    <button type="button" class="adder-performance-item" onclick="openAdderQuestions('${escapeHtml(String(adder.id||''))}')">
-      <div class="adder-performance-name">${escapeHtml(adder.name||'Unnamed Adder')}</div>
-      <div class="adder-performance-meta">${escapeHtml(adder.email||'')} · ${escapeHtml(adder.subject||'All Subjects')}</div>
-      <div class="adder-performance-count">${Number(adder.questionCount)||0}</div>
-      <div class="adder-performance-meta">question${Number(adder.questionCount)===1?'':'s'} added · Click to view</div>
-    </button>`).join('');
-}
-
-function showAdderPerformance(){
-  const card=document.getElementById('adderPerformanceCard');
-  if(card)card.scrollIntoView({behavior:'smooth',block:'start'});
-}
-
-async function openAdderQuestions(userId){
-  const modal=document.getElementById('adderQuestionsModal');
-  const title=document.getElementById('adderQuestionsTitle');
-  const summary=document.getElementById('adderQuestionsSummary');
-  const list=document.getElementById('adderQuestionsList');
-  if(!modal||!list)return;
-  modal.classList.add('visible');
-  title.textContent='Questions Added';
-  summary.textContent='Loading Adder details…';
-  list.innerHTML='<div class="empty-state">Loading questions…</div>';
-  try{
-    const data=await apiReq('/api/dashboard/adders/'+encodeURIComponent(userId)+'/questions');
-    const adder=data.adder||{};
-    const questions=Array.isArray(data.questions)?data.questions:[];
-    title.textContent='Questions Added by '+(adder.name||'Adder');
-    summary.textContent=(adder.email||'')+' · '+questions.length+' question'+(questions.length===1?'':'s');
-    if(!questions.length){list.innerHTML='<div class="empty-state">This Adder has not added any questions yet.</div>';return;}
-    list.innerHTML=questions.map((q,index)=>`
-      <div class="adder-question-item">
-        <div class="recent-title">${index+1}. ${escapeHtml(q.subject||'')} · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(q.chapter||'')}</div>
-        <div class="recent-sub">${escapeHtml(QTYPE_LABELS[q.qType]||q.qType||'')} · ${escapeHtml(q.difficulty||'Medium')} · ${escapeHtml(q.topic||'General')}</div>
-        <div class="adder-question-text">${escapeHtml(q.question||'Question text unavailable')}</div>
-        <div class="recent-sub">Correct answer: ${escapeHtml(q.correctAnswer||'—')} · Added ${timeAgo(q.createdAt)}</div>
-      </div>`).join('');
-  }catch(error){
-    summary.textContent='Could not load this Adder’s questions.';
-    list.innerHTML='<div class="empty-state">'+escapeHtml(error.message||'Request failed')+'</div>';
-  }
-}
-
-function closeAdderQuestionsModal(){
-  const modal=document.getElementById('adderQuestionsModal');
-  if(modal)modal.classList.remove('visible');
-}
-
-function setDifficultyOnlyMode(enabled) {
-  const card = document.getElementById('questionFormCard');
-  if (!card) return;
-  card.querySelectorAll('input, select, button, [contenteditable]').forEach(el => {
-    const allowed = el.id === 'difficulty' || el.id === 'saveBtn' || el.id === 'resetBtn';
-    if (el.hasAttribute('contenteditable')) {
-      el.setAttribute('contenteditable', enabled && !allowed ? 'false' : 'true');
-    } else if ('disabled' in el && !allowed) {
-      el.disabled = Boolean(enabled);
-    }
-  });
 }
 
   /*
