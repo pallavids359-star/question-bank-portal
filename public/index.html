@@ -1573,6 +1573,26 @@ function updateSidebarUser() {
   roleEl.className   = `user-card-role role-${user.role || 'viewer'}`;
 }
 
+function canonicalSubject(subject) {
+  const value = String(subject || '').trim();
+  const known = {
+    physics: 'Physics', chemistry: 'Chemistry', biology: 'Biology',
+    mathematics: 'Mathematics', maths: 'Mathematics', all: 'All',
+  };
+  return known[value.toLowerCase()] || value;
+}
+
+function assignedSubjectFor(user) {
+  user = user || {};
+  if (user.role === 'admin') return '';
+  const subject = canonicalSubject(user.subject || 'All');
+  return subject && subject !== 'All' ? subject : '';
+}
+
+function sameSubject(left, right) {
+  return canonicalSubject(left) === canonicalSubject(right);
+}
+
 // ============================================================
 // ── ROLE RESTRICTIONS ────────────────────────────────────────
 // ============================================================
@@ -1586,10 +1606,16 @@ function applyRoleRestrictions() {
   // If teacher/user has specific subject assigned (e.g. Physics)
   const subjectSel = document.getElementById('subject');
   if (subjectSel) {
-    if (user.role !== 'admin' && user.subject && user.subject !== 'All') {
-      subjectSel.value = user.subject;
+    const assignedSubject = assignedSubjectFor(user);
+    if (assignedSubject) {
+      subjectSel.innerHTML = '';
+      const assignedOption = document.createElement('option');
+      assignedOption.value = assignedSubject;
+      assignedOption.textContent = assignedSubject;
+      subjectSel.appendChild(assignedOption);
+      subjectSel.value = assignedSubject;
       subjectSel.disabled = true;
-      subjectSel.title = `Your account is assigned to ${user.subject} only.`;
+      subjectSel.title = `Your account is assigned to ${assignedSubject} only.`;
       if (typeof updateChapterOptions === 'function') updateChapterOptions();
     } else {
       subjectSel.disabled = false;
@@ -2209,21 +2235,46 @@ async function saveDifficulty() {
 // ============================================================
 // ── PROFILE ──────────────────────────────────────────────────
 // ============================================================
-async function loadProfile() {
-  try {
-    const u = await apiReq('/api/auth/me');
+function renderProfile(u) {
+    u = u || {};
     const initials = (u.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
     document.getElementById('profileAvatar').textContent    = initials;
-    document.getElementById('profileName').textContent      = u.name;
-    document.getElementById('profileEmail').textContent     = u.email;
+    document.getElementById('profileName').textContent      = u.name || '—';
+    document.getElementById('profileEmail').textContent     = u.email || '—';
     document.getElementById('profileLastLogin').textContent = u.last_login ? fmtDateTime(u.last_login) : 'Never';
     const roleEl = document.getElementById('profileRole');
     roleEl.textContent = u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : '—';
-    roleEl.className   = `user-card-role role-${u.role}`;
+    roleEl.className   = `user-card-role${u.role ? ' role-' + u.role : ''}`;
+}
+
+async function loadProfile() {
+  const sessionUser = Auth.getUser() || {};
+  renderProfile(sessionUser);
+
+  try {
+    const databaseUser = await apiReq('/api/auth/me');
+    const u = { ...sessionUser, ...(databaseUser || {}) };
+    renderProfile(u);
+
+    if (u.id && u.name && u.email && u.role) {
+      Auth.setAuth(Auth.getToken(), {
+        ...sessionUser,
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        subject: u.subject || sessionUser.subject || 'All',
+      });
+      updateSidebarUser();
+    }
+  } catch(e) {
+    if (!sessionUser.name && !sessionUser.email) showToast(e.message, true);
+    else console.warn('[profile]', e.message);
+  } finally {
     // clear pw fields
     ['cpCurrent','cpNew','cpConfirm'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('cpError').classList.remove('visible');
-  } catch(e) { showToast(e.message, true); }
+  }
 }
 
 async function changePassword() {
@@ -3121,16 +3172,22 @@ function renderFilterSubjects(){
   const curConcept=fConcept.value;
   const curType=fType.value;
   const subs=uniqueSorted(allQuestions.map(q=>q&&q.subject).filter(s=>s&&s!=='General'));
-  fillFilter(fSubject,'All Subjects',subs,curSubject);
-  if(user.role !== 'admin' && user.subject && user.subject !== 'All'){
-    fSubject.value = subs.includes(user.subject) ? user.subject : (user.subject || '');
+  const assignedSubject=assignedSubjectFor(user);
+  if(assignedSubject){
+    fSubject.innerHTML='';
+    const assignedOption=document.createElement('option');
+    assignedOption.value=assignedSubject;
+    assignedOption.textContent=assignedSubject;
+    fSubject.appendChild(assignedOption);
+    fSubject.value=assignedSubject;
     fSubject.disabled = true;
   }else{
+    fillFilter(fSubject,'All Subjects',subs,curSubject);
     fSubject.disabled = false;
   }
 
   const selectedSubject=fSubject.value;
-  const subjectQuestions=allQuestions.filter(q=>q&&(!selectedSubject||q.subject===selectedSubject));
+  const subjectQuestions=allQuestions.filter(q=>q&&(!selectedSubject||sameSubject(q.subject,selectedSubject)));
 
   const classes=uniqueSorted(subjectQuestions.map(q=>normalizedClass(q.klass)).filter(Boolean));
   fillFilter(fClass,'All Classes',classes,curClass);
@@ -3312,7 +3369,8 @@ function renderList(){
   const chapterF=fChapter ? fChapter.value : '';
   const conceptF=fConcept ? fConcept.value : '';
   const typeF=fType ? fType.value : '';
-  const filtered=allQuestions.filter(q=>q && (!subjF||q.subject===subjF)&&(!classF||String(q.klass||'').replace(/^class\s*/i,'').trim()===classF)&&(!chapterF||q.chapter===chapterF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
+  const assignedSubject=assignedSubjectFor(Auth.getUser());
+  const filtered=allQuestions.filter(q=>q && (!assignedSubject||sameSubject(q.subject,assignedSubject))&&(!subjF||sameSubject(q.subject,subjF))&&(!classF||String(q.klass||'').replace(/^class\s*/i,'').trim()===classF)&&(!chapterF||q.chapter===chapterF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
   const cl=document.getElementById('countLine');
   if(cl) cl.textContent=filtered.length+' question'+(filtered.length===1?'':'s');
   listContainer.innerHTML='';
@@ -3565,6 +3623,17 @@ window.QP={
 
 async function loadQuestions(){
   try{
+    try {
+      const databaseUser = await apiReq('/api/auth/me');
+      const sessionUser = Auth.getUser() || {};
+      if (databaseUser && (databaseUser.id || databaseUser.email)) {
+        Auth.setAuth(Auth.getToken(), { ...sessionUser, ...databaseUser });
+        updateSidebarUser();
+        applyRoleRestrictions();
+      }
+    } catch (profileError) {
+      console.warn('[QBP] Could not refresh assigned subject:', profileError.message);
+    }
     const data = await apiRequest();
     console.log('[QBP] loadQuestions raw response:', typeof data, Array.isArray(data) ? data.length + ' items' : JSON.stringify(data).slice(0,200));
     allQuestions = Array.isArray(data) ? data : [];
