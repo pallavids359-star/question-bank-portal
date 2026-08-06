@@ -42,6 +42,39 @@ function recentRows(rows, field) {
     .slice(0, 5);
 }
 
+function questionBelongsToUser(question, user) {
+  if (question.created_by && user.id) {
+    return String(question.created_by) === String(user.id);
+  }
+  const ownerName = String(question.created_by_name || '').trim().toLowerCase();
+  const userName = String(user.name || '').trim().toLowerCase();
+  const userEmail = String(user.email || '').trim().toLowerCase();
+  return Boolean(ownerName && (ownerName === userName || ownerName === userEmail));
+}
+
+function legacyValue(solutionText, key) {
+  const match = String(solutionText || '').match(new RegExp(`\\[QBP_${key}:([^\\]\\r\\n]+)\\]`, 'i'));
+  return match ? match[1] : '';
+}
+
+function compactQuestion(question, ownerName) {
+  const storedType = legacyValue(question.solution_text, 'TYPE');
+  const storedDifficulty = legacyValue(question.solution_text, 'DIFFICULTY');
+  return {
+    id: question.id,
+    subject: question.subject || 'General',
+    klass: question.klass || '',
+    chapter: question.chapter || 'General',
+    topic: question.topic || 'General',
+    qType: storedType || question.q_type || 'mcq_single',
+    difficulty: question.difficulty || storedDifficulty || 'Medium',
+    question: question.question || question.assertion || '',
+    correctAnswer: question.num_answer || question.correct_option || '',
+    createdAt: question.created_at || null,
+    createdBy: question.created_by_name || ownerName || '',
+  };
+}
+
 // GET /api/dashboard
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
@@ -90,6 +123,17 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
     });
     const mostActiveEntry = [...activityMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
+    const adderStats = users
+      .filter(user => user.role === 'adder')
+      .map(user => ({
+        id: user.id,
+        name: user.name || user.email || 'Unnamed Adder',
+        email: user.email || '',
+        subject: user.subject || 'All',
+        questionCount: questions.filter(question => questionBelongsToUser(question, user)).length,
+      }))
+      .sort((a, b) => b.questionCount - a.questionCount || a.name.localeCompare(b.name));
+
     // Supply a name when ownership IDs exist but the denormalized name columns do not.
     const displayRows = questions.map(question => ({
       ...question,
@@ -114,11 +158,47 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
         : null,
       recentAdded: recentRows(displayRows, 'created_at'),
       recentEdited: recentRows(displayRows, 'updated_at'),
+      adderStats,
       allUsers: users,
     });
   } catch (err) {
     console.error('[dashboard]', err);
     res.status(500).json({ error: 'Failed to load dashboard data.', details: err.message });
+  }
+});
+
+// GET /api/dashboard/adders/:userId/questions
+router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const [questions, rawUsers] = await Promise.all([
+      readAll('questions'),
+      readAll('users'),
+    ]);
+    const user = rawUsers.map(toLogicalUser)
+      .find(candidate => String(candidate.id) === String(req.params.userId));
+
+    if (!user || user.role !== 'adder') {
+      return res.status(404).json({ error: 'Adder not found.' });
+    }
+
+    const ownedQuestions = questions
+      .filter(question => questionBelongsToUser(question, user))
+      .sort((a, b) => timeValue(b.created_at) - timeValue(a.created_at))
+      .map(question => compactQuestion(question, user.name || user.email));
+
+    res.json({
+      adder: {
+        id: user.id,
+        name: user.name || user.email || 'Unnamed Adder',
+        email: user.email || '',
+        subject: user.subject || 'All',
+        questionCount: ownedQuestions.length,
+      },
+      questions: ownedQuestions,
+    });
+  } catch (err) {
+    console.error('[dashboard adder questions]', err);
+    res.status(500).json({ error: 'Failed to load questions added by this user.', details: err.message });
   }
 });
 
