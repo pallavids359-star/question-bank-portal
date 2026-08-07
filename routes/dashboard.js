@@ -9,12 +9,12 @@ const PAGE_SIZE = 1000;
 
 // Read every real row without naming optional columns. Older installations may
 // not yet have ownership/difficulty fields, but the dashboard must still load.
-async function readAll(table) {
+async function readAll(table, columns = '*') {
   const rows = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from(table)
-      .select('*')
+      .select(columns)
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw new Error(`${table}: ${error.message}`);
@@ -141,9 +141,9 @@ function buildUserTimeStats(users, sessions, now) {
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const [questions, rawUsers, loginSessions] = await Promise.all([
-      readAll('questions'),
-      readAll('users'),
-      readAll('login_history'),
+      readAll('questions', 'id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by, created_by_name, updated_by, updated_by_name'),
+      readAll('users', 'id, name, email, role, subject, status'),
+      readAll('login_history', 'user_id, status, login_time, logout_time, last_activity_at, duration_seconds'),
     ]);
 
     const now = new Date();
@@ -176,6 +176,8 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       users.filter(user => user.id).map(user => [String(user.id), user.name || user.email || 'Unknown user'])
     );
     const activityMap = new Map();
+    const contributionCountsById = new Map();
+    const contributionCountsByName = new Map();
     questions.forEach(question => {
       const owner = String(
         question.created_by_name ||
@@ -183,19 +185,36 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
         ''
       ).trim();
       if (owner) activityMap.set(owner, (activityMap.get(owner) || 0) + 1);
+      if (question.created_by) {
+        const key = String(question.created_by);
+        contributionCountsById.set(key, (contributionCountsById.get(key) || 0) + 1);
+      }
+      if (question.created_by_name) {
+        const key = String(question.created_by_name).trim().toLowerCase();
+        contributionCountsByName.set(key, (contributionCountsByName.get(key) || 0) + 1);
+      }
     });
     const mostActiveEntry = [...activityMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
     const adderStats = users
       .filter(user => user.role === 'adder' || user.role === 'admin')
-      .map(user => ({
-        id: user.id,
-        name: user.name || user.email || 'Unnamed Contributor',
-        email: user.email || '',
-        role: user.role,
-        subject: user.subject || 'All',
-        questionCount: questions.filter(question => questionBelongsToUser(question, user)).length,
-      }))
+      .map(user => {
+        const byId = contributionCountsById.get(String(user.id)) || 0;
+        const nameKey = String(user.name || '').trim().toLowerCase();
+        const emailKey = String(user.email || '').trim().toLowerCase();
+        const byName = Math.max(
+          contributionCountsByName.get(nameKey) || 0,
+          contributionCountsByName.get(emailKey) || 0
+        );
+        return {
+          id: user.id,
+          name: user.name || user.email || 'Unnamed Contributor',
+          email: user.email || '',
+          role: user.role,
+          subject: user.subject || 'All',
+          questionCount: byId || byName,
+        };
+      })
       .filter(user => user.questionCount > 0)
       .sort((a, b) => b.questionCount - a.questionCount || a.name.localeCompare(b.name));
     const userTimeStats = buildUserTimeStats(users, loginSessions, now);
@@ -239,10 +258,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
 // Admins who have created questions.
 router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const [questions, rawUsers] = await Promise.all([
-      readAll('questions'),
-      readAll('users'),
-    ]);
+    const rawUsers = await readAll('users', 'id, name, email, role, subject, status');
     const user = rawUsers.map(toLogicalUser)
       .find(candidate => String(candidate.id) === String(req.params.userId));
 
@@ -250,9 +266,34 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
       return res.status(404).json({ error: 'Question contributor not found.' });
     }
 
+    const questionColumns = 'id, subject, klass, chapter, topic, q_type, question, solution_text, num_answer, correct_option, created_at, created_by, created_by_name';
+    let questions = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from('questions')
+        .select(questionColumns)
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      const page = data || [];
+      questions.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    }
+
+    // Compatibility for older rows that stored only the contributor name.
+    if (!questions.length && user.name) {
+      const legacy = await supabase
+        .from('questions')
+        .select(questionColumns)
+        .eq('created_by_name', user.name)
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      if (legacy.error) throw legacy.error;
+      questions = legacy.data || [];
+    }
+
     const ownedQuestions = questions
-      .filter(question => questionBelongsToUser(question, user))
-      .sort((a, b) => timeValue(b.created_at) - timeValue(a.created_at))
       .map(question => compactQuestion(question, user.name || user.email));
 
     res.json({

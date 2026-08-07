@@ -662,6 +662,22 @@ textarea{resize:vertical;min-height:70px;}
   z-index:999;
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+.question-pagination{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:18px;flex-wrap:wrap;}
+.question-pagination button{background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:7px;padding:7px 13px;cursor:pointer;}
+.question-pagination button:hover:not(:disabled){border-color:var(--gold);color:var(--gold);}
+.question-pagination button:disabled{opacity:.4;cursor:not-allowed;}
+.question-pagination .page-status{font-size:12px;color:var(--muted);min-width:120px;text-align:center;}
+
+@media (max-width:760px){
+  .sidebar{width:210px;}
+  .main-content{margin-left:210px;}
+  .grid2,.dash-grid{grid-template-columns:1fr;}
+  .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .filters{grid-template-columns:1fr;}
+  .wrap{padding:14px;}
+  .q-card,.card{padding:14px;}
+  .li-top{gap:8px;}
+}
 </style>
 </head>
 <body>
@@ -918,6 +934,11 @@ textarea{resize:vertical;min-height:70px;}
             </div>
             <div class="count-line" id="countLine"></div>
             <div id="listContainer"></div>
+            <div class="question-pagination" id="questionPagination" style="display:none;">
+              <button type="button" id="questionPrevPage">← Previous</button>
+              <span class="page-status" id="questionPageStatus"></span>
+              <button type="button" id="questionNextPage">Next →</button>
+            </div>
           </div>
 
         </div>
@@ -1398,6 +1419,13 @@ var allQuestions  = [];
 var selectedExams = new Set();
 var editingId     = null;
 var dashboardAdderStats = [];
+var questionPage = 1;
+var questionPageSize = 25;
+var questionTotal = 0;
+var questionTotalPages = 1;
+var questionFacets = { subjects:[], classes:[], chapters:[], concepts:[], types:[] };
+var questionTimeframe = '';
+var questionLoadSequence = 0;
 
 // fillSelect: used by bulk-import.js
 function fillSelect(id, options, placeholder) {
@@ -1458,6 +1486,25 @@ let _isLoggingIn    = false;
 let _isLoggingOut   = false;
 let _activityHeartbeatTimer = null;
 let _lastUserInteraction = Date.now();
+const _activityTabId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+function activityLeaseKey(){
+  const user=Auth.getUser()||{};
+  return 'qbp_activity_leader_'+String(user.id||user.userId||user.email||'user');
+}
+
+function isActivityLeader(){
+  try{
+    const key=activityLeaseKey();
+    const now=Date.now();
+    const lease=JSON.parse(localStorage.getItem(key)||'{}');
+    if(lease.tabId===_activityTabId||!lease.expiresAt||lease.expiresAt<now){
+      localStorage.setItem(key,JSON.stringify({tabId:_activityTabId,expiresAt:now+150000}));
+      return true;
+    }
+    return false;
+  }catch(_){return true;}
+}
 
 function resolveApiUrl(url) {
   if (!url) return '';
@@ -1513,6 +1560,7 @@ function noteUserInteraction() {
 async function sendActivityHeartbeat() {
   if (!Auth.isLoggedIn() || document.visibilityState === 'hidden') return;
   if (Date.now() - _lastUserInteraction > 5 * 60 * 1000) return;
+  if (!isActivityLeader()) return;
   try {
     await apiReq('/api/auth/heartbeat', { method: 'POST' });
   } catch (error) {
@@ -1551,6 +1599,11 @@ window.addEventListener('beforeunload', () => {
     body: '{}',
     keepalive: true,
   }).catch(() => {});
+  try{
+    const key=activityLeaseKey();
+    const lease=JSON.parse(localStorage.getItem(key)||'{}');
+    if(lease.tabId===_activityTabId)localStorage.removeItem(key);
+  }catch(_){}
 });
 
 // ============================================================
@@ -1568,7 +1621,7 @@ function showPage(id) {
   else if (id === 'pageSettings') loadSettings();
   else if (id === 'pageProfile')  loadProfile();
   else if (id === 'pageBulkImport') { if (window.BulkModule) window.BulkModule.init(); }
-  else if (id === 'pageQuestions') { loadQuestions(); }
+  else if (id === 'pageQuestions') { questionTimeframe=''; loadQuestions(1,false); }
 }
 
 function showLoginPage() {
@@ -1584,7 +1637,6 @@ function showAppPage() {
   applyRoleRestrictions();
   startActivityTracking();
   showPage(Auth.can('dashboard') ? 'pageDashboard' : 'pageQuestions');
-  loadQuestions();
 }
 
 // ============================================================
@@ -1933,7 +1985,6 @@ function renderRecentList(containerId, items, timeField, byField) {
 
 // ── DASHBOARD INTERACTIVE STAT CARD HANDLERS ─────────────────
 function navigateToQuestions(focusTarget) {
-  showPage('pageQuestions');
   const fSubject = document.getElementById('fSubject');
   const fClass   = document.getElementById('fClass');
   const fChapter = document.getElementById('fChapter');
@@ -1944,8 +1995,9 @@ function navigateToQuestions(focusTarget) {
   if (fChapter) fChapter.value = '';
   if (fConcept) fConcept.value = '';
   if (fType)    fType.value = '';
-  renderFilterSubjects();
-  renderList();
+  questionTimeframe='';
+  questionPage=1;
+  showPage('pageQuestions');
 
   if (focusTarget === 'subject') {
     const sEl = document.getElementById('fSubject') || document.getElementById('subject');
@@ -1957,37 +2009,6 @@ function navigateToQuestions(focusTarget) {
 }
 
 function filterQuestionsByTimeframe(tf) {
-  showPage('pageQuestions');
-  if (!Array.isArray(allQuestions)) allQuestions = [];
-  const now = new Date();
-  
-  let cutoff = new Date(0);
-  if (tf === 'today') {
-    cutoff = new Date();
-    cutoff.setHours(0, 0, 0, 0);
-  } else if (tf === 'week') {
-    cutoff = new Date();
-    cutoff.setDate(now.getDate() - 7);
-  } else if (tf === 'month') {
-    cutoff = new Date();
-    cutoff.setDate(now.getDate() - 30);
-  }
-
-  const listContainer = document.getElementById('listContainer');
-  if (!listContainer) return;
-
-  const filtered = allQuestions.filter(q => {
-    if (!q) return false;
-    const timeStr = q.createdAt || q.created_at;
-    if (!timeStr) return true;
-    return new Date(timeStr) >= cutoff;
-  });
-
-  const cl = document.getElementById('countLine');
-  if (cl) cl.textContent = `${filtered.length} question(s) added ${tf === 'today' ? 'today' : tf === 'week' ? 'this week' : 'this month'}`;
-
-  showToast(`Showing ${filtered.length} question(s) added ${tf === 'today' ? 'today' : tf === 'week' ? 'this week' : 'this month'}`);
-
   const fSubject = document.getElementById('fSubject');
   const fClass   = document.getElementById('fClass');
   const fChapter = document.getElementById('fChapter');
@@ -1998,12 +2019,11 @@ function filterQuestionsByTimeframe(tf) {
   if (fChapter) fChapter.value = '';
   if (fConcept) fConcept.value = '';
   if (fType)    fType.value = '';
-  renderFilterSubjects();
-
-  const backup = allQuestions;
-  allQuestions = filtered;
-  renderList();
-  allQuestions = backup;
+  showPage('pageQuestions');
+  questionTimeframe=tf;
+  questionPage=1;
+  loadQuestions(1,false);
+  showToast(`Showing questions added ${tf === 'today' ? 'today' : tf === 'week' ? 'this week' : 'this month'}`);
 }
 
 function filterUsersByRole(targetRole) {
@@ -3198,7 +3218,9 @@ async function saveQuestion(){
     }else{
       allQuestions.unshift(saved);
     }
-    renderFilterSubjects();renderList();showToast(wasEditing?'Question updated successfully.':'Question saved successfully.');resetForm();
+    showToast(wasEditing?'Question updated successfully.':'Question saved successfully.');resetForm();
+    questionTimeframe='';
+    await loadQuestions(1,true);
   }catch(e){
     console.error('Save failed:',e);
     showToast('Save failed: '+(e.message || 'Server error'),true);
@@ -3248,7 +3270,6 @@ if(document.getElementById('saveBtn')) document.getElementById('saveBtn').addEve
 if(document.getElementById('resetBtn')) document.getElementById('resetBtn').addEventListener('click',resetForm);
 
 function renderFilterSubjects(){
-  if(!Array.isArray(allQuestions)) allQuestions = [];
   const fSubject=document.getElementById('fSubject');
   const fClass=document.getElementById('fClass');
   const fChapter=document.getElementById('fChapter');
@@ -3274,16 +3295,12 @@ function renderFilterSubjects(){
     });
     select.value=values.includes(current)?current:'';
   }
-  function normalizedClass(value){
-    return String(value||'').replace(/^class\s*/i,'').trim();
-  }
-
   const curSubject=fSubject.value;
   const curClass=fClass.value;
   const curChapter=fChapter.value;
   const curConcept=fConcept.value;
   const curType=fType.value;
-  const subs=uniqueSorted(allQuestions.map(q=>q&&q.subject).filter(s=>s&&s!=='General'));
+  const subs=uniqueSorted(questionFacets.subjects||[]);
   const assignedSubject=assignedSubjectFor(user);
   if(assignedSubject){
     fSubject.innerHTML='';
@@ -3298,26 +3315,17 @@ function renderFilterSubjects(){
     fSubject.disabled = false;
   }
 
-  const selectedSubject=fSubject.value;
-  const subjectQuestions=allQuestions.filter(q=>q&&(!selectedSubject||sameSubject(q.subject,selectedSubject)));
-
-  const classes=uniqueSorted(subjectQuestions.map(q=>normalizedClass(q.klass)).filter(Boolean));
+  const classes=uniqueSorted(questionFacets.classes||[]);
   fillFilter(fClass,'All Classes',classes,curClass);
   Array.from(fClass.options).forEach(option=>{if(option.value)option.textContent='Class '+option.value;});
 
-  const selectedClass=fClass.value;
-  const classQuestions=subjectQuestions.filter(q=>!selectedClass||normalizedClass(q.klass)===selectedClass);
-  const chapters=uniqueSorted(classQuestions.map(q=>q.chapter).filter(c=>c&&c!=='General'));
+  const chapters=uniqueSorted(questionFacets.chapters||[]);
   fillFilter(fChapter,'All Chapters',chapters,curChapter);
 
-  const selectedChapter=fChapter.value;
-  const chapterQuestions=classQuestions.filter(q=>!selectedChapter||q.chapter===selectedChapter);
-  const concepts=uniqueSorted(chapterQuestions.map(q=>q.topic).filter(c=>c&&c!=='General'));
+  const concepts=uniqueSorted(questionFacets.concepts||[]);
   fillFilter(fConcept,'All Concepts',concepts,curConcept);
 
-  const selectedConcept=fConcept.value;
-  const conceptQuestions=chapterQuestions.filter(q=>!selectedConcept||q.topic===selectedConcept);
-  const types=uniqueSorted(conceptQuestions.map(q=>q.qType));
+  const types=uniqueSorted(questionFacets.types||[]);
   fType.innerHTML='';
   const allTypes=document.createElement('option');
   allTypes.value='';
@@ -3342,34 +3350,31 @@ if(savedFilterSubject) savedFilterSubject.addEventListener('change',()=>{
   if(savedFilterChapter) savedFilterChapter.value='';
   if(savedFilterConcept) savedFilterConcept.value='';
   if(savedFilterType) savedFilterType.value='';
-  renderFilterSubjects();
-  renderList();
+  questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterClass) savedFilterClass.addEventListener('change',()=>{
   if(savedFilterChapter) savedFilterChapter.value='';
   if(savedFilterConcept) savedFilterConcept.value='';
   if(savedFilterType) savedFilterType.value='';
-  renderFilterSubjects();
-  renderList();
+  questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterChapter) savedFilterChapter.addEventListener('change',()=>{
   if(savedFilterConcept) savedFilterConcept.value='';
   if(savedFilterType) savedFilterType.value='';
-  renderFilterSubjects();
-  renderList();
+  questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterConcept) savedFilterConcept.addEventListener('change',()=>{
   if(savedFilterType) savedFilterType.value='';
-  renderFilterSubjects();
-  renderList();
+  questionPage=1;loadQuestions(1,true);
 });
-if(savedFilterType) savedFilterType.addEventListener('change',renderList);
+if(savedFilterType) savedFilterType.addEventListener('change',()=>{questionPage=1;loadQuestions(1,false);});
 
 function filterByConcept(conceptName){
   const fConcept=document.getElementById('fConcept');
   if(fConcept){
     fConcept.value=conceptName;
-    renderList();
+    questionPage=1;
+    loadQuestions(1,false);
     const listEl=document.getElementById('listContainer');
     if(listEl) listEl.scrollIntoView({behavior:'smooth'});
   }
@@ -3484,9 +3489,9 @@ function renderList(){
   const assignedSubject=assignedSubjectFor(Auth.getUser());
   const filtered=allQuestions.filter(q=>q && (!assignedSubject||sameSubject(q.subject,assignedSubject))&&(!subjF||sameSubject(q.subject,subjF))&&(!classF||String(q.klass||'').replace(/^class\s*/i,'').trim()===classF)&&(!chapterF||q.chapter===chapterF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
   const cl=document.getElementById('countLine');
-  if(cl) cl.textContent=filtered.length+' question'+(filtered.length===1?'':'s');
+  if(cl) cl.textContent=questionTotal+' question'+(questionTotal===1?'':'s');
   listContainer.innerHTML='';
-  if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';return;}
+  if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';renderQuestionPagination();return;}
 
   const canEdit = Auth.can('edit');
   const canDelete = Auth.can('delete');
@@ -3578,14 +3583,13 @@ function renderList(){
     solBox.className = 'li-solution-box';
     solBox.style.cssText = 'display:none;margin-top:8px;padding:10px 14px;background:rgba(0,180,216,0.06);border:1px solid rgba(0,180,216,0.25);border-radius:8px;font-size:13px;color:#e2e8f0;line-height:1.6;';
 
-    if (solText) {
-      solBox.appendChild(renderStaticPreview(solText));
-    } else {
-      solBox.innerHTML = '<em style="color:#8f9bba;">No detailed answer recorded for this question.</em>';
-    }
-
     solToggleBtn.onclick = () => {
       const isHidden = solBox.style.display === 'none';
+      if (isHidden && !solBox.dataset.rendered) {
+        if (solText) solBox.appendChild(renderStaticPreview(solText));
+        else solBox.innerHTML = '<em style="color:#8f9bba;">No detailed answer recorded for this question.</em>';
+        solBox.dataset.rendered = '1';
+      }
       solBox.style.display = isHidden ? 'block' : 'none';
       solToggleBtn.innerHTML = isHidden ? '💡 Hide Solution' : '💡 View Detailed Answer';
     };
@@ -3613,7 +3617,29 @@ function renderList(){
     }
   });
   if(renderErrors>0) console.warn('[QBP] '+renderErrors+' question(s) failed to render. Check errors above.');
+  renderQuestionPagination();
 }
+
+function renderQuestionPagination(){
+  const wrap=document.getElementById('questionPagination');
+  const prev=document.getElementById('questionPrevPage');
+  const next=document.getElementById('questionNextPage');
+  const status=document.getElementById('questionPageStatus');
+  if(!wrap||!prev||!next||!status)return;
+  wrap.style.display=questionTotal>questionPageSize?'flex':'none';
+  prev.disabled=questionPage<=1;
+  next.disabled=questionPage>=questionTotalPages;
+  status.textContent='Page '+questionPage+' of '+questionTotalPages;
+}
+
+const questionPrevPage=document.getElementById('questionPrevPage');
+const questionNextPage=document.getElementById('questionNextPage');
+if(questionPrevPage)questionPrevPage.addEventListener('click',()=>{
+  if(questionPage>1)loadQuestions(questionPage-1,false,true);
+});
+if(questionNextPage)questionNextPage.addEventListener('click',()=>{
+  if(questionPage<questionTotalPages)loadQuestions(questionPage+1,false,true);
+});
 
 function setFieldFromRaw(id,raw){const el=document.getElementById(id);if(!el)return;el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
 function setEqFieldElFromRaw(el,raw){el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
@@ -3728,12 +3754,28 @@ window.QP={
     if(!confirm('Delete this question? This cannot be undone.'))return;
     try{
       await apiRequest('/'+encodeURIComponent(id),{method:'DELETE'});
-      allQuestions=allQuestions.filter(x=>String(x.id)!==String(id));renderFilterSubjects();renderList();showToast('Question deleted.');
+      showToast('Question deleted.');
+      loadQuestions(questionPage,false);
     }catch(e){console.error('Delete failed:',e);showToast('Delete failed: '+e.message,true);}
   }
 };
 
-async function loadQuestions(){
+async function loadQuestionFacets(){
+  const params=new URLSearchParams();
+  const subject=document.getElementById('fSubject')?.value||'';
+  const klass=document.getElementById('fClass')?.value||'';
+  const chapter=document.getElementById('fChapter')?.value||'';
+  if(subject)params.set('subject',subject);
+  if(klass)params.set('klass',klass);
+  if(chapter)params.set('chapter',chapter);
+  questionFacets=await apiRequest('/facets?'+params.toString());
+  renderFilterSubjects();
+}
+
+async function loadQuestions(page=1,refreshFacets=false,scrollToList=false){
+  const loadSequence=++questionLoadSequence;
+  const listContainer=document.getElementById('listContainer');
+  if(listContainer)listContainer.innerHTML='<div class="empty-state">Loading questions…</div>';
   try{
     try {
       const databaseUser = await apiReq('/api/auth/me');
@@ -3746,29 +3788,31 @@ async function loadQuestions(){
     } catch (profileError) {
       console.warn('[QBP] Could not refresh assigned subject:', profileError.message);
     }
-    const pageSize = 500;
-    const loadedQuestions = [];
-    for(let offset = 0, page = 0; page < 100; offset += pageSize, page++){
-      const data = await apiRequest(`?offset=${offset}&limit=${pageSize}`);
-      console.log('[QBP] question page:', page + 1, Array.isArray(data) ? data.length + ' items' : typeof data);
-      if(!Array.isArray(data)){
-        throw new Error('Questions API returned an unexpected data format.');
-      }
-      loadedQuestions.push(...data);
-      if(data.length < pageSize) break;
-      // Compatibility guard: an older API ignores limit/offset and returns
-      // its default 1,000 rows. Avoid repeatedly downloading that same page.
-      if(data.length > pageSize) break;
-    }
-    allQuestions = loadedQuestions;
-    console.log('[QBP] total questions loaded:', allQuestions.length);
+    if(refreshFacets||!questionFacets.subjects.length)await loadQuestionFacets();
+    const params=new URLSearchParams({paged:'1',page:String(page),pageSize:String(questionPageSize)});
+    const filterMap={subject:'fSubject',klass:'fClass',chapter:'fChapter',concept:'fConcept',qType:'fType'};
+    Object.entries(filterMap).forEach(([name,id])=>{
+      const value=document.getElementById(id)?.value||'';
+      if(value)params.set(name,value);
+    });
+    if(questionTimeframe)params.set('timeframe',questionTimeframe);
+    const data=await apiRequest('?'+params.toString());
+    if(loadSequence!==questionLoadSequence)return;
+    if(!data||!Array.isArray(data.items))throw new Error('Questions API returned an unexpected data format.');
+    allQuestions=data.items;
+    questionPage=Number(data.page)||1;
+    questionTotal=Number(data.total)||0;
+    questionTotalPages=Math.max(1,Number(data.totalPages)||1);
   } catch(e){
+    if(loadSequence!==questionLoadSequence)return;
     allQuestions = [];
+    questionTotal=0;
+    questionTotalPages=1;
     console.error('[QBP] loadQuestions error:', e);
     showToast('Could not load questions: '+e.message, true);
   }
-  renderFilterSubjects();
   renderList();
+  if(scrollToList&&listContainer)listContainer.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 // ============================================================

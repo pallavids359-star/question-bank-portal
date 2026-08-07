@@ -429,51 +429,152 @@ const CREATE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 const EDIT_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor')];
 const DELETE_ROLES = [requireAuth, requireRole('admin')];
 
+const FACET_PAGE_SIZE = 1000;
+const FACET_CACHE_TTL_MS = 60 * 1000;
+let facetCache = { expiresAt: 0, rows: [] };
+
+function applySubjectFilter(query, user, requestedSubject) {
+  const userRole = String(user?.role || 'viewer').toLowerCase();
+  const userSubject = canonicalSubject(user?.subject || 'All');
+  const subject = userRole !== 'admin' && userSubject !== 'All'
+    ? userSubject
+    : canonicalSubject(requestedSubject || '');
+
+  if (!subject || subject === 'All') return query;
+  return subject === 'Mathematics'
+    ? query.in('subject', ['Mathematics', 'Maths'])
+    : query.eq('subject', subject);
+}
+
+function applyQuestionFilters(query, params) {
+  const klass = String(params.klass || '').replace(/^class\s*/i, '').trim();
+  const chapter = String(params.chapter || '').trim();
+  const concept = String(params.concept || params.topic || '').trim();
+  const requestedType = String(params.qType || '').toLowerCase();
+
+  if (klass) query = query.in('klass', [klass, `Class ${klass}`]);
+  if (chapter) query = query.eq('chapter', chapter);
+  if (concept) query = query.eq('topic', concept);
+
+  if (requestedType) {
+    const visibleType = requestedType === 'matrix' ? 'match' : requestedType;
+    if (['statement_based', 'match', 'true_false'].includes(visibleType)) {
+      query = query.ilike('solution_text', `%[QBP_TYPE:${visibleType}]%`);
+    } else {
+      query = query.eq('q_type', normalizeQType(visibleType));
+    }
+  }
+
+  const timeframe = String(params.timeframe || '').toLowerCase();
+  if (['today', 'week', 'month'].includes(timeframe)) {
+    const now = new Date();
+    const cutoff = new Date(now);
+    if (timeframe === 'today') cutoff.setHours(0, 0, 0, 0);
+    if (timeframe === 'week') cutoff.setDate(now.getDate() - 7);
+    if (timeframe === 'month') cutoff.setDate(now.getDate() - 30);
+    query = query.gte('created_at', cutoff.toISOString());
+  }
+  return query;
+}
+
+async function readFacetRows() {
+  if (facetCache.expiresAt > Date.now()) return facetCache.rows;
+  const rows = [];
+  for (let from = 0; ; from += FACET_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('questions')
+      .select('subject, klass, chapter, topic')
+      .range(from, from + FACET_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < FACET_PAGE_SIZE) break;
+  }
+  facetCache = { expiresAt: Date.now() + FACET_CACHE_TTL_MS, rows };
+  return rows;
+}
+
+// Lightweight values used by the cascading dropdowns. This intentionally
+// avoids downloading question text, options, solutions, and embedded images.
+router.get('/facets', ...READ_ROLES, async (req, res) => {
+  try {
+    const user = await getEffectiveUser(req.user);
+    const assigned = String(user?.role || '').toLowerCase() === 'admin'
+      ? ''
+      : canonicalSubject(user?.subject || 'All');
+    const requestedSubject = canonicalSubject(req.query.subject || '');
+    const subject = assigned && assigned !== 'All' ? assigned : requestedSubject;
+    const klass = String(req.query.klass || '').replace(/^class\s*/i, '').trim();
+    const chapter = String(req.query.chapter || '').trim();
+
+    const allRows = await readFacetRows();
+    const unique = values => [...new Set(values.filter(Boolean))]
+      .sort((a, b) => String(a).localeCompare(String(b)));
+
+    const accessibleRows = assigned && assigned !== 'All'
+      ? allRows.filter(row => canonicalSubject(row.subject) === assigned)
+      : allRows;
+    const subjectRows = accessibleRows.filter(row =>
+      !subject || subject === 'All' || canonicalSubject(row.subject) === subject
+    );
+    const classRows = subjectRows.filter(row =>
+      !klass || String(row.klass || '').replace(/^class\s*/i, '').trim() === klass
+    );
+    const chapterRows = classRows.filter(row =>
+      !chapter || String(row.chapter || '') === chapter
+    );
+
+    res.json({
+      subjects: assigned && assigned !== 'All'
+        ? [assigned]
+        : unique(accessibleRows.map(row => canonicalSubject(row.subject)).filter(value => value !== 'General')),
+      classes: unique(subjectRows.map(row => String(row.klass || '').replace(/^class\s*/i, '').trim())),
+      chapters: unique(classRows.map(row => row.chapter).filter(value => value !== 'General')),
+      concepts: unique(chapterRows.map(row => row.topic).filter(value => value !== 'General')),
+      types: ['mcq_single', 'assertion_reason', 'match', 'numerical', 'true_false', 'diagram_based', 'statement_based'],
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load question filters.', details: error.message });
+  }
+});
+
 // ── GET /api/questions?subject=X&qType=Y ──────────────────────────────────
 router.get('/', ...READ_ROLES, async (req, res) => {
   const effectiveUser = await getEffectiveUser(req.user);
-  const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
-  const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
+  const paged = req.query.paged === '1' || req.query.page !== undefined;
+  const pageSize = Math.min(100, Math.max(10, Number.parseInt(req.query.pageSize, 10) || 25));
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const offset = paged
+    ? (page - 1) * pageSize
+    : Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+  const limit = paged
+    ? pageSize
+    : Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
   let query = supabase
     .from('questions')
-    .select('*')
+    .select('*', { count: paged ? 'exact' : undefined })
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .range(offset, offset + limit - 1);
 
-  const userRole = (effectiveUser?.role || req.user?.role || 'viewer').toLowerCase();
-  const userSub  = canonicalSubject(effectiveUser?.subject || req.user?.subject || 'All');
+  query = applySubjectFilter(query, effectiveUser, req.query.subject);
+  query = applyQuestionFilters(query, req.query);
 
-  if (userRole !== 'admin' && userSub && userSub !== 'All') {
-    if (userSub === 'Mathematics') {
-      query = query.in('subject', ['Mathematics', 'Maths']);
-    } else {
-      query = query.eq('subject', userSub);
-    }
-  } else if (req.query.subject) {
-    if (req.query.subject === 'Mathematics' || req.query.subject === 'Maths') {
-      query = query.in('subject', ['Mathematics', 'Maths']);
-    } else {
-      query = query.eq('subject', req.query.subject);
-    }
-  }
-
-  const requestedFilterType = String(req.query.qType || '').toLowerCase();
-  const legacyEncodedTypes = ['statement_based', 'match', 'matrix', 'true_false'];
-  if (requestedFilterType && !legacyEncodedTypes.includes(requestedFilterType)) {
-    query = query.eq('q_type', normalizeQType(requestedFilterType));
-  }
-
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) {
     return res.status(500).json({ error: 'Failed to fetch questions.', details: error.message });
   }
-  let questions = data.map(toApi);
-  if (requestedFilterType && legacyEncodedTypes.includes(requestedFilterType)) {
-    const visibleFilterType = requestedFilterType === 'matrix' ? 'match' : requestedFilterType;
-    questions = questions.filter(question => question.qType === visibleFilterType);
-  }
-  res.json(questions);
+  const questions = (data || []).map(toApi);
+  if (!paged) return res.json(questions);
+
+  const total = Number(count) || 0;
+  res.json({
+    items: questions,
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  });
 });
 
 // ── GET /api/questions/:id ─────────────────────────────────────────────────
