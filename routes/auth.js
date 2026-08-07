@@ -49,6 +49,8 @@ async function logLogin(userId, req, status) {
       .from('login_history')
       .insert({
         user_id:    userId || null,
+        last_activity_at: new Date().toISOString(),
+        duration_seconds: 0,
         ip_address: (req.ip || req.connection?.remoteAddress || '').substring(0, 100),
         browser:    ua.substring(0, 255),
         device:     /Mobile|Android|iPhone|iPad/i.test(ua) ? 'Mobile' : 'Desktop',
@@ -169,7 +171,17 @@ router.post('/login', async (req, res) => {
     };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
 
-    await logLogin(fallbackUser.id, req, 'success');
+    const loginRecord = await logLogin(fallbackUser.id, req, 'success');
+    if (loginRecord?.id) {
+      const fallbackPayload = { ...payload, loginHistoryId: loginRecord.id };
+      const fallbackToken = jwt.sign(fallbackPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+      await writeAuditLog({
+        userId: fallbackUser.id, userName: fallbackUser.name,
+        action: 'LOGIN', resourceType: 'auth',
+        details: { ip: req.ip, device: /Mobile/i.test(req.headers['user-agent'] || '') ? 'Mobile' : 'Desktop' },
+      }).catch(() => {});
+      return res.json({ token: fallbackToken, user: fallbackUser });
+    }
     await writeAuditLog({
       userId: fallbackUser.id, userName: fallbackUser.name,
       action: 'LOGIN', resourceType: 'auth',
@@ -186,14 +198,68 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// ── POST /api/auth/heartbeat ───────────────────────────────────────────────
+// Adds only the short interval since the previous heartbeat. Long gaps are
+// capped so an idle/background tab is not counted as active website time.
+router.post('/heartbeat', requireAuth, async (req, res) => {
+  const sessionId = req.user.loginHistoryId;
+  if (!sessionId || !req.user.userId) {
+    return res.json({ tracked: false });
+  }
+
+  const { data: session, error: readError } = await supabase
+    .from('login_history')
+    .select('id, user_id, login_time, logout_time, last_activity_at, duration_seconds')
+    .eq('id', sessionId)
+    .eq('user_id', req.user.userId)
+    .maybeSingle();
+
+  if (readError) return res.status(500).json({ error: readError.message });
+  if (!session || session.logout_time) return res.json({ tracked: false });
+
+  const now = new Date();
+  const previous = new Date(session.last_activity_at || session.login_time || now);
+  const rawDelta = Math.max(0, Math.floor((now.getTime() - previous.getTime()) / 1000));
+  const activeDelta = Math.min(rawDelta, 90);
+  const durationSeconds = Math.max(0, Number(session.duration_seconds) || 0) + activeDelta;
+
+  const { error: updateError } = await supabase
+    .from('login_history')
+    .update({
+      last_activity_at: now.toISOString(),
+      duration_seconds: durationSeconds,
+    })
+    .eq('id', session.id)
+    .eq('user_id', req.user.userId);
+
+  if (updateError) return res.status(500).json({ error: updateError.message });
+  res.json({ tracked: true, durationSeconds });
+});
+
 // ── POST /api/auth/logout ──────────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res) => {
   if (req.user.loginHistoryId) {
-    await supabase
+    const now = new Date();
+    const { data: session } = await supabase
       .from('login_history')
-      .update({ logout_time: new Date().toISOString() })
+      .select('id, user_id, login_time, last_activity_at, duration_seconds')
       .eq('id', req.user.loginHistoryId)
-      .catch(() => {});
+      .eq('user_id', req.user.userId)
+      .maybeSingle();
+
+    if (session) {
+      const previous = new Date(session.last_activity_at || session.login_time || now);
+      const rawDelta = Math.max(0, Math.floor((now.getTime() - previous.getTime()) / 1000));
+      const durationSeconds = Math.max(0, Number(session.duration_seconds) || 0) + Math.min(rawDelta, 90);
+      await supabase
+        .from('login_history')
+        .update({
+          logout_time: now.toISOString(),
+          last_activity_at: now.toISOString(),
+          duration_seconds: durationSeconds,
+        })
+        .eq('id', session.id);
+    }
   }
 
   await writeAuditLog({

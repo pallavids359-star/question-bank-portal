@@ -20,6 +20,11 @@ create table if not exists public.users (
   last_login      timestamptz
 );
 
+-- Existing installations may already have the users table without this
+-- column. CREATE TABLE IF NOT EXISTS does not modify an existing table.
+alter table public.users
+  add column if not exists subject text not null default 'All';
+
 create index if not exists users_email_idx on public.users (email);
 create index if not exists users_role_idx  on public.users (role);
 
@@ -46,12 +51,18 @@ create table if not exists public.login_history (
   user_id     uuid        references public.users(id) on delete set null,
   login_time  timestamptz not null default now(),
   logout_time timestamptz,
+  last_activity_at timestamptz,
+  duration_seconds bigint not null default 0,
   ip_address  text,
   browser     text,
   device      text,
   status      text        not null default 'success'
                           check (status in ('success','failed'))
 );
+
+alter table public.login_history
+  add column if not exists last_activity_at timestamptz,
+  add column if not exists duration_seconds bigint not null default 0;
 
 create index if not exists login_history_user_idx on public.login_history (user_id);
 create index if not exists login_history_time_idx on public.login_history (login_time desc);

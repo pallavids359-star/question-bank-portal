@@ -753,6 +753,22 @@ textarea{resize:vertical;min-height:70px;}
           <div class="section-title">Adder &amp; Admin Performance</div>
           <div id="adderPerformanceList"><div class="empty-state">Loading…</div></div>
         </div>
+        <div class="card" id="userTimeCard">
+          <div class="section-title">User Website Time</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th><th>Role</th><th>Status</th><th>Today</th>
+                  <th>Total Time</th><th>Sessions</th><th>Last Active</th>
+                </tr>
+              </thead>
+              <tbody id="userTimeTableBody">
+                <tr class="empty-row"><td colspan="7">Loading user activity…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
         <div class="dash-grid">
           <div class="card">
             <div class="section-title">Recently Added</div>
@@ -1439,6 +1455,9 @@ const Auth = {
 const API_QUESTIONS = '/api/questions';
 const API_BASE      = '/api';
 let _isLoggingIn    = false;
+let _isLoggingOut   = false;
+let _activityHeartbeatTimer = null;
+let _lastUserInteraction = Date.now();
 
 function resolveApiUrl(url) {
   if (!url) return '';
@@ -1487,6 +1506,53 @@ async function apiRequest(path = '', options = {}) {
   return apiReq(API_QUESTIONS + path, options);
 }
 
+function noteUserInteraction() {
+  _lastUserInteraction = Date.now();
+}
+
+async function sendActivityHeartbeat() {
+  if (!Auth.isLoggedIn() || document.visibilityState === 'hidden') return;
+  if (Date.now() - _lastUserInteraction > 5 * 60 * 1000) return;
+  try {
+    await apiReq('/api/auth/heartbeat', { method: 'POST' });
+  } catch (error) {
+    console.warn('[QBP] Activity heartbeat failed:', error.message);
+  }
+}
+
+function startActivityTracking() {
+  if (_activityHeartbeatTimer) clearInterval(_activityHeartbeatTimer);
+  _lastUserInteraction = Date.now();
+  _activityHeartbeatTimer = setInterval(sendActivityHeartbeat, 60 * 1000);
+}
+
+function stopActivityTracking() {
+  if (_activityHeartbeatTimer) clearInterval(_activityHeartbeatTimer);
+  _activityHeartbeatTimer = null;
+}
+
+['click','keydown','touchstart','scroll'].forEach(eventName => {
+  document.addEventListener(eventName, noteUserInteraction, { passive: true });
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    noteUserInteraction();
+    sendActivityHeartbeat();
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  const token = Auth.getToken();
+  if (!token) return;
+  fetch(resolveApiUrl('/api/auth/heartbeat'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: '{}',
+    keepalive: true,
+  }).catch(() => {});
+});
+
 // ============================================================
 // ── PAGE ROUTING ─────────────────────────────────────────────
 // ============================================================
@@ -1516,6 +1582,7 @@ function showAppPage() {
   buildSidebar();
   updateSidebarUser();
   applyRoleRestrictions();
+  startActivityTracking();
   showPage(Auth.can('dashboard') ? 'pageDashboard' : 'pageQuestions');
   loadQuestions();
 }
@@ -1690,11 +1757,18 @@ async function doLogin(e) {
 }
 
 async function doLogout() {
-  Auth.clearAuth();
-  showLoginPage();
+  if (_isLoggingOut) return;
+  _isLoggingOut = true;
   try {
+    await sendActivityHeartbeat();
     await apiReq('/api/auth/logout', { method: 'POST' });
   } catch (_) { /* ignore */ }
+  finally {
+    stopActivityTracking();
+    Auth.clearAuth();
+    showLoginPage();
+    _isLoggingOut = false;
+  }
 }
 
 window.doLogin  = doLogin;
@@ -1749,14 +1823,45 @@ async function loadDashboard() {
     renderRecentList('dashRecentEdited', d.recentEdited, 'updatedAt', 'updated_by_name');
     dashboardAdderStats = Array.isArray(d.adderStats) ? d.adderStats : [];
     renderAdderPerformance(dashboardAdderStats);
+    renderUserTimeStats(Array.isArray(d.userTimeStats) ? d.userTimeStats : []);
   } catch(e) {
     ['dTotalQ','dTotalSub','dTotalCh','dToday','dWeek','dMonth','dAdmins','dAdders','dEditors','dViewers','dActiveUser']
       .forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});
     const added=document.getElementById('dashRecentAdded');if(added)added.innerHTML='<div class="empty-state">Could not load live data.</div>';
     const edited=document.getElementById('dashRecentEdited');if(edited)edited.innerHTML='<div class="empty-state">Could not load live data.</div>';
     const adders=document.getElementById('adderPerformanceList');if(adders)adders.innerHTML='<div class="empty-state">Could not load Adder details.</div>';
+    const userTime=document.getElementById('userTimeTableBody');if(userTime)userTime.innerHTML='<tr class="empty-row"><td colspan="7">Could not load user activity.</td></tr>';
     showToast('Dashboard load failed: ' + e.message, true);
   }
+}
+
+function formatTrackedDuration(value) {
+  const totalSeconds = Math.max(0, Math.floor(Number(value) || 0));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+function renderUserTimeStats(users) {
+  const tbody = document.getElementById('userTimeTableBody');
+  if (!tbody) return;
+  if (!users.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No website activity has been recorded yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(user => `
+    <tr>
+      <td><strong style="color:#fff">${escapeHtml(user.name||'Unnamed User')}</strong><br><span style="font-size:11px;color:var(--muted)">${escapeHtml(user.email||'')}</span></td>
+      <td><span class="badge role-${escapeHtml(user.role||'viewer')}">${escapeHtml(user.role||'viewer')}</span></td>
+      <td><span class="badge" style="color:${user.online?'#4caf7d':'#8f9bba'}">${user.online?'● Online':'Offline'}</span></td>
+      <td>${formatTrackedDuration(user.todaySeconds)}</td>
+      <td><strong style="color:var(--gold)">${formatTrackedDuration(user.totalSeconds)}</strong></td>
+      <td>${Number(user.sessionsCount)||0}</td>
+      <td style="color:var(--muted);white-space:nowrap">${user.lastSeen?timeAgo(user.lastSeen):'Never'}</td>
+    </tr>`).join('');
 }
 
 function renderAdderPerformance(adders) {
@@ -2035,19 +2140,26 @@ async function saveUser() {
   }
 
   try {
+    let savedUser;
     if (_editingUserId) {
-      await apiReq(`/api/users/${_editingUserId}`, {
+      savedUser = await apiReq(`/api/users/${_editingUserId}`, {
         method: 'PUT', body: JSON.stringify({ name, email, role, subject }),
       });
-      showToast('User updated.');
     } else {
-      await apiReq('/api/users', {
+      savedUser = await apiReq('/api/users', {
         method: 'POST', body: JSON.stringify({ name, email, password: pw, role, subject }),
       });
-      showToast('User created successfully.');
     }
+
+    const requestedSubject = canonicalSubject(subject);
+    const storedSubject = canonicalSubject(savedUser && savedUser.subject);
+    if (storedSubject !== requestedSubject) {
+      throw new Error(`Subject was not saved. Requested "${requestedSubject}" but the database returned "${storedSubject}".`);
+    }
+
+    showToast(_editingUserId ? 'User and subject updated.' : 'User created successfully.');
     closeCreateUserModal();
-    loadUsers();
+    await loadUsers();
   } catch(e) {
     errEl.textContent = e.message;
     errEl.classList.add('visible');
