@@ -432,10 +432,14 @@ const DELETE_ROLES = [requireAuth, requireRole('admin')];
 // ── GET /api/questions?subject=X&qType=Y ──────────────────────────────────
 router.get('/', ...READ_ROLES, async (req, res) => {
   const effectiveUser = await getEffectiveUser(req.user);
+  const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+  const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
   let query = supabase
     .from('questions')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(offset, offset + limit - 1);
 
   const userRole = (effectiveUser?.role || req.user?.role || 'viewer').toLowerCase();
   const userSub  = canonicalSubject(effectiveUser?.subject || req.user?.subject || 'All');
