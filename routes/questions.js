@@ -427,7 +427,7 @@ const READ_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor', 'view
 // Adders create/import questions; editors update existing questions.
 const CREATE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 const EDIT_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor')];
-const DELETE_ROLES = [requireAuth, requireRole('admin')];
+const DELETE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 
 const FACET_PAGE_SIZE = 1000;
 const FACET_CACHE_TTL_MS = 60 * 1000;
@@ -846,28 +846,93 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
 
 
 // ── DELETE /api/questions/:id ──────────────────────────────────────────────
+// ── DELETE /api/questions/:id ──────────────────────────────────────────────
 router.delete('/:id', ...DELETE_ROLES, async (req, res) => {
-  const { data, error } = await supabase
-    .from('questions')
-    .delete()
-    .eq('id', req.params.id)
-    .select('id, subject, q_type')
-    .maybeSingle();
+  try {
+    const effectiveUser = await getEffectiveUser(req.user);
 
-  if (error) {
-    return res.status(500).json({ error: 'Failed to delete question.', details: error.message });
+    // First fetch the question before deleting
+    const { data: existingQuestion, error: fetchError } = await supabase
+      .from('questions')
+      .select('id, subject, q_type, created_by, created_by_name')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchError) {
+      return res.status(500).json({
+        error: 'Failed to fetch question.',
+        details: fetchError.message
+      });
+    }
+
+    if (!existingQuestion) {
+      return res.status(404).json({
+        error: 'Question not found.'
+      });
+    }
+
+    // Adders can delete only questions from their assigned subject
+    if (!hasSubjectAccess(effectiveUser, existingQuestion.subject)) {
+      return res.status(403).json({
+        error: 'You can delete questions only from your assigned subject.'
+      });
+    }
+
+    const { data, error } = await supabase
+      .from('questions')
+      .delete()
+      .eq('id', req.params.id)
+      .select('id, subject, q_type')
+      .maybeSingle();
+
+    if (error) {
+      return res.status(500).json({
+        error: 'Failed to delete question.',
+        details: error.message
+      });
+    }
+
+    if (!data) {
+      return res.status(404).json({
+        error: 'Question not found.'
+      });
+    }
+
+    // Clear facet cache because chapter/topic values may have changed
+    facetCache = {
+      expiresAt: 0,
+      rows: []
+    };
+
+    await writeAuditLog({
+      userId: isValidUuid(req.user?.userId)
+        ? req.user.userId
+        : null,
+      userName: req.user?.name || 'User',
+      action: 'DELETE_QUESTION',
+      resourceType: 'question',
+      resourceId: req.params.id,
+      details: {
+        subject: data.subject,
+        qType: data.q_type
+      },
+    }).catch(err =>
+      console.warn('Audit log failed:', err.message)
+    );
+
+    res.json({
+      success: true,
+      deletedId: data.id
+    });
+
+  } catch (error) {
+    console.error('Delete question error:', error);
+
+    res.status(500).json({
+      error: 'Failed to delete question.',
+      details: error.message
+    });
   }
-  if (!data) return res.status(404).json({ error: 'Question not found.' });
-
-  await writeAuditLog({
-    userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
-    userName: req.user?.name || 'User',
-    action: 'DELETE_QUESTION', resourceType: 'question',
-    resourceId: req.params.id,
-    details: { subject: data.subject, qType: data.q_type },
-  }).catch(err => console.warn('Audit log failed:', err.message));
-
-  res.json({ success: true, deletedId: data.id });
 });
 
 module.exports = router;
