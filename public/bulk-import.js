@@ -742,25 +742,48 @@
   }
 
   // 4. Statement Based Parser
-  class StatementBasedParser extends BaseQuestionParser {
-    parse(block, meta) {
-      const res = this.parseStandard(block, meta);
-      res.qType = 'statement_based';
+ // 4. Statement Based Parser
+class StatementBasedParser extends BaseQuestionParser {
+  parse(block, meta) {
+    const res = this.parseStandard(block, meta);
+    res.qType = 'statement_based';
 
-      const text = String(res.question || '').replace(/\r\n?/g, '\n');
-      const s1Match = text.match(
-        /(?:^|\n)\s*@?Statement\s*(?:I|1|A)\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*(?:II|2|B)\b)/i
-      );
-      const s2Match = text.match(
-        /(?:^|\n)\s*@?Statement\s*(?:II|2|B)\s*[:.\-)—]?\s*([\s\S]*?)$/i
-      );
+    const text = String(res.question || '')
+      .replace(/\r\n?/g, '\n')
+      .trim();
 
-      if (s1Match) res.statement1 = s1Match[1].trim();
-      if (s2Match) res.statement2 = s2Match[1].trim();
-      return res;
+    // Supports:
+    // Statement I:
+    // Statement-II:
+    // Statement-1:
+    // Statement 2:
+    // Statement (I):
+    const s1Match = text.match(
+      /(?:^|\n)\s*@?Statement\s*[-–—]?\s*\(?\s*(?:I|1|A)\s*\)?\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\b)/i
+    );
+
+    const s2Match = text.match(
+      /(?:^|\n)\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\s*[:.\-)—]?\s*([\s\S]*?)$/i
+    );
+
+    if (s1Match) {
+      res.statement1 = s1Match[1].trim();
     }
-  }
 
+    if (s2Match) {
+      res.statement2 = s2Match[1].trim();
+    }
+
+    // Keep a safe question representation
+    if (res.statement1 || res.statement2) {
+      res.question =
+        'Statement I: ' + (res.statement1 || '') +
+        '\nStatement II: ' + (res.statement2 || '');
+    }
+
+    return res;
+  }
+}
   // 5. Matrix Match Parser (DEDICATED MATRIX ENGINE)
   class MatrixMatchParser extends BaseQuestionParser {
     parse(block, meta) {
