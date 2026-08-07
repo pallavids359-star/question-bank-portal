@@ -667,6 +667,13 @@ textarea{resize:vertical;min-height:70px;}
 .question-pagination button:hover:not(:disabled){border-color:var(--gold);color:var(--gold);}
 .question-pagination button:disabled{opacity:.4;cursor:not-allowed;}
 .question-pagination .page-status{font-size:12px;color:var(--muted);min-width:120px;text-align:center;}
+.audit-time-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+.audit-time-toolbar select{background:var(--field);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:8px 12px;font:inherit;outline:none;}
+.audit-time-label{min-width:190px;text-align:center;color:var(--text);font-size:13px;font-weight:600;}
+.audit-time-stats{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:12px;margin-bottom:16px;}
+.audit-time-stat{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:13px 15px;}
+.audit-time-stat-value{font-size:20px;font-weight:700;color:#fff;}
+.audit-time-stat-label{font-size:11px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;}
 
 @media (max-width:760px){
   .sidebar{width:210px;}
@@ -677,6 +684,8 @@ textarea{resize:vertical;min-height:70px;}
   .wrap{padding:14px;}
   .q-card,.card{padding:14px;}
   .li-top{gap:8px;}
+  .audit-time-stats{grid-template-columns:1fr;}
+  .audit-time-label{order:-1;width:100%;text-align:left;}
 }
 </style>
 </head>
@@ -984,8 +993,7 @@ textarea{resize:vertical;min-height:70px;}
               <label style="font-size:11px;color:#8f9bba;">Exam Category</label>
               <select id="bqMetaExam" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
                 <option value="NEET" selected>NEET</option>
-                <option value="JEE Main">JEE Main</option>
-                <option value="JEE Advanced">JEE Advanced</option>
+                <option value="JEE">JEE</option>
                 <option value="KCET">KCET</option>
                 <option value="CBSE">CBSE</option>
               </select>
@@ -1269,6 +1277,34 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
         <div class="page-header">
           <h2>Audit Log</h2>
           <p>Complete record of all system actions.</p>
+        </div>
+        <div class="card">
+          <div class="section-title">User Time Summary</div>
+          <div class="audit-time-toolbar">
+            <select id="auditTimePeriod" onchange="changeAuditTimePeriod(this.value)">
+              <option value="week">Weekly</option>
+              <option value="month">Monthly</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="moveAuditTimePeriod(-1)">← Previous</button>
+            <div class="audit-time-label" id="auditTimeRangeLabel">Current week</div>
+            <button class="btn btn-ghost btn-sm" id="auditTimeNextBtn" onclick="moveAuditTimePeriod(1)">Next →</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetAuditTimePeriod()">Current</button>
+          </div>
+          <div class="audit-time-stats">
+            <div class="audit-time-stat"><div class="audit-time-stat-value" id="auditPeriodTotal">—</div><div class="audit-time-stat-label">Total Time</div></div>
+            <div class="audit-time-stat"><div class="audit-time-stat-value" id="auditPeriodUsers">—</div><div class="audit-time-stat-label">Active Users</div></div>
+            <div class="audit-time-stat"><div class="audit-time-stat-value" id="auditPeriodSessions">—</div><div class="audit-time-stat-label">Sessions</div></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>User</th><th>Role</th><th>Subject</th><th>Total Time</th><th>Sessions</th><th>Last Active</th></tr>
+              </thead>
+              <tbody id="auditTimeSummaryBody">
+                <tr class="empty-row"><td colspan="6">Loading user time…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
         <div class="table-wrap" style="margin-bottom:24px;">
           <table>
@@ -1735,6 +1771,7 @@ function applyRoleRestrictions() {
       subjectSel.value = assignedSubject;
       subjectSel.disabled = true;
       subjectSel.title = `Your account is assigned to ${assignedSubject} only.`;
+      if (typeof updateExamOptionsForSubject === 'function') updateExamOptionsForSubject(assignedSubject);
       if (typeof updateChapterOptions === 'function') updateChapterOptions();
     } else {
       subjectSel.disabled = false;
@@ -2247,7 +2284,107 @@ document.getElementById('resetPwModal').addEventListener('click',    e => { if(e
 // ============================================================
 // ── AUDIT PAGE ───────────────────────────────────────────────
 // ============================================================
+let auditTimePeriod = 'week';
+let auditTimeCursor = new Date();
+
+function startOfAuditPeriod(date, period) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  if (period === 'month') {
+    start.setDate(1);
+  } else {
+    const day = start.getDay();
+    start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+  }
+  return start;
+}
+
+function auditPeriodRange() {
+  const start = startOfAuditPeriod(auditTimeCursor, auditTimePeriod);
+  const end = new Date(start);
+  if (auditTimePeriod === 'month') end.setMonth(end.getMonth() + 1);
+  else end.setDate(end.getDate() + 7);
+  return { start, end };
+}
+
+function auditPeriodLabel(start, end) {
+  if (auditTimePeriod === 'month') {
+    return start.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  }
+  const inclusiveEnd = new Date(end.getTime() - 1);
+  return `${fmtDate(start.toISOString())} – ${fmtDate(inclusiveEnd.toISOString())}`;
+}
+
+function changeAuditTimePeriod(period) {
+  auditTimePeriod = period === 'month' ? 'month' : 'week';
+  auditTimeCursor = new Date();
+  loadAuditTimeSummary();
+}
+
+function moveAuditTimePeriod(direction) {
+  const cursor = startOfAuditPeriod(auditTimeCursor, auditTimePeriod);
+  if (auditTimePeriod === 'month') cursor.setMonth(cursor.getMonth() + direction);
+  else cursor.setDate(cursor.getDate() + (direction * 7));
+  auditTimeCursor = cursor;
+  loadAuditTimeSummary();
+}
+
+function resetAuditTimePeriod() {
+  auditTimeCursor = new Date();
+  loadAuditTimeSummary();
+}
+
+function formatTrackedDuration(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return total > 0 ? '<1m' : '0m';
+}
+
+async function loadAuditTimeSummary() {
+  const body = document.getElementById('auditTimeSummaryBody');
+  if (!body) return;
+  const { start, end } = auditPeriodRange();
+  const currentStart = startOfAuditPeriod(new Date(), auditTimePeriod);
+  document.getElementById('auditTimeRangeLabel').textContent = auditPeriodLabel(start, end);
+  document.getElementById('auditTimeNextBtn').disabled = start >= currentStart;
+  body.innerHTML = '<tr class="empty-row"><td colspan="6">Loading user time…</td></tr>';
+
+  try {
+    const params = new URLSearchParams({
+      period: auditTimePeriod,
+      start: start.toISOString(),
+      end: end.toISOString(),
+    });
+    const result = await apiReq(`/api/user-time-summary?${params.toString()}`);
+    document.getElementById('auditPeriodTotal').textContent = formatTrackedDuration(result.totalSeconds);
+    document.getElementById('auditPeriodUsers').textContent = result.activeUsers || 0;
+    document.getElementById('auditPeriodSessions').textContent = result.totalSessions || 0;
+
+    const rows = result.data || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="6">No users found.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(user => `
+      <tr>
+        <td>${escapeHtml(user.name || '—')}<br><span style="font-size:11px;color:var(--muted)">${escapeHtml(user.email || '')}</span></td>
+        <td><span class="role-badge role-${escapeHtml(user.role || 'viewer')}">${escapeHtml(user.role || '—')}</span></td>
+        <td style="color:var(--muted)">${escapeHtml(user.subject || 'All')}</td>
+        <td style="font-weight:700;color:${user.totalSeconds > 0 ? 'var(--gold)' : 'var(--muted)'}">${formatTrackedDuration(user.totalSeconds)}</td>
+        <td>${user.sessions || 0}</td>
+        <td style="color:var(--muted);white-space:nowrap">${user.lastActiveAt ? fmtDateTime(user.lastActiveAt) : '—'}</td>
+      </tr>`).join('');
+  } catch (error) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="6">${escapeHtml(error.message || 'Could not load user time.')}</td></tr>`;
+    showToast(error.message || 'Could not load user time.', true);
+  }
+}
+
 async function loadAuditData() {
+  loadAuditTimeSummary();
   const [auditRes, loginRes] = await Promise.all([
     apiReq('/api/audit-log?limit=100').catch(() => ({ data: [] })),
     apiReq('/api/login-history?limit=100').catch(() => ({ data: [] })),
@@ -2476,10 +2613,61 @@ const NCERT_CHAPTERS = {
   "Biology-12": ["Reproduction in Organisms","Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health","Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution","Human Health and Disease","Strategies for Enhancement in Food Production","Microbes in Human Welfare","Biotechnology: Principles and Processes","Biotechnology and Its Applications","Organisms and Populations"]
 };
 const EXAMS = ["NEET","JEE","KCET"];
+const EXAMS_BY_SUBJECT = {
+  Mathematics: ["JEE", "KCET"],
+  Biology: ["NEET", "KCET"]
+};
 window.SUBJECTS = SUBJECTS;
 window.CLASSES = CLASSES;
 window.NCERT_CHAPTERS = NCERT_CHAPTERS;
 window.EXAMS = EXAMS;
+
+function allowedExamsForSubject(subject) {
+  return EXAMS_BY_SUBJECT[canonicalSubject(subject)] || EXAMS.slice();
+}
+
+function updateExamOptionsForSubject(subject, preferredExams) {
+  const container = document.getElementById('examToggles');
+  if (!container) return;
+  const allowed = allowedExamsForSubject(subject);
+  const preferred = Array.isArray(preferredExams) ? preferredExams : Array.from(selectedExams);
+  const validPreferred = preferred.filter(exam => allowed.includes(exam));
+  selectedExams = new Set(validPreferred.length ? validPreferred : [allowed[0]]);
+  container.innerHTML = '';
+
+  allowed.forEach(function(exam) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toggle-btn' + (selectedExams.has(exam) ? ' active' : '');
+    btn.textContent = exam;
+    btn.addEventListener('click', function() {
+      if (selectedExams.has(exam)) {
+        selectedExams.delete(exam);
+        btn.classList.remove('active');
+      } else {
+        selectedExams.add(exam);
+        btn.classList.add('active');
+      }
+    });
+    container.appendChild(btn);
+  });
+}
+
+function updateBulkExamOptions() {
+  const subject = document.getElementById('bqMetaSubject');
+  const exam = document.getElementById('bqMetaExam');
+  if (!subject || !exam) return;
+  const allowed = allowedExamsForSubject(subject.value);
+  const current = exam.value;
+  exam.innerHTML = '';
+  allowed.forEach(function(value) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    exam.appendChild(option);
+  });
+  exam.value = allowed.includes(current) ? current : allowed[0];
+}
 window.fillSelect = fillSelect;
 
 const QTYPE_LABELS = {
@@ -2948,32 +3136,19 @@ fillDefaultPredef();
     });
   }
 
-  // Populate Exam Category toggles
-  const examTogglesEl = document.getElementById('examToggles');
-  if (examTogglesEl) {
-    examTogglesEl.innerHTML = '';
-    selectedExams.add('NEET');
-    EXAMS.forEach(function(ex) {
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'toggle-btn' + (ex === 'NEET' ? ' active' : '');
-      btn.textContent = ex;
-      btn.addEventListener('click', function() {
-        if (selectedExams.has(ex)) {
-          selectedExams.delete(ex);
-          btn.classList.remove('active');
-        } else {
-          selectedExams.add(ex);
-          btn.classList.add('active');
-        }
-      });
-      examTogglesEl.appendChild(btn);
-    });
-  }
+  // Populate only the exam categories valid for the selected subject.
+  updateExamOptionsForSubject(subjectEl ? subjectEl.value : '');
 
   // Subject & Class change → update chapters
-  if (subjectEl) subjectEl.addEventListener('change', updateChapterOptions);
+  if (subjectEl) subjectEl.addEventListener('change', function() {
+    updateExamOptionsForSubject(subjectEl.value);
+    updateChapterOptions();
+  });
   if (klassEl) klassEl.addEventListener('change', updateChapterOptions);
+
+  const bulkSubjectEl = document.getElementById('bqMetaSubject');
+  if (bulkSubjectEl) bulkSubjectEl.addEventListener('change', updateBulkExamOptions);
+  updateBulkExamOptions();
 })();
 
 function updateChapterOptions(presetChapter) {
@@ -3125,7 +3300,10 @@ function validate(){
   if(!klassSel||!klassSel.value){ if(klassSel) klassSel.focus(); return 'Please select a Class.'; }
   if(!val('chapter')){ if(chapterEl) chapterEl.focus(); return 'Please select or enter a Chapter.'; }
   if(!val('topic')){ if(topicEl) topicEl.focus(); return 'Please enter a Topic.'; }
-  if(selectedExams.size===0) selectedExams.add('NEET');
+  const allowedExams=allowedExamsForSubject(subjectSel.value);
+  if(selectedExams.size===0) selectedExams.add(allowedExams[0]);
+  const invalidExams=Array.from(selectedExams).filter(exam=>!allowedExams.includes(exam));
+  if(invalidExams.length) return `${subjectSel.value} questions can use only ${allowedExams.join(' or ')}.`;
   const qType=qTypeEl ? qTypeEl.value : '';
   if(!qType){ if(qTypeEl) qTypeEl.focus(); return 'Please select a Question Type.'; }
 
@@ -3178,7 +3356,8 @@ async function saveQuestion(){
   else if((isStatement||isTF) && !mainQuestionText) mainQuestionText = 'Question';
   else if(isMatch && !mainQuestionText) mainQuestionText = 'Match the Following Question';
 
-  const activeExams = Array.from(selectedExams.size > 0 ? selectedExams : ['NEET']);
+  const allowedExams = allowedExamsForSubject(subjectSel.value);
+  const activeExams = Array.from(selectedExams.size > 0 ? selectedExams : [allowedExams[0]]);
 
   const record={
     subject:subjectSel.value,
@@ -3249,14 +3428,7 @@ function resetForm(){
   const klassSel=document.getElementById('klass');if(klassSel)klassSel.value='';
   if(typeof updateChapterOptions==='function') updateChapterOptions();
   const topEl=document.getElementById('topic');if(topEl)topEl.value='';
-  selectedExams.clear();
-  selectedExams.add('NEET');
-  const examTogglesEl=document.getElementById('examToggles');
-  if(examTogglesEl){
-    examTogglesEl.querySelectorAll('.toggle-btn').forEach(b => {
-      b.classList.toggle('active', b.textContent === 'NEET');
-    });
-  }
+  updateExamOptionsForSubject(subjectSel ? subjectSel.value : '');
   const qts=document.getElementById('qType');if(qts)qts.value='';
   const diffSel=document.getElementById('difficulty');if(diffSel)diffSel.value='Medium';
   ['question','optA','optB','optC','optD','solutionText','assertion','reason','numQuestion','numAnswer','statement1','statement2'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
@@ -3673,12 +3845,9 @@ window.QP={
     if(document.getElementById('topic')) document.getElementById('topic').value=q.topic||'';
     if(document.getElementById('difficulty')) document.getElementById('difficulty').value=q.difficulty||'Medium';
 
-    const examsArr = (Array.isArray(q.exams) && q.exams.length > 0) ? q.exams : ['NEET'];
-    selectedExams=new Set(examsArr);
-    const examTogglesEl=document.getElementById('examToggles');
-    if(examTogglesEl) examTogglesEl.querySelectorAll('.toggle-btn').forEach(b=>{
-      b.classList.toggle('active',selectedExams.has(b.textContent));
-    });
+    const allowedForQuestion = allowedExamsForSubject(q.subject);
+    const examsArr = (Array.isArray(q.exams) && q.exams.length > 0) ? q.exams : [allowedForQuestion[0]];
+    updateExamOptionsForSubject(q.subject, examsArr);
 
     const normType = q.qType || 'mcq_single';
     if(qTypeSel) qTypeSel.value=normType;
