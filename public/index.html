@@ -3211,7 +3211,7 @@ function updateTypeVisibility(){
     }
   }
 
-  if(mcqBlock) mcqBlock.style.display=(isAR||isMatch||isNum)?'none':'';
+  if(mcqBlock) mcqBlock.style.display=(isMatch||isNum)?'none':'';
   if(arBlock) arBlock.style.display=isAR?'':'none';
   if(matchBlock) matchBlock.style.display=isMatch?'':'none';
   if(numBlock) numBlock.style.display=isNum?'':'none';
@@ -3220,18 +3220,26 @@ function updateTypeVisibility(){
   if(mcqOptionsLabel) mcqOptionsLabel.style.display=isTF?'none':'';
   if(mcqOptionsGrid) mcqOptionsGrid.style.display=isTF?'none':'';
   if(correctOptionLabel) correctOptionLabel.innerHTML=isTF?'Correct Answer <span class="req">*</span>':'Correct Option <span class="req">*</span>';
-  if(mcqQuestionField) mcqQuestionField.style.display=isStatement?'none':'';
+  if(mcqQuestionField) mcqQuestionField.style.display=(isStatement||isAR)?'none':'';
 
-  if(isStatement){
-    const optA = document.getElementById('optA');
-    const optB = document.getElementById('optB');
-    const optC = document.getElementById('optC');
-    const optD = document.getElementById('optD');
-    if(optA && !getFieldRaw(optA)) setEqFieldElFromRaw(optA, 'Both Statement I and Statement II are correct');
-    if(optB && !getFieldRaw(optB)) setEqFieldElFromRaw(optB, 'Both Statement I and Statement II are incorrect');
-    if(optC && !getFieldRaw(optC)) setEqFieldElFromRaw(optC, 'Statement I is correct but Statement II is incorrect');
-    if(optD && !getFieldRaw(optD)) setEqFieldElFromRaw(optD, 'Statement I is incorrect but Statement II is correct');
-  } else if(type==='true_false'){
+  if(isAR){
+  const optA = document.getElementById('optA');
+  const optB = document.getElementById('optB');
+  const optC = document.getElementById('optC');
+  const optD = document.getElementById('optD');
+
+  if(optA && !getFieldRaw(optA))
+    setEqFieldElFromRaw(optA, 'A and R are true and R is the correct explanation.');
+
+  if(optB && !getFieldRaw(optB))
+    setEqFieldElFromRaw(optB, 'A and R are true but R is not the correct explanation.');
+
+  if(optC && !getFieldRaw(optC))
+    setEqFieldElFromRaw(optC, 'A is true but R is false.');
+
+  if(optD && !getFieldRaw(optD))
+    setEqFieldElFromRaw(optD, 'A is false but R is true.');
+}else if(type==='true_false'){
     const optA = document.getElementById('optA');
     const optB = document.getElementById('optB');
     const optC = document.getElementById('optC');
@@ -3308,9 +3316,12 @@ function validate(){
   if(!qType){ if(qTypeEl) qTypeEl.focus(); return 'Please select a Question Type.'; }
 
   if(qType==='assertion_reason'){
-    if(!eqVal('assertion')) return 'Please enter the Assertion (A).';
-    if(!eqVal('reason')) return 'Please enter the Reason (R).';
-  }else if(qType==='statement_based'){
+  if(!eqVal('assertion')) return 'Please enter the Assertion (A).';
+  if(!eqVal('reason')) return 'Please enter the Reason (R).';
+
+  if(!eqVal('optA')||!eqVal('optB')||!eqVal('optC')||!eqVal('optD'))
+    return 'All four Assertion & Reason options are required.';
+}else if(qType==='statement_based'){
     if(!eqVal('statement1')) return 'Please enter Statement I.';
     if(!eqVal('statement2')) return 'Please enter Statement II.';
     if(!eqVal('optA')||!eqVal('optB')||!eqVal('optC')||!eqVal('optD')) return 'All four options are required.';
@@ -3376,10 +3387,10 @@ else if(isTF && !mainQuestionText){
     question:mainQuestionText,
     statement1:isStatement?eqVal('statement1'):'',
     statement2:isStatement?eqVal('statement2'):'',
-    optA:(isAR||isMatch||isNum)?'':eqVal('optA'),
-    optB:(isAR||isMatch||isNum)?'':eqVal('optB'),
-    optC:(isAR||isMatch||isNum||isTF)?'':eqVal('optC'),
-    optD:(isAR||isMatch||isNum||isTF)?'':eqVal('optD'),
+    optA:(isMatch||isNum)?'':eqVal('optA'),
+optB:(isMatch||isNum)?'':eqVal('optB'),
+optC:(isMatch||isNum||isTF)?'':eqVal('optC'),
+optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
     assertion:isAR?eqVal('assertion'):'',
     reason:isAR?eqVal('reason'):'',
     predefOptions:isAR?eqVal('predefOptions'):'',
@@ -3710,9 +3721,40 @@ function renderList(){
         const rM = q.question.match(/(?:Reason|\(R\)|R)\s*[:\.-]\s*([^\n]+)+/i);
         if(rM) rea = rM[1].trim();
       }
-      const aLine=document.createElement('div');aLine.appendChild(document.createTextNode('A: '));aLine.appendChild(renderStaticPreview(ass||''));main.appendChild(aLine);
-      const rLine=document.createElement('div');rLine.style.marginTop='4px';rLine.appendChild(document.createTextNode('R: '));rLine.appendChild(renderStaticPreview(rea||''));main.appendChild(rLine);
-      const combo=document.createElement('div');combo.className='li-combo';combo.textContent='Correct: Option '+(q.correctOption||'—');main.appendChild(combo);
+     const aLine=document.createElement('div');
+aLine.appendChild(document.createTextNode('Assertion: '));
+aLine.appendChild(renderStaticPreview(ass||''));
+main.appendChild(aLine);
+
+const rLine=document.createElement('div');
+rLine.style.marginTop='4px';
+rLine.appendChild(document.createTextNode('Reason: '));
+rLine.appendChild(renderStaticPreview(rea||''));
+main.appendChild(rLine);
+
+const optsLine=document.createElement('div');
+optsLine.className='li-combo';
+optsLine.style.marginTop='8px';
+
+['A','B','C','D'].forEach(l=>{
+  const row=document.createElement('span');
+  row.style.display='block';
+
+  const isCorrect=q.correctOption===l;
+
+  if(isCorrect) row.className='correct';
+
+  row.appendChild(document.createTextNode(l+': '));
+  row.appendChild(renderStaticPreview(q['opt'+l]||''));
+
+  if(isCorrect){
+    row.appendChild(document.createTextNode(' ✓'));
+  }
+
+  optsLine.appendChild(row);
+});
+
+main.appendChild(optsLine);
     }else if(q.qType==='statement_based'){
       const statementFallback=extractStatementPairForForm(q.question||'');
       const visibleStatement1=q.statement1||statementFallback.statement1||'';
@@ -3872,8 +3914,10 @@ window.QP={
         const reasonMatch=storedARQuestion.match(/(?:Reason\s*(?:\(R\))?|\(R\)|R)\s*[:.\-]\s*([\s\S]*)$/i);
         if(reasonMatch) editReason=reasonMatch[1].trim();
       }
-      setFieldFromRaw('assertion',editAssertion);
-      setFieldFromRaw('reason',editReason);
+      setFieldFromRaw('optA',q.optA||'A and R are true and R is the correct explanation.');
+setFieldFromRaw('optB',q.optB||'A and R are true but R is not the correct explanation.');
+setFieldFromRaw('optC',q.optC||'A is true but R is false.');
+setFieldFromRaw('optD',q.optD||'A is false but R is true.');
       if(q.predefOptions)setFieldFromRaw('predefOptions',q.predefOptions);
     }else if(normType==='statement_based'){
       const extractedStatements=extractStatementPairForForm(q.question||'');
