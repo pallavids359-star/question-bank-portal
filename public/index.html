@@ -883,7 +883,7 @@ textarea{resize:vertical;min-height:70px;}
             <div id="arBlock" style="display:none;">
               <div class="field"><div class="label-row"><label class="field-label">Assertion (A) <span class="req">*</span></label><button type="button" class="attach-btn img-link-btn-flat" data-target="assertion">📎 Attach Image</button></div><div class="eq-field multiline" id="assertion" data-placeholder="Type Assertion (A)..." contenteditable="true" spellcheck="false"></div></div>
               <div class="field"><div class="label-row"><label class="field-label">Reason (R) <span class="req">*</span></label><button type="button" class="attach-btn img-link-btn-flat" data-target="reason">📎 Attach Image</button></div><div class="eq-field multiline" id="reason" data-placeholder="Type Reason (R)..." contenteditable="true" spellcheck="false"></div></div>
-              <div class="field"><label class="field-label">Predefined Options</label><div class="eq-field multiline" id="predefOptions" contenteditable="true" spellcheck="false" data-placeholder="Predefined options text (editable)"></div></div>
+              
             </div>
 
             <div id="matchBlock" style="display:none;">
@@ -3201,6 +3201,11 @@ function updateTypeVisibility(){
   const mcqOptionsGrid=document.getElementById('mcqOptionsGrid');
   const correctOptionLabel=document.getElementById('correctOptionLabel');
   const mcqQuestionField=document.getElementById('mcqQuestionField');
+   // Assertion & Reason order:
+// Assertion -> Reason -> Options -> Correct Option
+if(isAR && arBlock && mcqBlock && mcqBlock.parentNode){
+  mcqBlock.parentNode.insertBefore(arBlock, mcqBlock);
+}
 
   // Statement Based order: Statement I, Statement II, Options, Correct Option.
   if(statementBlock&&mcqBlock&&correctOptionWrap&&mcqBlock.parentNode){
@@ -3902,24 +3907,70 @@ window.QP={
     if(qTypeSel) qTypeSel.value=normType;
     updateTypeVisibility();
 
-    if(normType==='assertion_reason'){
-      let editAssertion=q.assertion||'';
-      let editReason=q.reason||'';
-      const storedARQuestion=q.question||'';
-      if(!editAssertion&&storedARQuestion){
-        const assertionMatch=storedARQuestion.match(/(?:Assertion\s*(?:\(A\))?|\(A\)|A)\s*[:.\-]\s*([\s\S]*?)(?=\n\s*(?:Reason\s*(?:\(R\))?|\(R\)|R)\s*[:.\-]|$)/i);
-        if(assertionMatch) editAssertion=assertionMatch[1].trim();
-      }
-      if(!editReason&&storedARQuestion){
-        const reasonMatch=storedARQuestion.match(/(?:Reason\s*(?:\(R\))?|\(R\)|R)\s*[:.\-]\s*([\s\S]*)$/i);
-        if(reasonMatch) editReason=reasonMatch[1].trim();
-      }
-      setFieldFromRaw('optA',q.optA||'A and R are true and R is the correct explanation.');
-setFieldFromRaw('optB',q.optB||'A and R are true but R is not the correct explanation.');
-setFieldFromRaw('optC',q.optC||'A is true but R is false.');
-setFieldFromRaw('optD',q.optD||'A is false but R is true.');
-      if(q.predefOptions)setFieldFromRaw('predefOptions',q.predefOptions);
-    }else if(normType==='statement_based'){
+   if(normType==='assertion_reason'){
+
+  let editAssertion = String(q.assertion || '').trim();
+  let editReason = String(q.reason || '').trim();
+
+  const storedARQuestion = String(q.question || '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+
+  // Recover Assertion from question text when DB assertion field is empty
+  if(!editAssertion && storedARQuestion){
+
+    const assertionMatch = storedARQuestion.match(
+      /(?:Assertion\s*(?:\(A\))?|\(A\))\s*[:.\-–—]?\s*([\s\S]*?)(?=\s*(?:Reason\s*(?:\(R\))?|\(R\))\s*[:.\-–—]?|$)/i
+    );
+
+    if(assertionMatch){
+      editAssertion = assertionMatch[1].trim();
+    }
+  }
+
+  // Recover Reason from question text when DB reason field is empty
+  if(!editReason && storedARQuestion){
+
+    const reasonMatch = storedARQuestion.match(
+      /(?:Reason\s*(?:\(R\))?|\(R\))\s*[:.\-–—]?\s*([\s\S]*)$/i
+    );
+
+    if(reasonMatch){
+      editReason = reasonMatch[1].trim();
+    }
+  }
+
+  // Fill Assertion and Reason
+  setFieldFromRaw('assertion', editAssertion);
+  setFieldFromRaw('reason', editReason);
+
+  // Fill A-D options
+  setFieldFromRaw(
+    'optA',
+    q.optA ||
+    'Both Assertion and Reason are true and Reason is the correct explanation of Assertion.'
+  );
+
+  setFieldFromRaw(
+    'optB',
+    q.optB ||
+    'Both Assertion and Reason are true but Reason is not the correct explanation of Assertion.'
+  );
+
+  setFieldFromRaw(
+    'optC',
+    q.optC ||
+    'Assertion is true but Reason is false.'
+  );
+
+  setFieldFromRaw(
+    'optD',
+    q.optD ||
+    'Assertion is false but Reason is true.'
+  );
+
+}
+else if(normType==='statement_based'){
       const extractedStatements=extractStatementPairForForm(q.question||'');
       setFieldFromRaw('statement1',q.statement1||extractedStatements.statement1||'');
       setFieldFromRaw('statement2',q.statement2||extractedStatements.statement2||'');
