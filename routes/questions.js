@@ -151,15 +151,23 @@ function readLegacyData(solutionText) {
 }
 
 function extractStatementPair(questionText) {
-  const text = String(questionText || '').replace(/\r\n?/g, '\n').trim();
-  if (!text) return { statement1: '', statement2: '' };
+  const text = String(questionText || '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+
+  if (!text) {
+    return {
+      statement1: '',
+      statement2: ''
+    };
+  }
 
   const first = text.match(
-    /(?:^|\n)\s*@?Statement\s*(?:I|1|A)\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*(?:II|2|B)\b)/i
+    /(?:^|\n)\s*@?Statement\s*[-–—]?\s*\(?\s*(?:I|1|A)\s*\)?\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\b)/i
   );
 
   const second = text.match(
-    /(?:^|\n)\s*@?Statement\s*(?:II|2|B)\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*(?:\(?[A-D]\)?\s*[).:\-]|(?:Ans|Answer|Solution|Explanation)\s*[:.\-])|$)/i
+    /(?:^|\n)\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*(?:\(?[A-D]\)?\s*[).:\-]|(?:Ans|Answer|Solution|Explanation)\s*[:.\-])|$)/i
   );
 
   return {
