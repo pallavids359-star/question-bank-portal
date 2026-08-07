@@ -3353,7 +3353,14 @@ async function saveQuestion(){
   let mainQuestionText = eqVal('question');
   if(isNum) mainQuestionText = eqVal('numQuestion');
   else if(isAR) mainQuestionText = 'Assertion: ' + eqVal('assertion') + '\nReason: ' + eqVal('reason');
-  else if((isStatement||isTF) && !mainQuestionText) mainQuestionText = 'Question';
+  else if(isStatement){
+  mainQuestionText =
+    'Statement I: ' + eqVal('statement1') +
+    '\nStatement II: ' + eqVal('statement2');
+}
+else if(isTF && !mainQuestionText){
+  mainQuestionText = 'Question';
+}
   else if(isMatch && !mainQuestionText) mainQuestionText = 'Match the Following Question';
 
   const allowedExams = allowedExamsForSubject(subjectSel.value);
