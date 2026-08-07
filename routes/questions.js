@@ -302,10 +302,28 @@ function toDatabase(input) {
   const rawRequestedQType = String(input.qType || input.q_type || '').toLowerCase();
   const requestedQType = rawRequestedQType === 'matrix' ? 'match' : rawRequestedQType;
   if (requestedQType === 'statement_based') {
-    const extractedStatements = extractStatementPair(input.question);
-    out.statement1 = input.statement1 || out.statement1 || extractedStatements.statement1 || '';
-    out.statement2 = input.statement2 || out.statement2 || extractedStatements.statement2 || '';
-  }
+  const extractedStatements = extractStatementPair(input.question);
+
+  out.statement1 =
+    input.statement1 ||
+    out.statement1 ||
+    extractedStatements.statement1 ||
+    '';
+
+  out.statement2 =
+    input.statement2 ||
+    out.statement2 ||
+    extractedStatements.statement2 ||
+    '';
+
+  // IMPORTANT:
+  // Also store both statements inside the legacy "question" column.
+  // This guarantees that Statement I & II remain available even when
+  // the database does not contain statement1 / statement2 columns.
+  out.question =
+    'Statement I: ' + out.statement1 +
+    '\nStatement II: ' + out.statement2;
+}
   if (requestedQType === 'true_false') {
     out.opt_a = 'True';
     out.opt_b = 'False';
@@ -362,10 +380,20 @@ function toApi(row) {
   output.difficulty = row.difficulty || legacyDifficulty || 'Medium';
   output.qType = legacyQuestionType || output.qType;
   if (output.qType === 'statement_based') {
-    const extractedStatements = extractStatementPair(row.question);
-    output.statement1 = output.statement1 || legacyData.statement1 || extractedStatements.statement1 || '';
-    output.statement2 = output.statement2 || legacyData.statement2 || extractedStatements.statement2 || '';
-  }
+  const extractedStatements = extractStatementPair(row.question || '');
+
+  output.statement1 =
+    output.statement1 ||
+    legacyData.statement1 ||
+    extractedStatements.statement1 ||
+    '';
+
+  output.statement2 =
+    output.statement2 ||
+    legacyData.statement2 ||
+    extractedStatements.statement2 ||
+    '';
+}
   if (legacyQuestionType === 'true_false') {
     output.optA = output.optA || 'True';
     output.optB = output.optB || 'False';
