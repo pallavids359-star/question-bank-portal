@@ -3634,13 +3634,22 @@ async function loadQuestions(){
     } catch (profileError) {
       console.warn('[QBP] Could not refresh assigned subject:', profileError.message);
     }
-    const data = await apiRequest();
-    console.log('[QBP] loadQuestions raw response:', typeof data, Array.isArray(data) ? data.length + ' items' : JSON.stringify(data).slice(0,200));
-    allQuestions = Array.isArray(data) ? data : [];
-    if(!Array.isArray(data)){
-      console.error('[QBP] /api/questions did NOT return an array! Got:', typeof data, data);
-      showToast('Questions loaded but data format unexpected. Check console.', true);
+    const pageSize = 500;
+    const loadedQuestions = [];
+    for(let offset = 0, page = 0; page < 100; offset += pageSize, page++){
+      const data = await apiRequest(`?offset=${offset}&limit=${pageSize}`);
+      console.log('[QBP] question page:', page + 1, Array.isArray(data) ? data.length + ' items' : typeof data);
+      if(!Array.isArray(data)){
+        throw new Error('Questions API returned an unexpected data format.');
+      }
+      loadedQuestions.push(...data);
+      if(data.length < pageSize) break;
+      // Compatibility guard: an older API ignores limit/offset and returns
+      // its default 1,000 rows. Avoid repeatedly downloading that same page.
+      if(data.length > pageSize) break;
     }
+    allQuestions = loadedQuestions;
+    console.log('[QBP] total questions loaded:', allQuestions.length);
   } catch(e){
     allQuestions = [];
     console.error('[QBP] loadQuestions error:', e);
