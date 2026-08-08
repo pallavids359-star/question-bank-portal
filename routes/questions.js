@@ -1382,34 +1382,30 @@ if (recipients.length === 0) {
 
     if (recipients.length) {
 
-      const notifications = recipients.map(recipientId => ({
+     const notifications = recipients.map(recipientId => ({
 
-        recipient_id: recipientId,
+  recipient_id: recipientId,
 
-        sender_id:
-          isValidUuid(req.user?.userId)
-            ? req.user.userId
-            : null,
+  sender_id:
+    isValidUuid(req.user?.userId)
+      ? req.user.userId
+      : null,
 
-        sender_name:
-          req.user?.name || 'Editor',
+  sender_name:
+    req.user?.name || 'Editor',
 
-        question_id:
-          question.id,
+  question_id:
+    question.id,
 
-        notification_type:
-          'question_review',
+  title:
+    'Question Review',
 
-        title:
-          'Question Review',
+  message:
+    reviewMessage,
 
-        message:
-          reviewMessage,
-
-        is_read:
-          false
-      }));
-
+  is_read:
+    false
+}));
       const {
   data: createdNotifications,
   error: notifyError
