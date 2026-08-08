@@ -912,21 +912,246 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
   const userId = req.user.userId;
   const userName = req.user.name;
 
-  const recordsToInsert = items.map(item => {
-    const payload = toDatabase(item);
-    if (isValidUuid(userId)) {
-      payload.created_by = userId;
-      payload.updated_by = userId;
+  const preparedRecords =
+  items.map((item, index) => {
+
+    const payload =
+      toDatabase(item);
+
+    if(isValidUuid(userId)){
+
+      payload.created_by =
+        userId;
+
+      payload.updated_by =
+        userId;
     }
-    payload.created_by_name = userName || '';
-    payload.updated_by_name = userName || '';
-    return sanitizeRecord(payload, CORE_FIELDS);
+
+    payload.created_by_name =
+      userName || '';
+
+    payload.updated_by_name =
+      userName || '';
+
+    return {
+      originalIndex: index,
+      record:
+        sanitizeRecord(
+          payload,
+          CORE_FIELDS
+        )
+    };
   });
 
-  if (recordsToInsert.some(record => !hasSubjectAccess(req.user, record.subject))) {
+  if (
+  preparedRecords.some(
+    item =>
+      !hasSubjectAccess(
+        req.user,
+        item.record.subject
+      )
+  )
+) {
     return res.status(403).json({ error: 'The batch contains questions outside your assigned subject.' });
   }
+// ── POST /api/questions/batch ──────────────────────────────────────────────
+router.post('/batch', ...CREATE_ROLES, async (req, res) => {
 
+  const items = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({
+      error:
+        'Payload must be a non-empty array of questions.'
+    });
+  }
+
+  const userId = req.user.userId;
+  const userName = req.user.name;
+
+
+  // ==========================================
+  // PREPARE QUESTIONS
+  // ==========================================
+
+  const preparedRecords =
+    items.map((item, index) => {
+
+      const payload =
+        toDatabase(item);
+
+      if (isValidUuid(userId)) {
+        payload.created_by = userId;
+        payload.updated_by = userId;
+      }
+
+      payload.created_by_name =
+        userName || '';
+
+      payload.updated_by_name =
+        userName || '';
+
+      return {
+        originalIndex: index,
+
+        record:
+          sanitizeRecord(
+            payload,
+            CORE_FIELDS
+          )
+      };
+    });
+
+
+  // ==========================================
+  // SUBJECT ACCESS CHECK
+  // ==========================================
+
+  if (
+    preparedRecords.some(
+      item =>
+        !hasSubjectAccess(
+          req.user,
+          item.record.subject
+        )
+    )
+  ) {
+
+    return res.status(403).json({
+      error:
+        'The batch contains questions outside your assigned subject.'
+    });
+
+  }
+
+
+  // ==========================================
+  // ADD YOUR DUPLICATE BLOCK HERE
+  // ==========================================
+
+  const recordsToInsert = [];
+  const duplicates = [];
+
+  const batchFingerprints =
+    new Map();
+
+  for (const prepared of preparedRecords) {
+
+    const record =
+      prepared.record;
+
+    const normalizedQuestion =
+      normalizeDuplicateText(
+        record.question
+      );
+
+    const fingerprint = [
+      canonicalSubject(
+        record.subject
+      ).toLowerCase(),
+
+      String(
+        record.klass || ''
+      ).trim().toLowerCase(),
+
+      normalizeQType(
+        record.q_type
+      ),
+
+      normalizedQuestion
+
+    ].join('|');
+
+
+    // Duplicate inside same import
+    if (
+      normalizedQuestion &&
+      batchFingerprints.has(
+        fingerprint
+      )
+    ) {
+
+      duplicates.push({
+        index:
+          prepared.originalIndex,
+
+        question:
+          record.question,
+
+        reason:
+          'Duplicate inside current bulk import'
+      });
+
+      continue;
+    }
+
+
+    if (normalizedQuestion) {
+
+      batchFingerprints.set(
+        fingerprint,
+        prepared.originalIndex
+      );
+
+    }
+
+
+    // Duplicate already in database
+    const existingDuplicate =
+      await findDuplicateQuestion(
+        record
+      );
+
+
+    if (existingDuplicate) {
+
+      duplicates.push({
+
+        index:
+          prepared.originalIndex,
+
+        question:
+          record.question,
+
+        reason:
+          'Question already exists',
+
+        existingQuestionId:
+          existingDuplicate.id
+      });
+
+      continue;
+    }
+
+
+    recordsToInsert.push(
+      record
+    );
+  }
+
+
+  if (recordsToInsert.length === 0) {
+
+    return res.status(409).json({
+
+      error:
+        'All questions are duplicates.',
+
+      duplicate: true,
+
+      duplicateCount:
+        duplicates.length,
+
+      duplicates
+    });
+  }
+
+
+  // ==========================================
+  // YOUR EXISTING CHUNK INSERT CODE CONTINUES
+  // ==========================================
+
+ 
   // Batch insert into Supabase in chunks of 50
   const chunkSize = 50;
   const insertedData = [];
