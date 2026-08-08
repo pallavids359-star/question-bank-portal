@@ -1278,6 +1278,50 @@ function normalizeDuplicateQuestion(value) {
 }
 
 
+
+function normalizeForDuplicate(value) {
+
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKC')
+
+    .replace(/<[^>]*>/g, '')
+
+    .replace(/&nbsp;/gi, '')
+
+    .replace(/[“”"'‘’]/g, '')
+
+    .replace(/[–—−-]/g, '')
+
+    .replace(/\$\$/g, '')
+    .replace(/\$/g, '')
+
+    .replace(/\\\(/g, '')
+    .replace(/\\\)/g, '')
+    .replace(/\\\[/g, '')
+    .replace(/\\\]/g, '')
+
+    .replace(/\\,/g, '')
+    .replace(/\\;/g, '')
+    .replace(/\\!/g, '')
+
+    .replace(/\\quad/g, '')
+    .replace(/\\qquad/g, '')
+
+    // remove leading Q numbers
+    .replace(
+      /^(?:question|q)?\s*\d+\s*[.):\-]*/i,
+      ''
+    )
+
+    // Remove ALL formatting characters/spaces.
+    // Keep letters and numbers only.
+    .replace(/[^\p{L}\p{N}]/gu, '')
+
+    .trim();
+}
+
+
 function checkDuplicates(
   questions,
   dbList
@@ -1292,111 +1336,130 @@ function checkDuplicates(
       ? dbList
       : [];
 
-  const databaseFingerprints =
+
+  console.log(
+    '[DUP CHECK] Questions pasted:',
+    questions.length
+  );
+
+  console.log(
+    '[DUP CHECK] Questions in DB:',
+    existing.length
+  );
+
+
+  const databaseMap =
     new Map();
 
 
-  // -----------------------------------
-  // Build database question lookup
-  // -----------------------------------
+  existing.forEach(dbQuestion => {
 
-  existing.forEach(dbq => {
-
-    const fingerprint =
-      normalizeDuplicateQuestion(
-        dbq.question
+    const key =
+      normalizeForDuplicate(
+        dbQuestion.question
       );
 
-    if (
-      fingerprint &&
-      !databaseFingerprints.has(
-        fingerprint
-      )
-    ) {
-
-      databaseFingerprints.set(
-        fingerprint,
-        dbq
+    if (key) {
+      databaseMap.set(
+        key,
+        dbQuestion
       );
     }
   });
 
 
-  // -----------------------------------
-  // Detect duplicate inside pasted file
-  // -----------------------------------
-
-  const currentFileFingerprints =
+  const currentImport =
     new Map();
 
 
   questions.forEach(
-    (q, index) => {
+    (question, index) => {
 
-      const fingerprint =
-        normalizeDuplicateQuestion(
-          q.question
+      const key =
+        normalizeForDuplicate(
+          question.question
         );
 
 
-      q.isDuplicate = false;
-      q.existingId = null;
-      q.duplicateReason = '';
+      question.isDuplicate = false;
+
+      question.existingId = null;
+
+      question.duplicateReason = '';
 
 
-      if (!fingerprint) {
+      console.log(
+        '[DUP CHECK]',
+        index + 1,
+        {
+          original:
+            question.question,
+
+          normalized:
+            key,
+
+          exists:
+            databaseMap.has(key)
+        }
+      );
+
+
+      if (!key) {
         return;
       }
 
 
-      // Already exists in DB
+      // Already present in database
       if (
-        databaseFingerprints.has(
-          fingerprint
-        )
+        databaseMap.has(key)
       ) {
 
         const existingQuestion =
-          databaseFingerprints.get(
-            fingerprint
-          );
+          databaseMap.get(key);
 
-        q.isDuplicate = true;
+        question.isDuplicate =
+          true;
 
-        q.existingId =
-          existingQuestion.id || null;
+        question.existingId =
+          existingQuestion.id;
 
-        q.duplicateReason =
+        question.duplicateReason =
           'Already exists in database';
 
         return;
       }
 
 
-      // Repeated in current pasted data
+      // Duplicate inside same pasted import
       if (
-        currentFileFingerprints.has(
-          fingerprint
-        )
+        currentImport.has(key)
       ) {
 
-        q.isDuplicate = true;
+        question.isDuplicate =
+          true;
 
-        q.duplicateReason =
-          'Duplicate inside current import';
+        question.duplicateReason =
+          'Repeated inside current import';
 
         return;
       }
 
 
-      currentFileFingerprints.set(
-        fingerprint,
+      currentImport.set(
+        key,
         index
       );
     }
   );
-}
 
+
+  console.log(
+    '[DUP CHECK] Duplicates found:',
+    questions.filter(
+      q => q.isDuplicate
+    ).length
+  );
+}
   // ── RENDER ENGINE ──────────────────────────────────────────────────
   function autoWrapStandaloneLatex(text) {
     if (!text) return '';
@@ -2092,10 +2155,25 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
         showToast(`Question #${idx + 1} saved successfully to database!`);
       }
       q.isDuplicate = true;
-      renderCards();
-      if (typeof window.loadQuestions === 'function') {
-        window.loadQuestions();
-      }
+
+renderCards();
+
+if (
+  typeof window.loadQuestions ===
+  'function'
+) {
+
+  window.loadQuestions();
+}
+
+
+// Refresh duplicate cache
+await fetchExistingQuestions();
+
+console.log(
+  '[BULK] Database cache refreshed after single save:',
+  state.existingQuestions.length
+);
     } catch (err) {
       console.error('Save single question error:', err);
       if (typeof showToast === 'function') showToast('Failed to save question: ' + err.message, true);
@@ -2173,19 +2251,71 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
       });
 
       if (typeof showToast === 'function') {
-        showToast(`Successfully imported ${res.count || payload.length} questions!`);
-      }
+      if (typeof showToast === 'function') {
 
-      if (typeof window.loadQuestions === 'function') {
-        window.loadQuestions();
-      }
+  const importedCount =
+    Number(res.count || 0);
 
-      const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
-      if (ta) {
-        ta.value = '';
-        localStorage.removeItem('bq_draft_v2');
-        scheduleReparse();
-      }
+  const duplicateCount =
+    Number(res.duplicateCount || 0);
+
+  if (duplicateCount > 0) {
+
+    showToast(
+      `Imported ${importedCount} question(s). ${duplicateCount} duplicate question(s) skipped.`
+    );
+
+  } else {
+
+    showToast(
+      `Successfully imported ${importedCount || payload.length} questions!`
+    );
+  }
+}
+
+
+// Refresh Saved Questions
+if (
+  typeof window.loadQuestions ===
+  'function'
+) {
+
+  window.loadQuestions();
+}
+
+
+// ==========================================
+// IMPORTANT:
+// REFRESH DUPLICATE DATABASE CACHE
+// ==========================================
+
+await fetchExistingQuestions();
+
+console.log(
+  '[BULK] Database cache refreshed after import:',
+  state.existingQuestions.length
+);
+
+
+// Clear textarea only AFTER cache refresh
+const ta =
+  document.getElementById(
+    'bqTextarea'
+  ) ||
+  document.getElementById(
+    'bulkEditorTextarea'
+  );
+
+if (ta) {
+
+  ta.value = '';
+
+  localStorage.removeItem(
+    'bq_draft_v2'
+  );
+
+  runParse();
+}
     } catch (err) {
       console.error('Bulk Import error:', err);
       if (typeof showToast === 'function') showToast('Import failed: ' + err.message, true);
@@ -2197,38 +2327,36 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     }
   }
 
-  async function fetchExistingQuestions() {
+ async function fetchExistingQuestions() {
 
   try {
 
     const allQuestions = [];
 
     let offset = 0;
-
     const limit = 1000;
-
 
     while (true) {
 
       const res =
         await apiReq(
-          '/api/questions?offset=' +
-          offset +
-          '&limit=' +
-          limit
+          `/api/questions?offset=${offset}&limit=${limit}`
         );
-
 
       const page =
         Array.isArray(res)
           ? res
           : [];
 
+      console.log(
+        '[BULK] DB page:',
+        offset,
+        page.length
+      );
 
       allQuestions.push(
         ...page
       );
-
 
       if (
         page.length <
@@ -2237,40 +2365,21 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
         break;
       }
 
-
       offset += limit;
     }
-
 
     state.existingQuestions =
       allQuestions;
 
-
     console.log(
-      '[BULK DUPLICATE CHECK] Loaded existing questions:',
+      '[BULK] Total database questions:',
       allQuestions.length
     );
-
-
-    // IMPORTANT:
-    // Recheck anything already pasted
-    if (
-      state.parsedQuestions.length
-    ) {
-
-      checkDuplicates(
-        state.parsedQuestions,
-        state.existingQuestions
-      );
-
-      renderCards();
-    }
-
 
   } catch (error) {
 
     console.error(
-      'Failed to load existing questions:',
+      '[BULK] Failed loading DB questions:',
       error
     );
 
@@ -2280,23 +2389,117 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
 
   async function init() {
 
+  console.log(
+    '[BULK] Loading existing questions...'
+  );
+
   await fetchExistingQuestions();
 
-  initEditor();
-    const searchInput = document.getElementById('bqFilterSearch') || document.getElementById('bulkSearchInput');
-    const typeFilter = document.getElementById('bqFilterType');
-    const diffFilter = document.getElementById('bqFilterDiff') || document.getElementById('bulkFilterDiff');
-    const statusFilter = document.getElementById('bqFilterStatus') || document.getElementById('bulkFilterStatus');
-    const dupFilter = document.getElementById('bqFilterDup') || document.getElementById('bulkFilterDup');
-    const conceptFilter = document.getElementById('bqFilterConcept') || document.getElementById('bulkFilterConcept');
+  console.log(
+    '[BULK] Existing questions loaded:',
+    state.existingQuestions.length
+  );
 
-    if (searchInput) searchInput.addEventListener('input', (e) => { state.filterSearch = e.target.value; renderCards(); });
-    if (typeFilter) typeFilter.addEventListener('change', (e) => { state.filterType = e.target.value; renderCards(); });
-    if (diffFilter) diffFilter.addEventListener('change', (e) => { state.filterDiff = e.target.value; renderCards(); });
-    if (statusFilter) statusFilter.addEventListener('change', (e) => { state.filterStatus = e.target.value; renderCards(); });
-    if (dupFilter) dupFilter.addEventListener('change', (e) => { state.filterDup = e.target.value; renderCards(); });
-    if (conceptFilter) conceptFilter.addEventListener('change', (e) => { state.filterSearch = e.target.value; renderCards(); });
+  initEditor();
+
+  // Recheck anything already present
+  runParse();
+
+  const searchInput =
+    document.getElementById('bqFilterSearch') ||
+    document.getElementById('bulkSearchInput');
+
+  const typeFilter =
+    document.getElementById('bqFilterType');
+
+  const diffFilter =
+    document.getElementById('bqFilterDiff') ||
+    document.getElementById('bulkFilterDiff');
+
+  const statusFilter =
+    document.getElementById('bqFilterStatus') ||
+    document.getElementById('bulkFilterStatus');
+
+  const dupFilter =
+    document.getElementById('bqFilterDup') ||
+    document.getElementById('bulkFilterDup');
+
+  const conceptFilter =
+    document.getElementById('bqFilterConcept') ||
+    document.getElementById('bulkFilterConcept');
+
+  if (searchInput) {
+    searchInput.addEventListener(
+      'input',
+      e => {
+        state.filterSearch =
+          e.target.value;
+
+        renderCards();
+      }
+    );
   }
+
+  if (typeFilter) {
+    typeFilter.addEventListener(
+      'change',
+      e => {
+        state.filterType =
+          e.target.value;
+
+        renderCards();
+      }
+    );
+  }
+
+  if (diffFilter) {
+    diffFilter.addEventListener(
+      'change',
+      e => {
+        state.filterDiff =
+          e.target.value;
+
+        renderCards();
+      }
+    );
+  }
+
+  if (statusFilter) {
+    statusFilter.addEventListener(
+      'change',
+      e => {
+        state.filterStatus =
+          e.target.value;
+
+        renderCards();
+      }
+    );
+  }
+
+  if (dupFilter) {
+    dupFilter.addEventListener(
+      'change',
+      e => {
+        state.filterDup =
+          e.target.value;
+
+        renderCards();
+      }
+    );
+  }
+
+  if (conceptFilter) {
+    conceptFilter.addEventListener(
+      'change',
+      e => {
+        state.filterSearch =
+          e.target.value;
+
+        renderCards();
+      }
+    );
+  }
+}
 
   const _global = typeof window !== 'undefined' ? window : globalThis;
   _global.ParserRegistry = ParserRegistry;
