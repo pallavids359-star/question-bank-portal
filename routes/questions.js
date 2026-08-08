@@ -902,58 +902,7 @@ router.post('/', ...CREATE_ROLES, async (req, res) => {
   }
 });
 
-// ── POST /api/questions/batch ──────────────────────────────────────────────
-router.post('/batch', ...CREATE_ROLES, async (req, res) => {
-  const items = req.body;
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'Payload must be a non-empty array of questions.' });
-  }
 
-  const userId = req.user.userId;
-  const userName = req.user.name;
-
-  const preparedRecords =
-  items.map((item, index) => {
-
-    const payload =
-      toDatabase(item);
-
-    if(isValidUuid(userId)){
-
-      payload.created_by =
-        userId;
-
-      payload.updated_by =
-        userId;
-    }
-
-    payload.created_by_name =
-      userName || '';
-
-    payload.updated_by_name =
-      userName || '';
-
-    return {
-      originalIndex: index,
-      record:
-        sanitizeRecord(
-          payload,
-          CORE_FIELDS
-        )
-    };
-  });
-
-  if (
-  preparedRecords.some(
-    item =>
-      !hasSubjectAccess(
-        req.user,
-        item.record.subject
-      )
-  )
-) {
-    return res.status(403).json({ error: 'The batch contains questions outside your assigned subject.' });
-  }
 // ── POST /api/questions/batch ──────────────────────────────────────────────
 router.post('/batch', ...CREATE_ROLES, async (req, res) => {
 
