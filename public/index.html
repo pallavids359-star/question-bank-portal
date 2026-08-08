@@ -1046,33 +1046,51 @@ textarea{resize:vertical;min-height:70px;}
       </nav>
 
       <div class="sidebar-footer">
-         <button
-  type="button"
-  id="notificationBtn"
-  class="notification-btn"
-  onclick="openNotifications()"
+         <div
+  style="
+    position:relative;
+    width:100%;
+    margin-bottom:10px;
+  "
 >
-  🔔 Notifications
-
-  <span
-    id="notificationBadge"
+  <button
+    type="button"
+    id="notificationBtn"
+    class="notification-btn"
+    onclick="openNotifications()"
     style="
-      display:none;
-      position:absolute;
-      right:8px;
-      top:5px;
-      min-width:18px;
-      height:18px;
-      line-height:18px;
-      border-radius:20px;
-      background:#d4af37;
-      color:#000;
-      font-size:10px;
-      font-weight:800;
+      position:relative;
+      width:100%;
     "
-  >0</span>
-</button>
-</button>
+  >
+    🔔 Notifications
+
+    <span
+      id="notificationBadge"
+      style="
+        display:none;
+        position:absolute;
+        top:-10px;
+        right:-6px;
+        min-width:22px;
+        height:22px;
+        padding:0 6px;
+        align-items:center;
+        justify-content:center;
+        border-radius:20px;
+        background:#d4af37;
+        color:#000;
+        border:2px solid #111;
+        font-size:11px;
+        font-weight:900;
+        line-height:18px;
+        box-sizing:border-box;
+        z-index:10;
+      "
+    >0</span>
+  </button>
+</div>
+
         <div class="user-card" id="sidebarUserCard">
           <div class="user-card-name" id="sbUserName">—</div>
           <div class="user-card-email" id="sbUserEmail">—</div>
@@ -5584,20 +5602,22 @@ async function loadNotifications(){
       ).length;
 
     const badge =
-      document.getElementById(
-        'notificationBadge'
-      );
+  document.getElementById(
+    'notificationBadge'
+  );
 
-    if(badge){
+if (badge) {
 
-      badge.textContent =
-        unread > 99 ? '99+' : unread;
+  badge.textContent =
+    unread > 99
+      ? '99+'
+      : String(unread);
 
-      badge.style.display =
-        unread > 0
-          ? 'inline-block'
-          : 'none';
-    }
+  badge.style.display =
+    unread > 0
+      ? 'flex'
+      : 'none';
+}
 
   }catch(error){
 
