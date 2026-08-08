@@ -13,7 +13,9 @@ const ADMIN_ONLY = [requireAuth, requireRole('admin')];
 router.get('/', ...ADMIN_ONLY, async (req, res) => {
   let { data, error } = await supabase
     .from('users')
-    .select('id, name, email, role, subject, status, is_active, created_at, last_login')
+    .select(
+  'id, name, email, role, subject, status, is_active, login_limit, created_at, last_login'
+)
     .order('created_at', { ascending: false });
 
   if (error && error.message && error.message.includes('subject')) {
@@ -98,14 +100,18 @@ router.post('/', ...ADMIN_ONLY, async (req, res) => {
 router.get('/:id', ...ADMIN_ONLY, async (req, res) => {
   let { data, error } = await supabase
     .from('users')
-    .select('id, name, email, role, subject, status, is_active, created_at, last_login')
+    .select(
+  'id, name, email, role, subject, status, is_active, login_limit, created_at, last_login'
+)
     .eq('id', req.params.id)
     .maybeSingle();
 
   if (error && error.message && error.message.includes('subject')) {
     const fallback = await supabase
       .from('users')
-      .select('id, name, email, role, status, is_active, created_at, last_login')
+      .select(
+  'id, name, email, role, subject, status, is_active, login_limit, created_at, last_login'
+)
       .eq('id', req.params.id)
       .maybeSingle();
     data = fallback.data ? { ...fallback.data, subject: 'All' } : null;
@@ -144,7 +150,9 @@ router.put('/:id', ...ADMIN_ONLY, async (req, res) => {
     .from('users')
     .update(update)
     .eq('id', req.params.id)
-    .select('id, name, email, role, subject, status, is_active, created_at, last_login')
+    .select(
+  'id, name, email, role, subject, status, is_active, login_limit, created_at, last_login'
+)
     .maybeSingle();
 
   if (error && error.message && error.message.includes('subject')) {
