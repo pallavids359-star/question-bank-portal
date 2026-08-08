@@ -1260,27 +1260,120 @@ router.put('/:id/review', ...EDIT_ROLES, async (req, res) => {
     // ------------------------------------
     // FIND WHO ADDED THE QUESTION
     // ------------------------------------
+// ------------------------------------
+// FIND WHO ADDED THE QUESTION
+// ------------------------------------
 
-    let recipients = [];
+let recipients = [];
 
-    if (isValidUuid(question.created_by)) {
 
-      // Send directly to original contributor
-      recipients.push(question.created_by);
+// 1. First try exact creator user ID
+if (isValidUuid(question.created_by)) {
 
-    } else {
+  const { data: creatorById, error: creatorIdError } =
+    await supabase
+      .from('users')
+      .select('id, name, email, role')
+      .eq('id', question.created_by)
+      .maybeSingle();
 
-      // Legacy question without created_by:
-      // notify Admins so the review isn't lost.
-      const { data: admins } = await supabase
-        .from('users')
-        .select('id')
-        .eq('role', 'admin');
+  if (creatorIdError) {
+    console.error(
+      '[review notification creator lookup by id]',
+      creatorIdError
+    );
+  }
 
-      recipients = (admins || [])
-        .map(user => user.id)
-        .filter(Boolean);
+  if (
+    creatorById &&
+    isValidUuid(creatorById.id)
+  ) {
+    recipients.push(creatorById.id);
+  }
+}
+
+
+// 2. If ID failed, try created_by_name
+if (
+  recipients.length === 0 &&
+  question.created_by_name
+) {
+
+  const creatorName =
+    String(question.created_by_name)
+      .trim()
+      .toLowerCase();
+
+  const { data: users, error: usersError } =
+    await supabase
+      .from('users')
+      .select('id, name, email, role');
+
+  if (usersError) {
+
+    console.error(
+      '[review notification creator lookup]',
+      usersError
+    );
+
+  } else {
+
+    const matchingUser =
+      (users || []).find(user => {
+
+        const name =
+          String(user.name || '')
+            .trim()
+            .toLowerCase();
+
+        const email =
+          String(user.email || '')
+            .trim()
+            .toLowerCase();
+
+        return (
+          name === creatorName ||
+          email === creatorName
+        );
+
+      });
+
+    if (
+      matchingUser &&
+      isValidUuid(matchingUser.id)
+    ) {
+      recipients.push(matchingUser.id);
     }
+  }
+}
+
+
+// Remove duplicates
+recipients =
+  [...new Set(recipients)];
+
+console.log(
+  '[REVIEW NOTIFICATION RECIPIENTS]',
+  {
+    questionId: question.id,
+    createdBy: question.created_by,
+    createdByName: question.created_by_name,
+    recipients
+  }
+);
+
+
+// Do NOT silently continue when creator is not found
+if (recipients.length === 0) {
+
+  return res.status(400).json({
+    error:
+      'Review was saved, but notification could not be sent because the original contributor could not be identified.',
+    details:
+      `created_by=${question.created_by || 'NULL'}, created_by_name=${question.created_by_name || 'NULL'}`
+  });
+
+}
 
 
     // ------------------------------------
@@ -1317,17 +1410,49 @@ router.put('/:id/review', ...EDIT_ROLES, async (req, res) => {
           false
       }));
 
-      const { error: notifyError } =
-        await supabase
-          .from('notifications')
-          .insert(notifications);
+      const {
+  data: createdNotifications,
+  error: notifyError
+} = await supabase
+  .from('notifications')
+  .insert(notifications)
+  .select();
 
-      if (notifyError) {
-        console.warn(
-          'Notification creation failed:',
-          notifyError.message
-        );
-      }
+
+if (notifyError) {
+
+  console.error(
+    '[REVIEW NOTIFICATION INSERT ERROR]',
+    notifyError
+  );
+
+  return res.status(500).json({
+    error:
+      'Review was saved, but notification could not be created.',
+    details:
+      notifyError.message
+  });
+
+}
+
+
+console.log(
+  '[REVIEW NOTIFICATION CREATED]',
+  createdNotifications
+);
+
+
+if (
+  !createdNotifications ||
+  createdNotifications.length === 0
+) {
+
+  return res.status(500).json({
+    error:
+      'Review was saved, but no notification row was created.'
+  });
+
+}
     }
 
 
