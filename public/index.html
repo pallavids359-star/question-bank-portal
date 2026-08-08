@@ -279,6 +279,25 @@ body{
   background:rgba(201,162,39,.10);
   transform:translateY(-3px);
 }
+   .clickable-stat{
+  cursor:pointer !important;
+  transition:
+    transform .2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow .2s ease,
+    border-color .2s ease,
+    background .2s ease;
+}
+
+.clickable-stat:hover{
+  transform:translateY(-3px);
+  box-shadow:0 8px 24px rgba(201,162,39,.35);
+  border-color:var(--gold) !important;
+  background:rgba(201,162,39,.10);
+}
+
+.clickable-stat:active{
+  transform:translateY(-3px);
+}
 .stat-card::before{
   content:''; position:absolute; top:0; left:0; right:0; height:2px;
 }
@@ -5608,19 +5627,17 @@ window.QP                   = QP;     // already assigned above
   }
 
 })();
-   document.addEventListener('click', function (e) {
+  document.addEventListener('click', function (e) {
   const card = e.target.closest('.clickable-stat');
 
   if (!card) return;
 
-  // Remove highlight from all dashboard boxes
   document
     .querySelectorAll('.clickable-stat')
     .forEach(item => {
       item.classList.remove('selected');
     });
 
-  // Keep clicked box highlighted
   card.classList.add('selected');
 });
 </script>
