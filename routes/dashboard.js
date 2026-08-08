@@ -330,27 +330,58 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
     });
     const mostActiveEntry = [...activityMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
-    const adderStats = users
-      .filter(user => user.role === 'adder' || user.role === 'admin')
-      .map(user => {
-        const byId = contributionCountsById.get(String(user.id)) || 0;
-        const nameKey = String(user.name || '').trim().toLowerCase();
-        const emailKey = String(user.email || '').trim().toLowerCase();
-        const byName = Math.max(
-          contributionCountsByName.get(nameKey) || 0,
-          contributionCountsByName.get(emailKey) || 0
-        );
-        return {
-          id: user.id,
-          name: user.name || user.email || 'Unnamed Contributor',
-          email: user.email || '',
-          role: user.role,
-          subject: user.subject || 'All',
-          questionCount: byId || byName,
-        };
-      })
-      .filter(user => user.questionCount > 0)
-      .sort((a, b) => b.questionCount - a.questionCount || a.name.localeCompare(b.name));
+   const adderStats = users
+  .filter(
+    user =>
+      user.role === 'adder' ||
+      user.role === 'admin'
+  )
+  .map(user => {
+
+    const questionCount =
+      questions.filter(question =>
+        questionBelongsToUser(
+          question,
+          user
+        )
+      ).length;
+
+    return {
+
+      id:
+        user.id,
+
+      name:
+        user.name ||
+        user.email ||
+        'Unnamed Contributor',
+
+      email:
+        user.email || '',
+
+      role:
+        user.role,
+
+      subject:
+        user.subject || 'All',
+
+      questionCount
+
+    };
+
+  })
+  .filter(
+    user =>
+      user.questionCount > 0
+  )
+  .sort(
+    (a, b) =>
+      b.questionCount -
+        a.questionCount ||
+      a.name.localeCompare(
+        b.name
+      )
+  );
     const userTimeStats = buildUserTimeStats(
   users,
   loginSessions,
