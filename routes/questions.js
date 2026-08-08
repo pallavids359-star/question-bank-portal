@@ -713,57 +713,194 @@ router.get('/:id', ...READ_ROLES, async (req, res) => {
   }
   res.json(toApi(data));
 });
+function normalizeDuplicateText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[“”‘’]/g, '"')
+    .trim();
+}
+
+async function findDuplicateQuestion(payload, excludeId = null) {
+  const normalizedQuestion =
+    normalizeDuplicateText(payload.question);
+
+  if (!normalizedQuestion) {
+    return null;
+  }
+
+  let query = supabase
+    .from('questions')
+    .select(`
+      id,
+      subject,
+      klass,
+      chapter,
+      topic,
+      q_type,
+      question,
+      created_at
+    `)
+    .eq('subject', payload.subject)
+    .eq('klass', payload.klass)
+    .eq('chapter', payload.chapter);
+
+  if (excludeId) {
+    query = query.neq('id', excludeId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error(
+      '[duplicate question check]',
+      error
+    );
+
+    throw error;
+  }
+
+  const rows =
+    Array.isArray(data)
+      ? data
+      : [];
+
+  return rows.find(row => {
+    const sameText =
+      normalizeDuplicateText(row.question) ===
+      normalizedQuestion;
+
+    const sameType =
+      normalizeQType(row.q_type) ===
+      normalizeQType(payload.q_type);
+
+    return sameText && sameType;
+  }) || null;
+}
 
 // ── POST /api/questions ────────────────────────────────────────────────────
 router.post('/', ...CREATE_ROLES, async (req, res) => {
-  const payload = toDatabase(req.body);
+  try {
+    const payload = toDatabase(req.body);
 
-  if (!hasSubjectAccess(req.user, payload.subject)) {
-    return res.status(403).json({ error: 'You can add questions only to your assigned subject.' });
+    if (!hasSubjectAccess(req.user, payload.subject)) {
+      return res.status(403).json({
+        error:
+          'You can add questions only to your assigned subject.'
+      });
+    }
+
+    // ==========================================
+    // DUPLICATE CHECK
+    // ==========================================
+
+    const duplicate =
+      await findDuplicateQuestion(payload);
+
+    if (duplicate) {
+      return res.status(409).json({
+        error: 'Duplicate question detected.',
+        duplicate: true,
+
+        existingQuestion: {
+          id: duplicate.id,
+          subject: duplicate.subject,
+          klass: duplicate.klass,
+          chapter: duplicate.chapter,
+          topic: duplicate.topic,
+          question: duplicate.question,
+          createdAt: duplicate.created_at
+        }
+      });
+    }
+
+    // ==========================================
+    // OWNERSHIP
+    // ==========================================
+
+    if (isValidUuid(req.user?.userId)) {
+      payload.created_by =
+        req.user.userId;
+
+      payload.updated_by =
+        req.user.userId;
+    }
+
+    payload.created_by_name =
+      req.user?.name || '';
+
+    payload.updated_by_name =
+      req.user?.name || '';
+
+    // ==========================================
+    // INSERT
+    // ==========================================
+
+    const { data, error } =
+      await supabase
+        .from('questions')
+        .insert(payload)
+        .select()
+        .single();
+
+    if (error) {
+      console.error(
+        '[create question]',
+        error
+      );
+
+      return res.status(400).json({
+        error:
+          'Failed to create question.',
+        details:
+          error.message
+      });
+    }
+
+    await writeAuditLog({
+      userId:
+        req.user?.userId,
+
+      userName:
+        req.user?.name,
+
+      action:
+        'CREATE',
+
+      resourceType:
+        'question',
+
+      resourceId:
+        data.id,
+
+      details: {
+        subject:
+          payload.subject,
+
+        chapter:
+          payload.chapter
+      }
+    }).catch(() => {});
+
+    return res.status(201).json(
+      toApi(data)
+    );
+
+  } catch (err) {
+    console.error(
+      '[create question]',
+      err
+    );
+
+    return res.status(500).json({
+      error:
+        'Failed to create question.',
+      details:
+        err.message
+    });
   }
-
-  // Inject ownership safely
-  if (isValidUuid(req.user?.userId)) {
-    payload.created_by = req.user.userId;
-    payload.updated_by = req.user.userId;
-  }
-  payload.created_by_name = req.user?.name || '';
-  payload.updated_by_name = req.user?.name || '';
-
-  let { data, error } = await supabase
-    .from('questions')
-    .insert(payload)
-    .select()
-    .single();
-
-  // Auto-fallback if database missing extended columns (e.g. statement1, assertion)
-  if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
-    console.warn('Single insert missing extended columns, auto-stripping to basic legacy schema...');
-    const basicPayload = sanitizeRecord(payload, BASIC_LEGACY_FIELDS);
-    const retry = await supabase
-      .from('questions')
-      .insert(basicPayload)
-      .select()
-      .single();
-    data = retry.data;
-    error = retry.error;
-  }
-
-  if (error) {
-    return res.status(400).json({ error: 'Failed to create question: ' + error.message, details: error.message });
-  }
-
-  await writeAuditLog({
-    userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
-    userName: req.user?.name || 'User',
-    action: 'CREATE_QUESTION', resourceType: 'question',
-    resourceId: data.id,
-    details: { subject: data.subject, qType: data.q_type, chapter: data.chapter },
-  }).catch(err => console.warn('Audit log failed:', err.message));
-
-  res.status(201).json(toApi(data));
 });
-
 
 // ── POST /api/questions/batch ──────────────────────────────────────────────
 router.post('/batch', ...CREATE_ROLES, async (req, res) => {
