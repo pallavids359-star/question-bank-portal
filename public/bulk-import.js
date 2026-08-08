@@ -1245,20 +1245,157 @@ if (mode === 'col1') {
     });
   }
 
-  function checkDuplicates(questions, dbList) {
-    if (!dbList || !dbList.length) return;
-    questions.forEach(q => {
-      const normQ = (q.question || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!normQ) return;
-      const match = dbList.find(dbq => {
-        if (q.subject && dbq.subject !== q.subject) return false;
-        const normDB = (dbq.question || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        return normDB === normQ;
-      });
-      q.isDuplicate = !!match;
-      q.existingId = match ? match.id : null;
-    });
+function normalizeDuplicateQuestion(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—−]/g, '-')
+    .replace(
+      /^\s*(?:q(?:uestion)?\s*)?\d+\s*[.)\-:]\s*/i,
+      ''
+    )
+    .replace(/\$\$/g, '')
+    .replace(/\$/g, '')
+    .replace(/\\\(/g, '')
+    .replace(/\\\)/g, '')
+    .replace(/\\\[/g, '')
+    .replace(/\\\]/g, '')
+    .replace(/\\,/g, '')
+    .replace(/\\;/g, '')
+    .replace(/\\!/g, '')
+    .replace(/\\quad/g, ' ')
+    .replace(/\\qquad/g, ' ')
+    .replace(/\s*([,.;:?!])\s*/g, '$1')
+    .replace(/\s*=\s*/g, '=')
+    .replace(/\s*\+\s*/g, '+')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+
+function checkDuplicates(
+  questions,
+  dbList
+) {
+
+  if (!Array.isArray(questions)) {
+    return;
   }
+
+  const existing =
+    Array.isArray(dbList)
+      ? dbList
+      : [];
+
+  const databaseFingerprints =
+    new Map();
+
+
+  // -----------------------------------
+  // Build database question lookup
+  // -----------------------------------
+
+  existing.forEach(dbq => {
+
+    const fingerprint =
+      normalizeDuplicateQuestion(
+        dbq.question
+      );
+
+    if (
+      fingerprint &&
+      !databaseFingerprints.has(
+        fingerprint
+      )
+    ) {
+
+      databaseFingerprints.set(
+        fingerprint,
+        dbq
+      );
+    }
+  });
+
+
+  // -----------------------------------
+  // Detect duplicate inside pasted file
+  // -----------------------------------
+
+  const currentFileFingerprints =
+    new Map();
+
+
+  questions.forEach(
+    (q, index) => {
+
+      const fingerprint =
+        normalizeDuplicateQuestion(
+          q.question
+        );
+
+
+      q.isDuplicate = false;
+      q.existingId = null;
+      q.duplicateReason = '';
+
+
+      if (!fingerprint) {
+        return;
+      }
+
+
+      // Already exists in DB
+      if (
+        databaseFingerprints.has(
+          fingerprint
+        )
+      ) {
+
+        const existingQuestion =
+          databaseFingerprints.get(
+            fingerprint
+          );
+
+        q.isDuplicate = true;
+
+        q.existingId =
+          existingQuestion.id || null;
+
+        q.duplicateReason =
+          'Already exists in database';
+
+        return;
+      }
+
+
+      // Repeated in current pasted data
+      if (
+        currentFileFingerprints.has(
+          fingerprint
+        )
+      ) {
+
+        q.isDuplicate = true;
+
+        q.duplicateReason =
+          'Duplicate inside current import';
+
+        return;
+      }
+
+
+      currentFileFingerprints.set(
+        fingerprint,
+        index
+      );
+    }
+  );
+}
 
   // ── RENDER ENGINE ──────────────────────────────────────────────────
   function autoWrapStandaloneLatex(text) {
@@ -2061,18 +2198,91 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
   }
 
   async function fetchExistingQuestions() {
-    try {
-      const res = await apiReq('/api/questions');
-      state.existingQuestions = res || [];
-    } catch (_) {
-      state.existingQuestions = [];
+
+  try {
+
+    const allQuestions = [];
+
+    let offset = 0;
+
+    const limit = 1000;
+
+
+    while (true) {
+
+      const res =
+        await apiReq(
+          '/api/questions?offset=' +
+          offset +
+          '&limit=' +
+          limit
+        );
+
+
+      const page =
+        Array.isArray(res)
+          ? res
+          : [];
+
+
+      allQuestions.push(
+        ...page
+      );
+
+
+      if (
+        page.length <
+        limit
+      ) {
+        break;
+      }
+
+
+      offset += limit;
     }
+
+
+    state.existingQuestions =
+      allQuestions;
+
+
+    console.log(
+      '[BULK DUPLICATE CHECK] Loaded existing questions:',
+      allQuestions.length
+    );
+
+
+    // IMPORTANT:
+    // Recheck anything already pasted
+    if (
+      state.parsedQuestions.length
+    ) {
+
+      checkDuplicates(
+        state.parsedQuestions,
+        state.existingQuestions
+      );
+
+      renderCards();
+    }
+
+
+  } catch (error) {
+
+    console.error(
+      'Failed to load existing questions:',
+      error
+    );
+
+    state.existingQuestions = [];
   }
+}
 
-  function init() {
-    initEditor();
-    fetchExistingQuestions();
+  async function init() {
 
+  await fetchExistingQuestions();
+
+  initEditor();
     const searchInput = document.getElementById('bqFilterSearch') || document.getElementById('bulkSearchInput');
     const typeFilter = document.getElementById('bqFilterType');
     const diffFilter = document.getElementById('bqFilterDiff') || document.getElementById('bulkFilterDiff');
