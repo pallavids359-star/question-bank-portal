@@ -2316,8 +2316,61 @@ if (ta) {
   runParse();
 }
     } catch (err) {
-      console.error('Bulk Import error:', err);
-      if (typeof showToast === 'function') showToast('Import failed: ' + err.message, true);
+
+  const message =
+    String(err?.message || err || '');
+
+
+  // All submitted questions already exist
+  if (
+    message
+      .toLowerCase()
+      .includes(
+        'all questions are duplicates'
+      )
+  ) {
+
+    if (
+      typeof showToast ===
+      'function'
+    ) {
+
+      showToast(
+        'All questions already exist. No new questions were imported.'
+      );
+    }
+
+
+    // Refresh duplicate cache
+    await fetchExistingQuestions();
+
+
+    // Re-check pasted questions
+    runParse();
+
+    return;
+  }
+
+
+  // Actual import error
+  console.error(
+    'Bulk Import error:',
+    err
+  );
+
+
+  if (
+    typeof showToast ===
+    'function'
+  ) {
+
+    showToast(
+      'Import failed: ' +
+      message,
+      true
+    );
+  }
+}
     } finally {
       if (btn) {
         btn.disabled = false;
