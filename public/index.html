@@ -450,6 +450,21 @@ thead th{
 tbody tr{ border-bottom:1px solid #1a1a1a; transition:background .1s; }
 tbody tr:last-child{ border-bottom:none; }
 tbody tr:hover{ background:rgba(255,255,255,.02); }
+   /* Role selected from Dashboard */
+#usersTableBody tr.dashboard-role-highlight{
+  background:rgba(201,162,39,.14) !important;
+  box-shadow:
+    inset 4px 0 0 var(--gold),
+    inset 0 0 0 1px rgba(201,162,39,.35);
+}
+
+/* Still highlighted when pointer is over it */
+#usersTableBody tr.dashboard-role-highlight:hover{
+  background:rgba(201,162,39,.22) !important;
+  box-shadow:
+    inset 4px 0 0 var(--gold),
+    inset 0 0 0 1px var(--gold);
+}
 tbody td{ padding:12px 16px; font-size:13.5px; color:var(--text); }
 .badge{
   display:inline-block; padding:2px 10px; border-radius:20px;
@@ -2669,31 +2684,25 @@ function filterQuestionsByTimeframe(tf) {
   loadQuestions(1,false);
   showToast(`Showing questions added ${tf === 'today' ? 'today' : tf === 'week' ? 'this week' : 'this month'}`);
 }
-
+let highlightedUserRole = '';
 function filterUsersByRole(targetRole) {
-  if (!Auth.can('manage_users') && Auth.getRole() !== 'admin') {
-    showToast(`Showing ${targetRole} count details. Access User Management for full list.`);
+
+  if (
+    !Auth.can('manage_users') &&
+    Auth.getRole() !== 'admin'
+  ) {
+    showToast(
+      `Showing ${targetRole} count details. Access User Management for full list.`
+    );
     return;
   }
+
+  highlightedUserRole =
+    String(targetRole || '')
+      .trim()
+      .toLowerCase();
+
   showPage('pageUsers');
-  setTimeout(() => {
-    const tbody = document.getElementById('usersTableBody');
-    if (!tbody) return;
-    const rows = tbody.querySelectorAll('tr');
-    let found = 0;
-    rows.forEach(tr => {
-      const roleText = tr.textContent.toLowerCase();
-      if (roleText.includes(targetRole.toLowerCase())) {
-        tr.style.outline = '2px solid var(--gold)';
-        tr.style.background = 'rgba(201,162,39,0.12)';
-        found++;
-      } else {
-        tr.style.outline = '';
-        tr.style.background = '';
-      }
-    });
-    showToast(`Highlighted ${found} user(s) with role: ${targetRole.toUpperCase()}`);
-  }, 250);
 }
 
 function showMostActiveDetails() {
@@ -2724,7 +2733,12 @@ function renderUsersTable(users) {
   }
   const currentId = (Auth.getUser() || {}).id;
   tbody.innerHTML = users.map(u => `
-    <tr>
+    <tr class="${
+  highlightedUserRole &&
+  String(u.role || '').toLowerCase() === highlightedUserRole
+    ? 'dashboard-role-highlight'
+    : ''
+}">
       <td><strong style="color:#fff">${escapeHtml(u.name)}</strong></td>
       <td style="color:var(--muted)">${escapeHtml(u.email)}</td>
       <td><span class="badge role-${u.role}" style="text-transform:capitalize">${u.role}</span></td>
