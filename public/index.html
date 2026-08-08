@@ -3689,7 +3689,11 @@ function renderList(){
   if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';renderQuestionPagination();return;}
 
   const canEdit = Auth.can('edit');
-  const canDelete = Auth.can('delete');
+const canDelete = Auth.can('delete');
+
+const currentRole = Auth.getRole();
+const isEditor = currentRole === 'editor';
+const isAdmin = currentRole === 'admin';
 
   let renderErrors = 0;
   filtered.forEach(q=>{
@@ -3700,6 +3704,44 @@ function renderList(){
     const meta=document.createElement('div');meta.className='li-meta';
     meta.innerHTML=`<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(q.chapter||'')} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
     main.appendChild(meta);
+   const reviewStatus = q.reviewStatus || 'pending';
+
+const statusLine = document.createElement('div');
+statusLine.style.fontSize = '12px';
+statusLine.style.marginTop = '5px';
+
+if(reviewStatus === 'accepted'){
+  statusLine.innerHTML = '✅ <strong>Accepted</strong>';
+
+  if(q.acceptedByName){
+    statusLine.innerHTML +=
+      ' by ' + escapeHtml(q.acceptedByName);
+  }
+
+  if(q.acceptedAt){
+    statusLine.innerHTML +=
+      ' · ' + new Date(q.acceptedAt).toLocaleString();
+  }
+
+}else if(reviewStatus === 'reviewed'){
+
+  statusLine.innerHTML = '👁 <strong>Reviewed</strong>';
+
+  if(q.reviewedByName){
+    statusLine.innerHTML +=
+      ' by ' + escapeHtml(q.reviewedByName);
+  }
+
+  if(q.reviewedAt){
+    statusLine.innerHTML +=
+      ' · ' + new Date(q.reviewedAt).toLocaleString();
+  }
+
+}else{
+  statusLine.innerHTML = '⏳ <strong>Pending Review</strong>';
+}
+
+main.appendChild(statusLine);
 
     if(q.topic && q.topic !== 'General'){
       const conceptLabel=document.createElement('div');
@@ -3829,13 +3871,95 @@ main.appendChild(optsLine);
       if(q.updatedBy&&q.updatedBy!==q.createdBy)ownerLine.textContent+=' · Edited by '+q.updatedBy;
       main.appendChild(ownerLine);
     }
-    const btns=document.createElement('div');btns.className='li-btns';
-    if(canEdit){
-      const editBtn=document.createElement('button');editBtn.className='icon-btn';editBtn.title='Edit';editBtn.textContent='✎';editBtn.addEventListener('click',()=>QP.edit(q.id));btns.appendChild(editBtn);
-    }
-    if(canDelete){
-      const delBtn=document.createElement('button');delBtn.className='icon-btn del';delBtn.title='Delete';delBtn.textContent='✕';delBtn.addEventListener('click',()=>QP.remove(q.id));btns.appendChild(delBtn);
-    }
+    const btns=document.createElement('div');
+btns.className='li-btns';
+
+// ======================================
+// EDITOR ACTIONS
+// ======================================
+if(isEditor || isAdmin){
+
+  // REVIEW
+  const reviewBtn=document.createElement('button');
+  reviewBtn.className='icon-btn';
+  reviewBtn.title='Review Question';
+  reviewBtn.textContent='Review';
+
+  reviewBtn.addEventListener('click',()=>{
+    QP.review(q.id);
+  });
+
+  btns.appendChild(reviewBtn);
+
+
+  // DIFFICULTY
+  const difficultyBtn=document.createElement('button');
+  difficultyBtn.className='icon-btn';
+  difficultyBtn.title='Change Difficulty';
+  difficultyBtn.textContent='Difficulty';
+
+  difficultyBtn.addEventListener('click',()=>{
+    QP.difficulty(q.id);
+  });
+
+  btns.appendChild(difficultyBtn);
+
+
+  // ACCEPT
+  const acceptBtn=document.createElement('button');
+  acceptBtn.className='icon-btn';
+  acceptBtn.title='Accept Question';
+
+  acceptBtn.textContent =
+    q.reviewStatus === 'accepted'
+      ? '✓ Accepted'
+      : 'Accept';
+
+  acceptBtn.disabled =
+    q.reviewStatus === 'accepted';
+
+  acceptBtn.addEventListener('click',()=>{
+    QP.accept(q.id);
+  });
+
+  btns.appendChild(acceptBtn);
+}
+
+
+// ======================================
+// ADDER NORMAL EDIT
+// ======================================
+if(canEdit && !isEditor){
+
+  const editBtn=document.createElement('button');
+
+  editBtn.className='icon-btn';
+  editBtn.title='Edit Question';
+  editBtn.textContent='✎';
+
+  editBtn.addEventListener('click',()=>{
+    QP.edit(q.id);
+  });
+
+  btns.appendChild(editBtn);
+}
+
+
+// DELETE
+if(canDelete){
+
+  const delBtn=document.createElement('button');
+
+  delBtn.className='icon-btn del';
+  delBtn.title='Delete';
+  delBtn.textContent='✕';
+
+  delBtn.addEventListener('click',()=>{
+    QP.remove(q.id);
+  });
+
+  btns.appendChild(delBtn);
+}
     top.appendChild(main);top.appendChild(btns);item.appendChild(top);listContainer.appendChild(item);
     } catch(renderErr) {
       renderErrors++;
@@ -3877,6 +4001,113 @@ function extractStatementPairForForm(questionText){
 }
 
 window.QP={
+   review: async function(id){
+
+  if(!confirm('Mark this question as reviewed?')){
+    return;
+  }
+
+  try{
+
+    await apiRequest(
+      '/'+encodeURIComponent(id)+'/review',
+      {
+        method:'PUT',
+        body:JSON.stringify({})
+      }
+    );
+
+    showToast('Question marked as reviewed.');
+
+    await loadQuestions(questionPage,false);
+
+  }catch(error){
+
+    showToast(
+      error.message || 'Unable to review question.',
+      true
+    );
+  }
+},
+   difficulty: async function(id){
+
+  const q=allQuestions.find(
+    x=>String(x.id)===String(id)
+  );
+
+  if(!q) return;
+
+  const value=prompt(
+    'Enter Difficulty: Easy, Medium or Hard',
+    q.difficulty || 'Medium'
+  );
+
+  if(value===null) return;
+
+  const difficulty=String(value).trim();
+
+  if(!/^(Easy|Medium|Hard)$/i.test(difficulty)){
+    showToast(
+      'Difficulty must be Easy, Medium or Hard.',
+      true
+    );
+    return;
+  }
+
+  try{
+
+    await apiRequest(
+      '/'+encodeURIComponent(id)+'/difficulty',
+      {
+        method:'PUT',
+        body:JSON.stringify({
+          difficulty
+        })
+      }
+    );
+
+    showToast('Difficulty updated.');
+
+    await loadQuestions(questionPage,false);
+
+  }catch(error){
+
+    showToast(
+      error.message || 'Unable to update difficulty.',
+      true
+    );
+  }
+},
+   accept: async function(id){
+
+  if(!confirm(
+    'Accept this question? The acceptance will be recorded.'
+  )){
+    return;
+  }
+
+  try{
+
+    await apiRequest(
+      '/'+encodeURIComponent(id)+'/accept',
+      {
+        method:'PUT',
+        body:JSON.stringify({})
+      }
+    );
+
+    showToast('Question accepted successfully.');
+
+    await loadQuestions(questionPage,false);
+
+  }catch(error){
+
+    showToast(
+      error.message || 'Unable to accept question.',
+      true
+    );
+  }
+},
   edit:function(id){
     if(!Auth.can('edit')){showToast('Only an Adder, Editor, or Admin can edit questions.',true);return;}
     const q=allQuestions.find(x=>String(x.id)===String(id));if(!q)return;editingId=id;
