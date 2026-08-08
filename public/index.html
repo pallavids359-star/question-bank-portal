@@ -524,6 +524,23 @@ textarea{resize:vertical;min-height:70px;}
   flex-shrink:0;
   max-width:360px;
 }
+   .notification-btn{
+  width:100%;
+  position:relative;
+  background:transparent;
+  border:1px solid var(--border);
+  color:var(--muted);
+  border-radius:9px;
+  padding:11px 14px;
+  cursor:pointer;
+  font-size:13px;
+  margin-bottom:10px;
+}
+
+.notification-btn:hover{
+  color:var(--gold);
+  border-color:var(--gold);
+}
 
 .icon-btn{
   background:transparent;
@@ -791,12 +808,7 @@ textarea{resize:vertical;min-height:70px;}
          <button
   type="button"
   id="notificationBtn"
-  class="logout-btn"
-  style="
-    margin-bottom:10px;
-    border-color:#3a3a3a;
-    position:relative;
-  "
+  class="notification-btn"
   onclick="openNotifications()"
 >
   🔔 Notifications
@@ -818,6 +830,7 @@ textarea{resize:vertical;min-height:70px;}
       font-weight:800;
     "
   >0</span>
+</button>
 </button>
         <div class="user-card" id="sidebarUserCard">
           <div class="user-card-name" id="sbUserName">—</div>
@@ -2056,7 +2069,7 @@ window.doLogout = doLogout;
 
 // Event listener delegation for Sign Out button
 document.addEventListener('click', function(e) {
-  if (e.target && (e.target.closest('#logoutBtn') || e.target.closest('.logout-btn'))) {
+  if (e.target && e.target.closest('#logoutBtn')) {
     doLogout();
   }
 });
