@@ -4059,7 +4059,28 @@ function extractStatementPairForForm(questionText){
 window.QP={
    review: async function(id){
 
-  if(!confirm('Mark this question as reviewed?')){
+  const q = allQuestions.find(
+    x => String(x.id) === String(id)
+  );
+
+  if(!q) return;
+
+  const message = prompt(
+    'Enter review message / reason for the question:',
+    ''
+  );
+
+  if(message === null){
+    return;
+  }
+
+  const cleanMessage = String(message).trim();
+
+  if(!cleanMessage){
+    showToast(
+      'Please enter a review message.',
+      true
+    );
     return;
   }
 
@@ -4069,18 +4090,22 @@ window.QP={
       '/'+encodeURIComponent(id)+'/review',
       {
         method:'PUT',
-        body:JSON.stringify({})
+        body:JSON.stringify({
+          message: cleanMessage
+        })
       }
     );
 
-    showToast('Question marked as reviewed.');
+    showToast(
+      'Review sent to the question contributor.'
+    );
 
     await loadQuestions(questionPage,false);
 
   }catch(error){
 
     showToast(
-      error.message || 'Unable to review question.',
+      error.message || 'Unable to submit review.',
       true
     );
   }
