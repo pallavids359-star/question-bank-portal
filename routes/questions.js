@@ -628,7 +628,74 @@ router.get('/', ...READ_ROLES, async (req, res) => {
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
   });
 });
+// ── GET CURRENT USER NOTIFICATIONS ─────────────────────────────
+router.get('/my/notifications', ...READ_ROLES, async (req, res) => {
 
+  const effectiveUser =
+    await getEffectiveUser(req.user);
+
+  const userId =
+    effectiveUser?.id ||
+    req.user?.userId;
+
+  if (!isValidUuid(userId)) {
+    return res.json([]);
+  }
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('recipient_id', userId)
+    .order('created_at', {
+      ascending:false
+    })
+    .limit(100);
+
+  if(error){
+    return res.status(500).json({
+      error:error.message
+    });
+  }
+
+  res.json(data || []);
+});
+// ── MARK NOTIFICATION READ ─────────────────────────────────────
+router.put('/my/notifications/:notificationId/read', ...READ_ROLES, async (req,res)=>{
+
+  const effectiveUser =
+    await getEffectiveUser(req.user);
+
+  const userId =
+    effectiveUser?.id ||
+    req.user?.userId;
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({
+      is_read:true
+    })
+    .eq(
+      'id',
+      req.params.notificationId
+    )
+    .eq(
+      'recipient_id',
+      userId
+    )
+    .select()
+    .maybeSingle();
+
+  if(error){
+    return res.status(500).json({
+      error:error.message
+    });
+  }
+
+  res.json({
+    success:true,
+    notification:data
+  });
+});
 // ── GET /api/questions/:id ─────────────────────────────────────────────────
 router.get('/:id', ...READ_ROLES, async (req, res) => {
   const { data, error } = await supabase
@@ -1151,6 +1218,217 @@ router.put('/:id/accept', ...EDIT_ROLES, async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+// ── REVIEW QUESTION + SEND NOTIFICATION ────────────────────────
+router.put('/:id/review', ...EDIT_ROLES, async (req, res) => {
+  try {
+
+    const effectiveUser = await getEffectiveUser(req.user);
+    const userRole = String(effectiveUser?.role || '').toLowerCase();
+
+    if (!['admin', 'editor'].includes(userRole)) {
+      return res.status(403).json({
+        error: 'Only an Editor or Admin can review questions.'
+      });
+    }
+
+    const reviewMessage =
+      String(req.body?.message || '').trim();
+
+    if (!reviewMessage) {
+      return res.status(400).json({
+        error: 'Review message is required.'
+      });
+    }
+
+    const { data: question, error: fetchError } = await supabase
+      .from('questions')
+      .select(
+        'id, subject, chapter, q_type, created_by, created_by_name'
+      )
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchError) {
+      return res.status(500).json({
+        error: fetchError.message
+      });
+    }
+
+    if (!question) {
+      return res.status(404).json({
+        error: 'Question not found.'
+      });
+    }
+
+    if (!hasSubjectAccess(effectiveUser, question.subject)) {
+      return res.status(403).json({
+        error: 'This question is outside your assigned subject.'
+      });
+    }
+
+    // ------------------------------------
+    // UPDATE QUESTION REVIEW INFORMATION
+    // ------------------------------------
+
+    const reviewPayload = {
+
+      review_status: 'reviewed',
+
+      review_message: reviewMessage,
+
+      reviewed_by:
+        isValidUuid(req.user?.userId)
+          ? req.user.userId
+          : null,
+
+      reviewed_by_name:
+        req.user?.name || 'Editor',
+
+      reviewed_at:
+        new Date().toISOString(),
+
+      // A new review removes previous acceptance
+      accepted_by: null,
+      accepted_by_name: null,
+      accepted_at: null
+    };
+
+    const { data: updated, error: updateError } =
+      await supabase
+        .from('questions')
+        .update(reviewPayload)
+        .eq('id', req.params.id)
+        .select()
+        .single();
+
+    if (updateError) {
+      return res.status(400).json({
+        error: updateError.message
+      });
+    }
+
+
+    // ------------------------------------
+    // FIND WHO ADDED THE QUESTION
+    // ------------------------------------
+
+    let recipients = [];
+
+    if (isValidUuid(question.created_by)) {
+
+      // Send directly to original contributor
+      recipients.push(question.created_by);
+
+    } else {
+
+      // Legacy question without created_by:
+      // notify Admins so the review isn't lost.
+      const { data: admins } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'admin');
+
+      recipients = (admins || [])
+        .map(user => user.id)
+        .filter(Boolean);
+    }
+
+
+    // ------------------------------------
+    // CREATE NOTIFICATION
+    // ------------------------------------
+
+    if (recipients.length) {
+
+      const notifications = recipients.map(recipientId => ({
+
+        recipient_id: recipientId,
+
+        sender_id:
+          isValidUuid(req.user?.userId)
+            ? req.user.userId
+            : null,
+
+        sender_name:
+          req.user?.name || 'Editor',
+
+        question_id:
+          question.id,
+
+        notification_type:
+          'question_review',
+
+        title:
+          'Question Review',
+
+        message:
+          reviewMessage,
+
+        is_read:
+          false
+      }));
+
+      const { error: notifyError } =
+        await supabase
+          .from('notifications')
+          .insert(notifications);
+
+      if (notifyError) {
+        console.warn(
+          'Notification creation failed:',
+          notifyError.message
+        );
+      }
+    }
+
+
+    await writeAuditLog({
+
+      userId:
+        isValidUuid(req.user?.userId)
+          ? req.user.userId
+          : null,
+
+      userName:
+        req.user?.name || 'Editor',
+
+      action:
+        'REVIEW_QUESTION',
+
+      resourceType:
+        'question',
+
+      resourceId:
+        question.id,
+
+      details: {
+        subject:
+          question.subject,
+
+        contributor:
+          question.created_by_name || '',
+
+        reviewMessage:
+          reviewMessage
+      }
+
+    }).catch(()=>{});
+
+
+    res.json(toApi(updated));
+
+  } catch(error) {
+
+    console.error(
+      'Review question failed:',
+      error
+    );
+
+    res.status(500).json({
+      error: error.message
+    });
   }
 });
 
