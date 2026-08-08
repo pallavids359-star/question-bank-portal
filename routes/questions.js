@@ -39,6 +39,13 @@ const fieldMap = {
   author:        'author',
   referenceBook: 'reference_book',
   status:        'status',
+  reviewStatus:   'review_status',
+reviewedBy:     'reviewed_by',
+reviewedByName: 'reviewed_by_name',
+reviewedAt:     'reviewed_at',
+acceptedBy:     'accepted_by',
+acceptedByName: 'accepted_by_name',
+acceptedAt:     'accepted_at',
   tags:          'tags',
   year:          'year',
   attemptLevel:  'attempt_level',
@@ -80,7 +87,13 @@ const CORE_FIELDS = [
   'predef_options', 'column_a', 'column_b', 'match_options',
   'num_answer', 'correct_option', 'solution_text',
   'difficulty', 'marks', 'neg_marks', 'language', 'source', 'author', 'reference_book',
-  'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
+  'created_by', 'created_by_name', 'updated_by', 'updated_by_name','review_status',
+'reviewed_by',
+'reviewed_by_name',
+'reviewed_at',
+'accepted_by',
+'accepted_by_name',
+'accepted_at'
 ];
 
 const BASIC_LEGACY_FIELDS = [
@@ -788,8 +801,239 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
     data: insertedData.map(toApi)
   });
 });
+// ── UPDATE DIFFICULTY ONLY ─────────────────────────────────────
+router.put('/:id/difficulty', ...EDIT_ROLES, async (req, res) => {
+  try {
+    const effectiveUser = await getEffectiveUser(req.user);
 
+    const { data: question, error: fetchError } = await supabase
+      .from('questions')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
 
+    if (fetchError) {
+      return res.status(500).json({ error: fetchError.message });
+    }
+
+    if (!question) {
+      return res.status(404).json({ error: 'Question not found.' });
+    }
+
+    if (!hasSubjectAccess(effectiveUser, question.subject)) {
+      return res.status(403).json({
+        error: 'You can update only questions from your assigned subject.'
+      });
+    }
+
+    const difficulty = String(req.body?.difficulty || '').trim();
+
+    if (!/^(easy|medium|hard)$/i.test(difficulty)) {
+      return res.status(400).json({
+        error: 'Difficulty must be Easy, Medium, or Hard.'
+      });
+    }
+
+    const normalized =
+      difficulty.charAt(0).toUpperCase() +
+      difficulty.slice(1).toLowerCase();
+
+    const storedType =
+      readLegacyQuestionType(question.solution_text) ||
+      question.q_type ||
+      'mcq_single';
+
+    const storedData = readLegacyData(question.solution_text);
+
+    const payload = {
+      solution_text: storeLegacyMetadata(
+        question.solution_text,
+        normalized,
+        storedType,
+        storedData
+      ),
+      updated_by_name: req.user?.name || ''
+    };
+
+    const { data, error } = await supabase
+      .from('questions')
+      .update(payload)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    await writeAuditLog({
+      userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
+      userName: req.user?.name || 'Editor',
+      action: 'UPDATE_QUESTION_DIFFICULTY',
+      resourceType: 'question',
+      resourceId: req.params.id,
+      details: {
+        subject: question.subject,
+        difficulty: normalized
+      }
+    }).catch(() => {});
+
+    res.json(toApi(data));
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+// ── REVIEW QUESTION ─────────────────────────────────────────────
+router.put('/:id/review', ...EDIT_ROLES, async (req, res) => {
+  try {
+    const effectiveUser = await getEffectiveUser(req.user);
+
+    const { data: question, error: fetchError } = await supabase
+      .from('questions')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchError) {
+      return res.status(500).json({ error: fetchError.message });
+    }
+
+    if (!question) {
+      return res.status(404).json({ error: 'Question not found.' });
+    }
+
+    if (!hasSubjectAccess(effectiveUser, question.subject)) {
+      return res.status(403).json({
+        error: 'You can review only questions from your assigned subject.'
+      });
+    }
+
+    const payload = {
+      review_status: 'reviewed',
+
+      reviewed_by:
+        isValidUuid(req.user?.userId)
+          ? req.user.userId
+          : null,
+
+      reviewed_by_name: req.user?.name || 'Editor',
+      reviewed_at: new Date().toISOString(),
+
+      updated_by_name: req.user?.name || 'Editor'
+    };
+
+    const { data, error } = await supabase
+      .from('questions')
+      .update(payload)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    await writeAuditLog({
+      userId: isValidUuid(req.user?.userId)
+        ? req.user.userId
+        : null,
+
+      userName: req.user?.name || 'Editor',
+
+      action: 'REVIEW_QUESTION',
+
+      resourceType: 'question',
+      resourceId: req.params.id,
+
+      details: {
+        subject: question.subject,
+        status: 'reviewed'
+      }
+
+    }).catch(() => {});
+
+    res.json(toApi(data));
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+// ── ACCEPT QUESTION ─────────────────────────────────────────────
+router.put('/:id/accept', ...EDIT_ROLES, async (req, res) => {
+  try {
+    const effectiveUser = await getEffectiveUser(req.user);
+
+    const { data: question, error: fetchError } = await supabase
+      .from('questions')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchError) {
+      return res.status(500).json({ error: fetchError.message });
+    }
+
+    if (!question) {
+      return res.status(404).json({ error: 'Question not found.' });
+    }
+
+    if (!hasSubjectAccess(effectiveUser, question.subject)) {
+      return res.status(403).json({
+        error: 'You can accept only questions from your assigned subject.'
+      });
+    }
+
+    const payload = {
+      review_status: 'accepted',
+
+      accepted_by:
+        isValidUuid(req.user?.userId)
+          ? req.user.userId
+          : null,
+
+      accepted_by_name: req.user?.name || 'Editor',
+      accepted_at: new Date().toISOString(),
+
+      updated_by_name: req.user?.name || 'Editor'
+    };
+
+    const { data, error } = await supabase
+      .from('questions')
+      .update(payload)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    await writeAuditLog({
+      userId: isValidUuid(req.user?.userId)
+        ? req.user.userId
+        : null,
+
+      userName: req.user?.name || 'Editor',
+
+      action: 'ACCEPT_QUESTION',
+
+      resourceType: 'question',
+      resourceId: req.params.id,
+
+      details: {
+        subject: question.subject,
+        status: 'accepted'
+      }
+
+    }).catch(() => {});
+
+    res.json(toApi(data));
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ── PUT /api/questions/:id ─────────────────────────────────────────────────
 router.put('/:id', ...EDIT_ROLES, async (req, res) => {
