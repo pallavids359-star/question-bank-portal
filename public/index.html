@@ -271,6 +271,12 @@ body{
 .clickable-stat:active{
   transform:translateY(0);
 }
+   .clickable-stat.selected{
+  border-color:var(--gold) !important;
+  box-shadow:0 8px 24px rgba(201,162,39,.35);
+  background:rgba(201,162,39,.10);
+  transform:translateY(-3px);
+}
 
 /* Persistent selected dashboard box */
 .clickable-stat.selected{
@@ -5628,6 +5634,19 @@ window.QP                   = QP;     // already assigned above
 
 })();
   document.addEventListener('click', function (e) {
+  const card = e.target.closest('.clickable-stat');
+
+  if (!card) return;
+
+  document
+    .querySelectorAll('.clickable-stat')
+    .forEach(item => {
+      item.classList.remove('selected');
+    });
+
+  card.classList.add('selected');
+});
+   document.addEventListener('click', function (e) {
   const card = e.target.closest('.clickable-stat');
 
   if (!card) return;
