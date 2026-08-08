@@ -3321,7 +3321,6 @@ document.getElementById('resetPwModal').addEventListener('click',    e => { if(e
 // ============================================================
 let auditTimePeriod = 'week';
 let auditTimeCursor = new Date();
-   let auditTimeOffset = 0;
 
 function startOfAuditPeriod(date, period) {
 
@@ -3329,22 +3328,27 @@ function startOfAuditPeriod(date, period) {
 
   d.setHours(0, 0, 0, 0);
 
+
+  // MONTH
   if (period === 'month') {
 
     d.setDate(1);
-    return d;
 
+    return d;
   }
 
+
+  // YEAR
   if (period === 'year') {
 
     d.setMonth(0, 1);
-    return d;
 
+    return d;
   }
 
+
   // WEEK
-  // Monday = beginning of week
+  // Monday = first day
 
   const day = d.getDay();
 
@@ -3360,108 +3364,47 @@ function startOfAuditPeriod(date, period) {
   return d;
 }
 
+
 function auditPeriodRange() {
 
-  const now = new Date();
-
-  let base =
-    new Date(now);
-
-  // ----------------------------------
-  // WEEK
-  // ----------------------------------
-
-  if (auditTimePeriod === 'week') {
-
-    base.setDate(
-      base.getDate() +
-      (auditTimeOffset * 7)
+  const start =
+    startOfAuditPeriod(
+      auditTimeCursor,
+      auditTimePeriod
     );
 
-    const start =
-      startOfAuditPeriod(
-        base,
-        'week'
-      );
 
-    const end =
-      new Date(start);
+  const end =
+    new Date(start);
+
+
+  // YEAR
+  if (auditTimePeriod === 'year') {
+
+    end.setFullYear(
+      end.getFullYear() + 1
+    );
+
+  }
+
+  // MONTH
+  else if (auditTimePeriod === 'month') {
+
+    end.setMonth(
+      end.getMonth() + 1
+    );
+
+  }
+
+  // WEEK
+  else {
 
     end.setDate(
       end.getDate() + 7
     );
 
-    end.setMilliseconds(-1);
-
-    return {
-      start,
-      end
-    };
   }
 
-
-  // ----------------------------------
-  // MONTH
-  // ----------------------------------
-
-  if (auditTimePeriod === 'month') {
-
-    base =
-      new Date(
-        now.getFullYear(),
-        now.getMonth() +
-          auditTimeOffset,
-        1
-      );
-
-    const start =
-      startOfAuditPeriod(
-        base,
-        'month'
-      );
-
-    const end =
-      new Date(
-        start.getFullYear(),
-        start.getMonth() + 1,
-        1
-      );
-
-    end.setMilliseconds(-1);
-
-    return {
-      start,
-      end
-    };
-  }
-
-
-  // ----------------------------------
-  // YEAR
-  // ----------------------------------
-
-  base =
-    new Date(
-      now.getFullYear() +
-        auditTimeOffset,
-      0,
-      1
-    );
-
-  const start =
-    startOfAuditPeriod(
-      base,
-      'year'
-    );
-
-  const end =
-    new Date(
-      start.getFullYear() + 1,
-      0,
-      1
-    );
-
-  end.setMilliseconds(-1);
 
   return {
     start,
@@ -3469,8 +3412,10 @@ function auditPeriodRange() {
   };
 }
 
+
 function auditPeriodLabel(start, end) {
 
+  // YEAR
   if (auditTimePeriod === 'year') {
 
     return String(
@@ -3479,6 +3424,8 @@ function auditPeriodLabel(start, end) {
 
   }
 
+
+  // MONTH
   if (auditTimePeriod === 'month') {
 
     return start.toLocaleDateString(
@@ -3491,6 +3438,14 @@ function auditPeriodLabel(start, end) {
 
   }
 
+
+  // WEEK
+  const displayEnd =
+    new Date(
+      end.getTime() - 1
+    );
+
+
   return (
     start.toLocaleDateString(
       'en-GB',
@@ -3499,9 +3454,11 @@ function auditPeriodLabel(start, end) {
         month: 'short',
         year: 'numeric'
       }
-    ) +
-    ' – ' +
-    end.toLocaleDateString(
+    )
+    +
+    ' – '
+    +
+    displayEnd.toLocaleDateString(
       'en-GB',
       {
         day: '2-digit',
@@ -3512,24 +3469,86 @@ function auditPeriodLabel(start, end) {
   );
 }
 
+
 function changeAuditTimePeriod(period) {
-  auditTimePeriod = period === 'month' ? 'month' : 'week';
-  auditTimeCursor = new Date();
+
+  if (
+    !['week', 'month', 'year']
+      .includes(period)
+  ) {
+
+    period = 'week';
+
+  }
+
+
+  auditTimePeriod =
+    period;
+
+
+  auditTimeCursor =
+    new Date();
+
+
   loadAuditTimeSummary();
 }
+
 
 function moveAuditTimePeriod(direction) {
-  const cursor = startOfAuditPeriod(auditTimeCursor, auditTimePeriod);
-  if (auditTimePeriod === 'month') cursor.setMonth(cursor.getMonth() + direction);
-  else cursor.setDate(cursor.getDate() + (direction * 7));
-  auditTimeCursor = cursor;
+
+  const cursor =
+    startOfAuditPeriod(
+      auditTimeCursor,
+      auditTimePeriod
+    );
+
+
+  // YEAR
+  if (auditTimePeriod === 'year') {
+
+    cursor.setFullYear(
+      cursor.getFullYear() + direction
+    );
+
+  }
+
+  // MONTH
+  else if (auditTimePeriod === 'month') {
+
+    cursor.setMonth(
+      cursor.getMonth() + direction
+    );
+
+  }
+
+  // WEEK
+  else {
+
+    cursor.setDate(
+      cursor.getDate() +
+      (direction * 7)
+    );
+
+  }
+
+
+  auditTimeCursor =
+    cursor;
+
+
   loadAuditTimeSummary();
 }
 
+
 function resetAuditTimePeriod() {
-  auditTimeCursor = new Date();
+
+  auditTimeCursor =
+    new Date();
+
+
   loadAuditTimeSummary();
 }
+
 
 function formatTrackedDuration(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
