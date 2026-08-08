@@ -718,39 +718,53 @@ function normalizeDuplicateText(value) {
   return String(value || '')
     .toLowerCase()
 
-    // Remove HTML
+    // HTML
     .replace(/<[^>]*>/g, ' ')
-
-    // HTML spaces
     .replace(/&nbsp;/gi, ' ')
 
-    // Smart quotes
+    // Unicode normalization
+    .normalize('NFKC')
+
+    // Smart quotes/dashes
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
+    .replace(/[–—−]/g, '-')
 
     // Remove question numbering
-    // 1. Question
-    // 2) Question
-    // Q3. Question
-    // Question 4: Question
     .replace(
       /^\s*(?:q(?:uestion)?\s*)?\d+\s*[.)\-:]\s*/i,
       ''
     )
 
-    // Normalize LaTeX spacing
+    // Remove LaTeX math wrappers
+    .replace(/\$\$/g, '')
+    .replace(/\$/g, '')
+    .replace(/\\\(/g, '')
+    .replace(/\\\)/g, '')
+    .replace(/\\\[/g, '')
+    .replace(/\\\]/g, '')
+
+    // Ignore LaTeX spacing commands
     .replace(/\\,/g, '')
     .replace(/\\;/g, '')
     .replace(/\\!/g, '')
+    .replace(/\\quad/g, ' ')
+    .replace(/\\qquad/g, ' ')
 
-    // Normalize punctuation spacing
+    // Normalize escaped percent etc.
+    .replace(/\\%/g, '%')
+    .replace(/\\_/g, '_')
+
+    // Normalize spaces around punctuation
     .replace(/\s*([,.;:?!])\s*/g, '$1')
 
-    // Normalize operator spacing
+    // Normalize operators
     .replace(/\s*=\s*/g, '=')
     .replace(/\s*\+\s*/g, '+')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s*\/\s*/g, '/')
 
-    // Collapse spaces and line breaks
+    // Collapse spaces
     .replace(/\s+/g, ' ')
 
     .trim();
@@ -828,24 +842,13 @@ async function findDuplicateQuestion(
     const duplicate =
       rows.find(row => {
 
-        const sameSubject =
-          canonicalSubject(
-            row.subject
-          ).toLowerCase() ===
-          canonicalSubject(
-            payload.subject
-          ).toLowerCase();
-
         const sameText =
-          normalizeDuplicateText(
-            row.question
-          ) ===
-          normalizedQuestion;
+  normalizeDuplicateText(
+    row.question
+  ) ===
+  normalizedQuestion;
 
-        return (
-          sameSubject &&
-          sameText
-        );
+return sameText;
       });
 
     if (duplicate) {
@@ -1101,14 +1104,8 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
         record.question
       );
 
-    const fingerprint = [
-  canonicalSubject(
-    record.subject
-  ).toLowerCase(),
-
-  normalizedQuestion
-
-].join('|');
+   const fingerprint =
+  normalizedQuestion;
 
 
     // Duplicate inside same import
