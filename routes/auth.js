@@ -350,7 +350,8 @@ router.post('/heartbeat', requireAuth, async (req, res) => {
 });
 // ── GET /api/auth/user-time-summary ───────────────────────────
 // Admin only
-// Returns user activity summary for a selected date range.
+// Returns question contribution + session summary
+// for the selected week / month / year.
 router.get(
   '/user-time-summary',
   requireAuth,
@@ -359,9 +360,9 @@ router.get(
 
     try {
 
-      // ---------------------------------------------------------
+      // =========================================================
       // READ DATE RANGE
-      // ---------------------------------------------------------
+      // =========================================================
 
       const startRaw = req.query.start;
       const endRaw   = req.query.end;
@@ -369,40 +370,66 @@ router.get(
       let startDate;
       let endDate;
 
+
       if (startRaw) {
-        startDate = new Date(startRaw);
+
+        startDate =
+          new Date(startRaw);
+
       } else {
-        startDate = new Date();
-        startDate.setDate(startDate.getDate() - 7);
+
+        startDate =
+          new Date();
+
+        startDate.setDate(
+          startDate.getDate() - 7
+        );
       }
 
+
       if (endRaw) {
-        endDate = new Date(endRaw);
+
+        endDate =
+          new Date(endRaw);
+
       } else {
-        endDate = new Date();
+
+        endDate =
+          new Date();
       }
 
 
       if (
-        Number.isNaN(startDate.getTime()) ||
-        Number.isNaN(endDate.getTime())
+        Number.isNaN(
+          startDate.getTime()
+        ) ||
+        Number.isNaN(
+          endDate.getTime()
+        )
       ) {
+
         return res.status(400).json({
-          error: 'Invalid start or end date.'
+          error:
+            'Invalid start or end date.'
         });
+
       }
 
 
-      if (startDate > endDate) {
+      if (startDate >= endDate) {
+
         return res.status(400).json({
-          error: 'Start date cannot be after end date.'
+          error:
+            'Start date must be before end date.'
         });
+
       }
 
 
-      // ---------------------------------------------------------
+
+      // =========================================================
       // GET LOGIN SESSIONS
-      // ---------------------------------------------------------
+      // =========================================================
 
       const {
         data: sessions,
@@ -412,26 +439,23 @@ router.get(
         .select(`
           id,
           user_id,
+          status,
           login_time,
           logout_time,
           last_activity_at,
-          duration_seconds,
-          status
+          duration_seconds
         `)
-        .eq('status', 'success')
+        .eq(
+          'status',
+          'success'
+        )
         .gte(
           'login_time',
           startDate.toISOString()
         )
-        .lte(
+        .lt(
           'login_time',
           endDate.toISOString()
-        )
-        .order(
-          'login_time',
-          {
-            ascending: false
-          }
         );
 
 
@@ -443,8 +467,10 @@ router.get(
         );
 
         return res.status(500).json({
-          error: sessionError.message
+          error:
+            sessionError.message
         });
+
       }
 
 
@@ -454,47 +480,66 @@ router.get(
           : [];
 
 
-      // ---------------------------------------------------------
-      // GET UNIQUE USER IDS
-      // ---------------------------------------------------------
 
-      const userIds =
-        [
-          ...new Set(
-            validSessions
-              .map(s => s.user_id)
-              .filter(Boolean)
-          )
-        ];
+      // =========================================================
+      // GET QUESTIONS ADDED DURING SELECTED PERIOD
+      // =========================================================
+
+      const {
+        data: questions,
+        error: questionError
+      } = await supabase
+        .from('questions')
+        .select(`
+          id,
+          created_by,
+          created_by_name,
+          created_at
+        `)
+        .gte(
+          'created_at',
+          startDate.toISOString()
+        )
+        .lt(
+          'created_at',
+          endDate.toISOString()
+        );
 
 
-      // No activity in selected period
-      if (!userIds.length) {
+      if (questionError) {
 
-        return res.json({
-          period:
-            req.query.period || 'week',
+        console.error(
+          '[user-time-summary questions]',
+          questionError
+        );
 
-          start:
-            startDate.toISOString(),
-
-          end:
-            endDate.toISOString(),
-
-          totalSeconds: 0,
-
-          activeUsers: 0,
-
-          totalSessions: 0,
-
-          data: []
+        return res.status(500).json({
+          error:
+            questionError.message
         });
+
       }
 
 
-      // ---------------------------------------------------------
-      // GET USERS
-      // ---------------------------------------------------------
+      const validQuestions =
+        Array.isArray(questions)
+          ? questions
+          : [];
+
+
+
+      // =========================================================
+      // GET ALL USERS
+      // =========================================================
+      //
+      // We load all users because:
+      //
+      // 1. A user may have added questions but have no login
+      //    session recorded during this period.
+      //
+      // 2. Older questions may only contain created_by_name.
+      //
+      // =========================================================
 
       const {
         data: users,
@@ -508,11 +553,7 @@ router.get(
           role,
           subject,
           status
-        `)
-        .in(
-          'id',
-          userIds
-        );
+        `);
 
 
       if (usersError) {
@@ -523,36 +564,36 @@ router.get(
         );
 
         return res.status(500).json({
-          error: usersError.message
+          error:
+            usersError.message
         });
+
       }
 
 
-      // ---------------------------------------------------------
-      // USER LOOKUP MAP
-      // ---------------------------------------------------------
 
-      const userMap =
-        new Map();
+      // =========================================================
+      // NORMALIZE USERS
+      // =========================================================
 
+      const normalizedUsers =
+        (users || []).map(user => {
 
-      (users || []).forEach(user => {
+          const logical =
+            toLogicalUser(user);
 
-        const logical =
-          toLogicalUser(user);
+          return {
 
-        userMap.set(
-          String(user.id),
-          {
-            id: user.id,
+            id:
+              user.id,
 
             name:
               user.name ||
+              user.email ||
               'Unnamed User',
 
             email:
-              user.email ||
-              '',
+              user.email || '',
 
             role:
               logical.role ||
@@ -562,18 +603,160 @@ router.get(
             subject:
               logical.subject ||
               user.subject ||
-              'All'
-          }
+              'All',
+
+            status:
+              user.status || 'active'
+
+          };
+
+        });
+
+
+
+      // =========================================================
+      // USER LOOKUP MAPS
+      // =========================================================
+
+      const userMapById =
+        new Map();
+
+      const userMapByName =
+        new Map();
+
+
+      normalizedUsers.forEach(user => {
+
+        if (user.id) {
+
+          userMapById.set(
+            String(user.id),
+            user
+          );
+
+        }
+
+
+        const nameKey =
+          String(
+            user.name || ''
+          )
+            .trim()
+            .toLowerCase();
+
+
+        const emailKey =
+          String(
+            user.email || ''
+          )
+            .trim()
+            .toLowerCase();
+
+
+        if (nameKey) {
+
+          userMapByName.set(
+            nameKey,
+            user
+          );
+
+        }
+
+
+        if (emailKey) {
+
+          userMapByName.set(
+            emailKey,
+            user
+          );
+
+        }
+
+      });
+
+
+
+      // =========================================================
+      // QUESTION COUNT MAP
+      // =========================================================
+
+      const questionCountByUser =
+        new Map();
+
+
+      validQuestions.forEach(question => {
+
+        let user = null;
+
+
+        // -----------------------------------------
+        // Normal modern question ownership
+        // -----------------------------------------
+
+        if (question.created_by) {
+
+          user =
+            userMapById.get(
+              String(
+                question.created_by
+              )
+            ) || null;
+
+        }
+
+
+        // -----------------------------------------
+        // Legacy question ownership by name
+        // -----------------------------------------
+
+        if (
+          !user &&
+          question.created_by_name
+        ) {
+
+          const ownerKey =
+            String(
+              question.created_by_name
+            )
+              .trim()
+              .toLowerCase();
+
+
+          user =
+            userMapByName.get(
+              ownerKey
+            ) || null;
+
+        }
+
+
+        if (!user || !user.id) {
+          return;
+        }
+
+
+        const key =
+          String(user.id);
+
+
+        questionCountByUser.set(
+          key,
+          (
+            questionCountByUser.get(
+              key
+            ) || 0
+          ) + 1
         );
 
       });
 
 
-      // ---------------------------------------------------------
-      // AGGREGATE USER ACTIVITY
-      // ---------------------------------------------------------
 
-      const summaryMap =
+      // =========================================================
+      // SESSION SUMMARY MAP
+      // =========================================================
+
+      const sessionSummaryByUser =
         new Map();
 
 
@@ -585,32 +768,22 @@ router.get(
 
 
         const key =
-          String(session.user_id);
+          String(
+            session.user_id
+          );
 
 
-        const user =
-          userMap.get(key) || {
-            id: session.user_id,
-            name: 'Unknown User',
-            email: '',
-            role: 'viewer',
-            subject: 'All'
-          };
+        if (
+          !sessionSummaryByUser.has(
+            key
+          )
+        ) {
 
-
-        if (!summaryMap.has(key)) {
-
-          summaryMap.set(
+          sessionSummaryByUser.set(
             key,
             {
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              role: user.role,
-              subject: user.subject,
-
-              totalSeconds: 0,
               sessions: 0,
+              totalSeconds: 0,
               lastActiveAt: null
             }
           );
@@ -619,8 +792,23 @@ router.get(
 
 
         const row =
-          summaryMap.get(key);
+          sessionSummaryByUser.get(
+            key
+          );
 
+
+        // -----------------------------------------
+        // Session count
+        // -----------------------------------------
+
+        row.sessions += 1;
+
+
+
+        // -----------------------------------------
+        // Website duration
+        // Kept internally if needed later
+        // -----------------------------------------
 
         const duration =
           Math.max(
@@ -635,8 +823,10 @@ router.get(
           duration;
 
 
-        row.sessions += 1;
 
+        // -----------------------------------------
+        // Last activity
+        // -----------------------------------------
 
         const activityTime =
           session.last_activity_at ||
@@ -648,7 +838,9 @@ router.get(
         if (activityTime) {
 
           const activityDate =
-            new Date(activityTime);
+            new Date(
+              activityTime
+            );
 
 
           if (
@@ -665,7 +857,8 @@ router.get(
           ) {
 
             row.lastActiveAt =
-              activityDate.toISOString();
+              activityDate
+                .toISOString();
 
           }
 
@@ -674,55 +867,156 @@ router.get(
       });
 
 
-      // ---------------------------------------------------------
-      // FINAL USER LIST
-      // ---------------------------------------------------------
+
+      // =========================================================
+      // BUILD FINAL USER DATA
+      // =========================================================
 
       const data =
-        Array.from(
-          summaryMap.values()
-        )
-          .sort(
-            (a, b) =>
-              b.totalSeconds -
-              a.totalSeconds
-          );
+        normalizedUsers
+          .map(user => {
+
+            const key =
+              String(user.id);
 
 
-      const totalSeconds =
-        data.reduce(
-          (sum, user) =>
-            sum +
-            (
-              Number(
-                user.totalSeconds
-              ) || 0
-            ),
-          0
-        );
+            const sessionData =
+              sessionSummaryByUser.get(
+                key
+              ) || {
+                sessions: 0,
+                totalSeconds: 0,
+                lastActiveAt: null
+              };
 
+
+            const questionCount =
+              questionCountByUser.get(
+                key
+              ) || 0;
+
+
+            return {
+
+              id:
+                user.id,
+
+              name:
+                user.name,
+
+              email:
+                user.email,
+
+              role:
+                user.role,
+
+              subject:
+                user.subject,
+
+
+              // =====================================
+              // MAIN VALUE NOW = QUESTIONS
+              // =====================================
+
+              questionCount,
+
+
+              // =====================================
+              // KEEP SESSION INFORMATION
+              // =====================================
+
+              sessions:
+                sessionData.sessions,
+
+              lastActiveAt:
+                sessionData.lastActiveAt,
+
+
+              // Optional:
+              // retained for compatibility,
+              // although frontend no longer displays it.
+              totalSeconds:
+                sessionData.totalSeconds
+
+            };
+
+          })
+
+
+          // Only display users who either:
+          // - added a question
+          // - or logged in during this period
+          .filter(user => {
+
+            return (
+              user.questionCount > 0 ||
+              user.sessions > 0
+            );
+
+          })
+
+
+          // Highest question contribution first
+          .sort((a, b) => {
+
+            return (
+              b.questionCount -
+                a.questionCount ||
+
+              b.sessions -
+                a.sessions ||
+
+              String(a.name)
+                .localeCompare(
+                  String(b.name)
+                )
+            );
+
+          });
+
+
+
+      // =========================================================
+      // TOTAL QUESTIONS
+      // =========================================================
+
+      const totalQuestions =
+        validQuestions.length;
+
+
+
+      // =========================================================
+      // TOTAL SESSIONS
+      // =========================================================
 
       const totalSessions =
-        data.reduce(
-          (sum, user) =>
-            sum +
-            (
-              Number(
-                user.sessions
-              ) || 0
-            ),
-          0
-        );
+        validSessions.length;
 
 
-      // ---------------------------------------------------------
-      // RESPONSE EXPECTED BY FRONTEND
-      // ---------------------------------------------------------
+
+      // =========================================================
+      // ACTIVE USERS
+      // =========================================================
+      //
+      // A user counts as active for the selected period if
+      // they added at least one question OR had a login session.
+      //
+      // =========================================================
+
+      const activeUsers =
+        data.length;
+
+
+
+      // =========================================================
+      // RESPONSE
+      // =========================================================
 
       return res.json({
 
         period:
-          req.query.period || 'week',
+          req.query.period ||
+          'week',
 
         start:
           startDate.toISOString(),
@@ -730,38 +1024,56 @@ router.get(
         end:
           endDate.toISOString(),
 
-        totalSeconds,
 
-        activeUsers:
-          data.length,
+        // New primary metric
+        totalQuestions,
+
+
+        activeUsers,
 
         totalSessions,
 
+
+        // Keep for backward compatibility if old frontend
+        // still expects this property anywhere.
+        totalSeconds:
+          data.reduce(
+            (sum, user) =>
+              sum +
+              (
+                Number(
+                  user.totalSeconds
+                ) || 0
+              ),
+            0
+          ),
+
+
         data
+
       });
 
 
     } catch (error) {
 
       console.error(
-        '[GET user-time-summary]',
+        '[user-time-summary]',
         error
       );
 
 
       return res.status(500).json({
-        error:
-          'Failed to load user time summary.',
 
-        details:
-          error.message
+        error:
+          error.message ||
+          'Failed to load user summary.'
+
       });
 
     }
 
   }
 );
-
 // ── POST /api/auth/logout ──────────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res) => {
   if (req.user.loginHistoryId) {
