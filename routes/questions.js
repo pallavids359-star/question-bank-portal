@@ -718,40 +718,39 @@ function normalizeDuplicateText(value) {
   return String(value || '')
     .toLowerCase()
 
-    // Remove HTML tags
+    // Remove HTML
     .replace(/<[^>]*>/g, ' ')
 
-    // Normalize HTML spaces
+    // HTML spaces
     .replace(/&nbsp;/gi, ' ')
 
-    // Normalize smart quotes
+    // Smart quotes
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
 
-    // Remove question numbers at beginning
-    // 1. xxx
-    // 1) xxx
-    // Q1. xxx
-    // Question 1: xxx
+    // Remove question numbering
+    // 1. Question
+    // 2) Question
+    // Q3. Question
+    // Question 4: Question
     .replace(
       /^\s*(?:q(?:uestion)?\s*)?\d+\s*[.)\-:]\s*/i,
       ''
     )
 
-    // Normalize LaTeX spacing commands
+    // Normalize LaTeX spacing
     .replace(/\\,/g, '')
     .replace(/\\;/g, '')
     .replace(/\\!/g, '')
 
-    // Remove unnecessary whitespace around punctuation
+    // Normalize punctuation spacing
     .replace(/\s*([,.;:?!])\s*/g, '$1')
 
-    // Normalize whitespace around operators
+    // Normalize operator spacing
     .replace(/\s*=\s*/g, '=')
     .replace(/\s*\+\s*/g, '+')
-    .replace(/\s*-\s*/g, '-')
 
-    // Collapse all spaces/newlines/tabs
+    // Collapse spaces and line breaks
     .replace(/\s+/g, ' ')
 
     .trim();
@@ -771,12 +770,6 @@ async function findDuplicateQuestion(
   if (!normalizedQuestion) {
     return null;
   }
-
-
-  // ----------------------------------------
-  // Search DB in pages
-  // Do NOT restrict by chapter/topic
-  // ----------------------------------------
 
   const PAGE_SIZE = 1000;
 
@@ -804,14 +797,6 @@ async function findDuplicateQuestion(
           from + PAGE_SIZE - 1
         );
 
-
-    // Optional:
-    // keep duplicate detection inside same subject
-    //
-    // Mathematics/Maths handled below in JS instead
-    // of exact Supabase comparison.
-
-
     if (excludeId) {
       query =
         query.neq(
@@ -820,12 +805,10 @@ async function findDuplicateQuestion(
         );
     }
 
-
     const {
       data,
       error
     } = await query;
-
 
     if (error) {
 
@@ -837,19 +820,13 @@ async function findDuplicateQuestion(
       throw error;
     }
 
-
     const rows =
       Array.isArray(data)
         ? data
         : [];
 
-
     const duplicate =
       rows.find(row => {
-
-        // ----------------------------------
-        // SAME SUBJECT
-        // ----------------------------------
 
         const sameSubject =
           canonicalSubject(
@@ -859,28 +836,17 @@ async function findDuplicateQuestion(
             payload.subject
           ).toLowerCase();
 
-
-        // ----------------------------------
-        // SAME QUESTION TEXT
-        // ----------------------------------
-
         const sameText =
           normalizeDuplicateText(
             row.question
           ) ===
           normalizedQuestion;
 
-
-        if (
+        return (
           sameSubject &&
           sameText
-        ) {
-          return true;
-        }
-
-        return false;
+        );
       });
-
 
     if (duplicate) {
 
@@ -907,7 +873,6 @@ async function findDuplicateQuestion(
       return duplicate;
     }
 
-
     if (
       rows.length <
       PAGE_SIZE
@@ -916,66 +881,10 @@ async function findDuplicateQuestion(
     }
   }
 
-
   return null;
 }
 
-async function findDuplicateQuestion(payload, excludeId = null) {
-  const normalizedQuestion =
-    normalizeDuplicateText(payload.question);
 
-  if (!normalizedQuestion) {
-    return null;
-  }
-
-  let query = supabase
-    .from('questions')
-    .select(`
-      id,
-      subject,
-      klass,
-      chapter,
-      topic,
-      q_type,
-      question,
-      created_at
-    `)
-    .eq('subject', payload.subject)
-    .eq('klass', payload.klass)
-    .eq('chapter', payload.chapter);
-
-  if (excludeId) {
-    query = query.neq('id', excludeId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error(
-      '[duplicate question check]',
-      error
-    );
-
-    throw error;
-  }
-
-  const rows =
-    Array.isArray(data)
-      ? data
-      : [];
-
-  return rows.find(row => {
-    const sameText =
-      normalizeDuplicateText(row.question) ===
-      normalizedQuestion;
-
-    const sameType =
-      normalizeQType(row.q_type) ===
-      normalizeQType(payload.q_type);
-
-    return sameText && sameType;
-  }) || null;
-}
 
 // ── POST /api/questions ────────────────────────────────────────────────────
 router.post('/', ...CREATE_ROLES, async (req, res) => {
@@ -1193,21 +1102,13 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
       );
 
     const fingerprint = [
-      canonicalSubject(
-        record.subject
-      ).toLowerCase(),
+  canonicalSubject(
+    record.subject
+  ).toLowerCase(),
 
-      String(
-        record.klass || ''
-      ).trim().toLowerCase(),
+  normalizedQuestion
 
-      normalizeQType(
-        record.q_type
-      ),
-
-      normalizedQuestion
-
-    ].join('|');
+].join('|');
 
 
     // Duplicate inside same import
