@@ -784,6 +784,23 @@ class StatementBasedParser extends BaseQuestionParser {
     return res;
   }
 }
+   function parseFlexibleMatchRow(line) {
+
+  const text = String(line || '').trim();
+
+  if (!text) return null;
+
+  const match = text.match(
+    /^\s*(?:Row\s+)?(?:\(\s*([A-Za-z0-9]+)\s*\)|\[\s*([A-Za-z0-9]+)\s*\]|([A-Za-z0-9]+))\s*(?:[.:\-–—)]\s*|\s+)(.+)$/i
+  );
+
+  if (!match) return null;
+
+  return {
+    label: (match[1] || match[2] || match[3] || '').trim(),
+    value: (match[4] || '').trim()
+  };
+}
   // 5. Matrix Match Parser (DEDICATED MATRIX ENGINE)
   class MatrixMatchParser extends BaseQuestionParser {
     parse(block, meta) {
@@ -884,23 +901,143 @@ class StatementBasedParser extends BaseQuestionParser {
           continue;
         }
 
-        if (mode === 'col1') {
-          const inlineItems = line.split(/(?=\s*\([A-Da-d]\)\s*)/).map(v => v.trim()).filter(Boolean);
-          if (inlineItems.length > 1) {
-            inlineItems.forEach(item => col1.push(item.replace(/^\s*\([A-Da-d]\)\s*/, '')));
-            continue;
-          }
-          if (/^\s*\(?[A-D1-4]\)?[\.\):\-]/i.test(line) || col1.length === 0) col1.push(line.replace(/^\s*\(?[A-D1-4]\)?[\.\):\-]\s*/i, ''));
-          else col1[col1.length - 1] += ' ' + line;
-        } else if (mode === 'col2') {
-          const inlineItems = line.split(/(?=\s*\((?:iv|iii|ii|i)\)\s*)/i).map(v => v.trim()).filter(Boolean);
-          if (inlineItems.length > 1) {
-            inlineItems.forEach(item => col2.push(item.replace(/^\s*\((?:iv|iii|ii|i)\)\s*/i, '')));
-            continue;
-          }
-          if (/^\s*\(?[1-4P-S]\)?[\.\):\-]/i.test(line) || col2.length === 0) col2.push(line.replace(/^\s*\(?[1-4P-S]\)?[\.\):\-]\s*/i, ''));
-          else col2[col2.length - 1] += ' ' + line;
-        } else {
+        // ------------------------------------------------------------
+// FLEXIBLE MATCH / MATRIX ROW PARSER
+// Accepts:
+// A, B, C
+// a, b, c
+// (A), (B)
+// [A], [B]
+// P, Q, R
+// 1, 2, 3
+// (1), (2)
+// i, ii, iii, iv
+// (i), (ii)
+// I, II, III
+// A., A), A:, A-
+// Row A, Row P, Row 1, Row i
+// and similar labels
+// ------------------------------------------------------------
+
+function extractFlexibleMatchRows(rawLine) {
+
+  const text = String(rawLine || '').trim();
+
+  if (!text) return [];
+
+  /*
+    A row marker may look like:
+
+    A
+    A.
+    A)
+    (A)
+    [A]
+    P
+    1
+    i
+    ii
+    III
+    Row A
+    Row 1
+    Row ii
+  */
+
+  const marker =
+    String.raw`(?:Row\s*)?(?:\(\s*[A-Za-z0-9]+\s*\)|\[\s*[A-Za-z0-9]+\s*\]|[A-Za-z0-9]+)(?:\s*[.:\-–—)]\s*|\s+)`;
+
+  const markerRegex =
+    new RegExp(`(^|\\s)(${marker})`, 'gi');
+
+  const matches = [...text.matchAll(markerRegex)];
+
+  if (!matches.length) {
+    return [];
+  }
+
+  const rows = [];
+
+  for (let i = 0; i < matches.length; i++) {
+
+    const current = matches[i];
+
+    const start =
+      current.index +
+      current[0].length;
+
+    const end =
+      i + 1 < matches.length
+        ? matches[i + 1].index
+        : text.length;
+
+    let value =
+      text.slice(start, end).trim();
+
+    if (value) {
+      rows.push(value);
+    }
+  }
+
+  return rows;
+}
+
+
+// ------------------------------------------------------------
+// COLUMN I / COLUMN A
+// ------------------------------------------------------------
+
+if (mode === 'col1') {
+
+  const parsedRows =
+    extractFlexibleMatchRows(line);
+
+  if (parsedRows.length) {
+
+    parsedRows.forEach(value => {
+      if (value) col1.push(value);
+    });
+
+  } else if (col1.length === 0) {
+
+    // First unlabelled row
+    col1.push(line);
+
+  } else {
+
+    // Continuation of previous row
+    col1[col1.length - 1] += ' ' + line;
+
+  }
+
+
+// ------------------------------------------------------------
+// COLUMN II / COLUMN B
+// ------------------------------------------------------------
+
+} else if (mode === 'col2') {
+
+  const parsedRows =
+    extractFlexibleMatchRows(line);
+
+  if (parsedRows.length) {
+
+    parsedRows.forEach(value => {
+      if (value) col2.push(value);
+    });
+
+  } else if (col2.length === 0) {
+
+    // First unlabelled row
+    col2.push(line);
+
+  } else {
+
+    // Continuation of previous row
+    col2[col2.length - 1] += ' ' + line;
+
+  }
+
+}  else {
           qLines.push(line);
         }
       }
