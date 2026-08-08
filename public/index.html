@@ -996,7 +996,11 @@ textarea{resize:vertical;min-height:70px;}
         </div>
         <div class="stat-grid">
           <div class="stat-card purple clickable-stat" onclick="filterUsersByRole('admin')" title="Click to view Admin users"><div class="stat-icon">👑</div><div class="stat-value" id="dAdmins">—</div><div class="stat-label">Admins</div></div>
-          <div class="stat-card green clickable-stat" onclick="showAdderPerformance()" title="Click to view Adders and their question counts"><div class="stat-icon">➕</div><div class="stat-value" id="dAdders">—</div><div class="stat-label">Adders</div></div>
+          <div
+  class="stat-card green clickable-stat"
+  onclick="filterUsersByRole('adder')"
+  title="Click to view Adder users"
+>
           <div class="stat-card teal clickable-stat" onclick="filterUsersByRole('editor')" title="Click to view Question Editors"><div class="stat-icon">✏️</div><div class="stat-value" id="dEditors">—</div><div class="stat-label">Editors</div></div>
           <div class="stat-card clickable-stat" style="border-color:#2a2a2a;" onclick="filterUsersByRole('viewer')" title="Click to view Viewer users"><div class="stat-icon">👁️</div><div class="stat-value" id="dViewers">—</div><div class="stat-label">Viewers</div></div>
           <div class="stat-card gold clickable-stat" onclick="showMostActiveDetails()" title="Click to view most active contributor details"><div class="stat-icon">🏆</div><div class="stat-value" id="dActiveUser" style="font-size:14px;line-height:1.3;">—</div><div class="stat-label">Most Active</div></div>
@@ -2681,29 +2685,59 @@ function filterQuestionsByTimeframe(tf) {
 }
 
 function filterUsersByRole(targetRole) {
-  if (!Auth.can('manage_users') && Auth.getRole() !== 'admin') {
-    showToast(`Showing ${targetRole} count details. Access User Management for full list.`);
+  if (
+    !Auth.can('manage_users') &&
+    Auth.getRole() !== 'admin'
+  ) {
+    showToast(
+      'You do not have permission to view users.',
+      true
+    );
     return;
   }
+
   showPage('pageUsers');
+
   setTimeout(() => {
-    const tbody = document.getElementById('usersTableBody');
+    const tbody =
+      document.getElementById('usersTableBody');
+
     if (!tbody) return;
-    const rows = tbody.querySelectorAll('tr');
-    let found = 0;
+
+    const rows =
+      tbody.querySelectorAll('tr');
+
+    let visibleCount = 0;
+
     rows.forEach(tr => {
-      const roleText = tr.textContent.toLowerCase();
-      if (roleText.includes(targetRole.toLowerCase())) {
-        tr.style.outline = '2px solid var(--gold)';
-        tr.style.background = 'rgba(201,162,39,0.12)';
-        found++;
+      const roleBadge =
+        tr.querySelector(
+          '.role-admin, .role-adder, .role-editor, .role-viewer'
+        );
+
+      if (!roleBadge) return;
+
+      const rowRole =
+        roleBadge.textContent
+          .trim()
+          .toLowerCase();
+
+      if (
+        rowRole ===
+        String(targetRole).toLowerCase()
+      ) {
+        tr.style.display = '';
+        visibleCount++;
       } else {
-        tr.style.outline = '';
-        tr.style.background = '';
+        tr.style.display = 'none';
       }
     });
-    showToast(`Highlighted ${found} user(s) with role: ${targetRole.toUpperCase()}`);
-  }, 250);
+
+    showToast(
+      `${visibleCount} ${targetRole} user(s) found.`
+    );
+
+  }, 300);
 }
 
 function showMostActiveDetails() {
