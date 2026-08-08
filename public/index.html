@@ -1481,12 +1481,21 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
           <table id="usersTable">
             <thead>
               <tr>
-                <th>Name</th><th>Email</th><th>Role</th><th>Subject Access</th><th>Status</th>
-                <th>Created</th><th>Last Login</th><th>Actions</th>
+                <th>Name</th>
+<th>Email</th>
+<th>Role</th>
+<th>Subject Access</th>
+
+<th>Login Limit</th>
+
+<th>Status</th>
+<th>Created</th>
+<th>Last Login</th>
+<th>Actions</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr class="empty-row"><td colspan="8">Loading users…</td></tr>
+              <tr class="empty-row"><td colspan="9">Loading users…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1630,6 +1639,28 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
         <option value="Biology">Biology</option>
       </select>
     </div>
+     <div class="form-group">
+  <label>Login Limit</label>
+
+  <input
+    type="number"
+    id="cuLoginLimit"
+    min="0"
+    step="1"
+    value="1"
+    placeholder="Enter login limit"
+  >
+
+  <div
+    style="
+      color:var(--muted);
+      font-size:11px;
+      margin-top:6px;
+    "
+  >
+    0 = Unlimited · 1 = One active login · 2 = Two active logins
+  </div>
+</div>
     <div class="form-error" id="cuError"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeCreateUserModal()">Cancel</button>
@@ -2665,7 +2696,7 @@ async function loadUsers() {
 function renderUsersTable(users) {
   const tbody = document.getElementById('usersTableBody');
   if (!users.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No users found.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No users found.</td></tr>';
     return;
   }
   const currentId = (Auth.getUser() || {}).id;
@@ -2674,8 +2705,31 @@ function renderUsersTable(users) {
       <td><strong style="color:#fff">${escapeHtml(u.name)}</strong></td>
       <td style="color:var(--muted)">${escapeHtml(u.email)}</td>
       <td><span class="badge role-${u.role}" style="text-transform:capitalize">${u.role}</span></td>
-      <td><span class="badge" style="background:rgba(0,180,216,0.15);color:#00b4d8;border:1px solid rgba(0,180,216,0.3);font-size:11px;padding:2px 8px;border-radius:12px;">${escapeHtml(u.subject || 'All')}</span></td>
-      <td><span class="badge badge-${u.status}">${u.status}</span></td>
+      <td>
+  <span
+    class="badge"
+    style="
+      background:rgba(0,180,216,0.15);
+      color:#00b4d8;
+      border:1px solid rgba(0,180,216,0.3);
+      font-size:11px;
+      padding:2px 8px;
+      border-radius:12px;
+    "
+  >
+    ${escapeHtml(u.subject || 'All')}
+  </span>
+</td>
+
+<td>
+  <strong style="color:var(--gold);">
+    ${
+      Number(u.login_limit) === 0
+        ? 'Unlimited'
+        : Number(u.login_limit || 1)
+    }
+  </strong>
+</td>
       <td style="color:var(--muted)">${fmtDate(u.created_at)}</td>
       <td style="color:var(--muted)">${u.last_login ? timeAgo(u.last_login) : 'Never'}</td>
       <td>
@@ -2703,6 +2757,14 @@ function openCreateUserModal() {
   document.getElementById('cuRole').value = 'viewer';
   const cuSub = document.getElementById('cuSubject');
   if (cuSub) cuSub.value = 'All';
+   const loginLimitEl =
+  document.getElementById(
+    'cuLoginLimit'
+  );
+
+if(loginLimitEl){
+  loginLimitEl.value='1';
+}
   document.getElementById('cuPasswordGroup').style.display = '';
   document.getElementById('cuError').classList.remove('visible');
   document.getElementById('createUserModal').classList.add('visible');
@@ -2721,6 +2783,20 @@ function openEditUserModal(userId) {
     document.getElementById('cuRole').value  = u.role;
     const cuSub = document.getElementById('cuSubject');
     if (cuSub) cuSub.value = u.subject || 'All';
+     const loginLimitEl =
+  document.getElementById(
+    'cuLoginLimit'
+  );
+
+if(loginLimitEl){
+
+  loginLimitEl.value =
+    Number.isInteger(
+      Number(u.login_limit)
+    )
+      ? Number(u.login_limit)
+      : 1;
+}
     document.getElementById('createUserModal').classList.add('visible');
   }).catch(e => showToast(e.message, true));
 }
@@ -2737,6 +2813,16 @@ async function saveUser() {
   const role    = document.getElementById('cuRole').value;
   const cuSubEl = document.getElementById('cuSubject');
   const subject = cuSubEl ? cuSubEl.value : 'All';
+   const loginLimitEl =
+  document.getElementById(
+    'cuLoginLimit'
+  );
+
+const loginLimit =
+  Number.parseInt(
+    loginLimitEl?.value || '1',
+    10
+  );
   const errEl   = document.getElementById('cuError');
   errEl.classList.remove('visible');
 
@@ -2748,29 +2834,107 @@ async function saveUser() {
     errEl.textContent = 'Password must be at least 6 characters.';
     errEl.classList.add('visible'); return;
   }
+   if(
+  !Number.isInteger(loginLimit) ||
+  loginLimit < 0
+){
+  errEl.textContent =
+    'Login limit must be 0 or a positive whole number.';
 
-  try {
-    let savedUser;
-    if (_editingUserId) {
-      savedUser = await apiReq(`/api/users/${_editingUserId}`, {
-        method: 'PUT', body: JSON.stringify({ name, email, role, subject }),
-      });
-    } else {
-      savedUser = await apiReq('/api/users', {
-        method: 'POST', body: JSON.stringify({ name, email, password: pw, role, subject }),
-      });
+  errEl.classList.add('visible');
+
+  return;
+}
+
+ try {
+
+  let savedUser;
+
+  if (_editingUserId) {
+
+    savedUser =
+      await apiReq(
+        `/api/users/${_editingUserId}`,
+        {
+          method:'PUT',
+
+          body:JSON.stringify({
+            name,
+            email,
+            role,
+            subject
+          })
+        }
+      );
+
+  } else {
+
+    savedUser =
+      await apiReq(
+        '/api/users',
+        {
+          method:'POST',
+
+          body:JSON.stringify({
+            name,
+            email,
+            password:pw,
+            role,
+            subject
+          })
+        }
+      );
+  }
+
+
+  // User ID
+  const targetUserId =
+    _editingUserId ||
+    savedUser?.id;
+
+
+  if(!targetUserId){
+    throw new Error(
+      'User was saved but user ID was not returned.'
+    );
+  }
+
+
+  // --------------------------------------
+  // SAVE LOGIN LIMIT
+  // --------------------------------------
+
+  await apiReq(
+    `/api/auth/login-limit/${targetUserId}`,
+    {
+      method:'PUT',
+
+      body:JSON.stringify({
+        loginLimit
+      })
     }
+  );
 
-    const requestedSubject = canonicalSubject(subject);
-    const storedSubject = canonicalSubject(savedUser && savedUser.subject);
-    if (storedSubject !== requestedSubject) {
-      throw new Error(`Subject was not saved. Requested "${requestedSubject}" but the database returned "${storedSubject}".`);
-    }
 
-    showToast(_editingUserId ? 'User and subject updated.' : 'User created successfully.');
-    closeCreateUserModal();
-    await loadUsers();
-  } catch(e) {
+  showToast(
+    _editingUserId
+      ? 'User and login limit updated.'
+      : 'User created successfully.'
+  );
+
+  closeCreateUserModal();
+
+  await loadUsers();
+
+}catch(e){
+
+  errEl.textContent =
+    e.message;
+
+  errEl.classList.add(
+    'visible'
+  );
+} catch(e) {
     errEl.textContent = e.message;
     errEl.classList.add('visible');
   }
