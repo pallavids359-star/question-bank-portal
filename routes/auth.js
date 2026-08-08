@@ -348,6 +348,419 @@ router.post('/heartbeat', requireAuth, async (req, res) => {
   if (updateError) return res.status(500).json({ error: updateError.message });
   res.json({ tracked: true, durationSeconds });
 });
+// ── GET /api/auth/user-time-summary ───────────────────────────
+// Admin only
+// Returns user activity summary for a selected date range.
+router.get(
+  '/user-time-summary',
+  requireAuth,
+  requireRole('admin'),
+  async (req, res) => {
+
+    try {
+
+      // ---------------------------------------------------------
+      // READ DATE RANGE
+      // ---------------------------------------------------------
+
+      const startRaw = req.query.start;
+      const endRaw   = req.query.end;
+
+      let startDate;
+      let endDate;
+
+      if (startRaw) {
+        startDate = new Date(startRaw);
+      } else {
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+      }
+
+      if (endRaw) {
+        endDate = new Date(endRaw);
+      } else {
+        endDate = new Date();
+      }
+
+
+      if (
+        Number.isNaN(startDate.getTime()) ||
+        Number.isNaN(endDate.getTime())
+      ) {
+        return res.status(400).json({
+          error: 'Invalid start or end date.'
+        });
+      }
+
+
+      if (startDate > endDate) {
+        return res.status(400).json({
+          error: 'Start date cannot be after end date.'
+        });
+      }
+
+
+      // ---------------------------------------------------------
+      // GET LOGIN SESSIONS
+      // ---------------------------------------------------------
+
+      const {
+        data: sessions,
+        error: sessionError
+      } = await supabase
+        .from('login_history')
+        .select(`
+          id,
+          user_id,
+          login_time,
+          logout_time,
+          last_activity_at,
+          duration_seconds,
+          status
+        `)
+        .eq('status', 'success')
+        .gte(
+          'login_time',
+          startDate.toISOString()
+        )
+        .lte(
+          'login_time',
+          endDate.toISOString()
+        )
+        .order(
+          'login_time',
+          {
+            ascending: false
+          }
+        );
+
+
+      if (sessionError) {
+
+        console.error(
+          '[user-time-summary sessions]',
+          sessionError
+        );
+
+        return res.status(500).json({
+          error: sessionError.message
+        });
+      }
+
+
+      const validSessions =
+        Array.isArray(sessions)
+          ? sessions
+          : [];
+
+
+      // ---------------------------------------------------------
+      // GET UNIQUE USER IDS
+      // ---------------------------------------------------------
+
+      const userIds =
+        [
+          ...new Set(
+            validSessions
+              .map(s => s.user_id)
+              .filter(Boolean)
+          )
+        ];
+
+
+      // No activity in selected period
+      if (!userIds.length) {
+
+        return res.json({
+          period:
+            req.query.period || 'week',
+
+          start:
+            startDate.toISOString(),
+
+          end:
+            endDate.toISOString(),
+
+          totalSeconds: 0,
+
+          activeUsers: 0,
+
+          totalSessions: 0,
+
+          data: []
+        });
+      }
+
+
+      // ---------------------------------------------------------
+      // GET USERS
+      // ---------------------------------------------------------
+
+      const {
+        data: users,
+        error: usersError
+      } = await supabase
+        .from('users')
+        .select(`
+          id,
+          name,
+          email,
+          role,
+          subject,
+          status
+        `)
+        .in(
+          'id',
+          userIds
+        );
+
+
+      if (usersError) {
+
+        console.error(
+          '[user-time-summary users]',
+          usersError
+        );
+
+        return res.status(500).json({
+          error: usersError.message
+        });
+      }
+
+
+      // ---------------------------------------------------------
+      // USER LOOKUP MAP
+      // ---------------------------------------------------------
+
+      const userMap =
+        new Map();
+
+
+      (users || []).forEach(user => {
+
+        const logical =
+          toLogicalUser(user);
+
+        userMap.set(
+          String(user.id),
+          {
+            id: user.id,
+
+            name:
+              user.name ||
+              'Unnamed User',
+
+            email:
+              user.email ||
+              '',
+
+            role:
+              logical.role ||
+              user.role ||
+              'viewer',
+
+            subject:
+              logical.subject ||
+              user.subject ||
+              'All'
+          }
+        );
+
+      });
+
+
+      // ---------------------------------------------------------
+      // AGGREGATE USER ACTIVITY
+      // ---------------------------------------------------------
+
+      const summaryMap =
+        new Map();
+
+
+      validSessions.forEach(session => {
+
+        if (!session.user_id) {
+          return;
+        }
+
+
+        const key =
+          String(session.user_id);
+
+
+        const user =
+          userMap.get(key) || {
+            id: session.user_id,
+            name: 'Unknown User',
+            email: '',
+            role: 'viewer',
+            subject: 'All'
+          };
+
+
+        if (!summaryMap.has(key)) {
+
+          summaryMap.set(
+            key,
+            {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              subject: user.subject,
+
+              totalSeconds: 0,
+              sessions: 0,
+              lastActiveAt: null
+            }
+          );
+
+        }
+
+
+        const row =
+          summaryMap.get(key);
+
+
+        const duration =
+          Math.max(
+            0,
+            Number(
+              session.duration_seconds
+            ) || 0
+          );
+
+
+        row.totalSeconds +=
+          duration;
+
+
+        row.sessions += 1;
+
+
+        const activityTime =
+          session.last_activity_at ||
+          session.logout_time ||
+          session.login_time ||
+          null;
+
+
+        if (activityTime) {
+
+          const activityDate =
+            new Date(activityTime);
+
+
+          if (
+            !Number.isNaN(
+              activityDate.getTime()
+            ) &&
+            (
+              !row.lastActiveAt ||
+              activityDate >
+                new Date(
+                  row.lastActiveAt
+                )
+            )
+          ) {
+
+            row.lastActiveAt =
+              activityDate.toISOString();
+
+          }
+
+        }
+
+      });
+
+
+      // ---------------------------------------------------------
+      // FINAL USER LIST
+      // ---------------------------------------------------------
+
+      const data =
+        Array.from(
+          summaryMap.values()
+        )
+          .sort(
+            (a, b) =>
+              b.totalSeconds -
+              a.totalSeconds
+          );
+
+
+      const totalSeconds =
+        data.reduce(
+          (sum, user) =>
+            sum +
+            (
+              Number(
+                user.totalSeconds
+              ) || 0
+            ),
+          0
+        );
+
+
+      const totalSessions =
+        data.reduce(
+          (sum, user) =>
+            sum +
+            (
+              Number(
+                user.sessions
+              ) || 0
+            ),
+          0
+        );
+
+
+      // ---------------------------------------------------------
+      // RESPONSE EXPECTED BY FRONTEND
+      // ---------------------------------------------------------
+
+      return res.json({
+
+        period:
+          req.query.period || 'week',
+
+        start:
+          startDate.toISOString(),
+
+        end:
+          endDate.toISOString(),
+
+        totalSeconds,
+
+        activeUsers:
+          data.length,
+
+        totalSessions,
+
+        data
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        '[GET user-time-summary]',
+        error
+      );
+
+
+      return res.status(500).json({
+        error:
+          'Failed to load user time summary.',
+
+        details:
+          error.message
+      });
+
+    }
+
+  }
+);
 
 // ── POST /api/auth/logout ──────────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res) => {
