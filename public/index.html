@@ -1698,14 +1698,24 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
             <button class="btn btn-ghost btn-sm" onclick="resetAuditTimePeriod()">Current</button>
           </div>
           <div class="audit-time-stats">
-            <div class="audit-time-stat"><div class="audit-time-stat-value" id="auditPeriodTotal">—</div><div class="audit-time-stat-label">Total Time</div></div>
+            <div class="audit-time-stat">
+  <div class="audit-time-stat-value" id="auditPeriodTotal">—</div>
+  <div class="audit-time-stat-label">Total Questions</div>
+</div>
             <div class="audit-time-stat"><div class="audit-time-stat-value" id="auditPeriodUsers">—</div><div class="audit-time-stat-label">Active Users</div></div>
             <div class="audit-time-stat"><div class="audit-time-stat-value" id="auditPeriodSessions">—</div><div class="audit-time-stat-label">Sessions</div></div>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>User</th><th>Role</th><th>Subject</th><th>Total Time</th><th>Sessions</th><th>Last Active</th></tr>
+                <tr>
+  <th>User</th>
+  <th>Role</th>
+  <th>Subject</th>
+  <th>Questions Added</th>
+  <th>Sessions</th>
+  <th>Last Active</th>
+</tr>
               </thead>
               <tbody id="auditTimeSummaryBody">
                 <tr class="empty-row"><td colspan="6">Loading user time…</td></tr>
@@ -3547,7 +3557,10 @@ async function loadAuditTimeSummary() {
     const result = await apiReq(
   `/api/auth/user-time-summary?${params.toString()}`
 );
-    document.getElementById('auditPeriodTotal').textContent = formatTrackedDuration(result.totalSeconds);
+    document.getElementById(
+  'auditPeriodTotal'
+).textContent =
+  Number(result.totalQuestions) || 0;
     document.getElementById('auditPeriodUsers').textContent = result.activeUsers || 0;
     document.getElementById('auditPeriodSessions').textContent = result.totalSessions || 0;
 
@@ -3561,7 +3574,16 @@ async function loadAuditTimeSummary() {
         <td>${escapeHtml(user.name || '—')}<br><span style="font-size:11px;color:var(--muted)">${escapeHtml(user.email || '')}</span></td>
         <td><span class="role-badge role-${escapeHtml(user.role || 'viewer')}">${escapeHtml(user.role || '—')}</span></td>
         <td style="color:var(--muted)">${escapeHtml(user.subject || 'All')}</td>
-        <td style="font-weight:700;color:${user.totalSeconds > 0 ? 'var(--gold)' : 'var(--muted)'}">${formatTrackedDuration(user.totalSeconds)}</td>
+        <td
+  style="
+    font-weight:700;
+    color:${Number(user.questionCount) > 0
+      ? 'var(--gold)'
+      : 'var(--muted)'};
+  "
+>
+  ${Number(user.questionCount) || 0}
+</td>
         <td>${user.sessions || 0}</td>
         <td style="color:var(--muted);white-space:nowrap">${user.lastActiveAt ? fmtDateTime(user.lastActiveAt) : '—'}</td>
       </tr>`).join('');
