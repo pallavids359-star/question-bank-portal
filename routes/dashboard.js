@@ -225,11 +225,68 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       created_by_name: question.created_by_name || userNamesById.get(String(question.created_by || '')) || '',
       updated_by_name: question.updated_by_name || userNamesById.get(String(question.updated_by || '')) || '',
     }));
+// ============================================================
+// SUBJECT -> CHAPTER -> CONCEPT QUESTION COUNTS
+// ============================================================
 
+const questionDistribution = {};
+
+questions.forEach(question => {
+
+  const subject = String(
+    question.subject || 'General'
+  ).trim();
+
+  const chapter = String(
+    question.chapter || 'General'
+  ).trim();
+
+  const concept = String(
+    question.topic || 'General'
+  ).trim();
+
+  if (!questionDistribution[subject]) {
+    questionDistribution[subject] = {
+      questionCount: 0,
+      chapters: {}
+    };
+  }
+
+  // Subject total
+  questionDistribution[subject].questionCount += 1;
+
+  if (!questionDistribution[subject].chapters[chapter]) {
+    questionDistribution[subject].chapters[chapter] = {
+      questionCount: 0,
+      concepts: {}
+    };
+  }
+
+  // Chapter total
+  questionDistribution[subject]
+    .chapters[chapter]
+    .questionCount += 1;
+
+  if (
+    !questionDistribution[subject]
+      .chapters[chapter]
+      .concepts[concept]
+  ) {
+    questionDistribution[subject]
+      .chapters[chapter]
+      .concepts[concept] = 0;
+  }
+
+  // Concept total
+  questionDistribution[subject]
+    .chapters[chapter]
+    .concepts[concept] += 1;
+});
     res.json({
       totalQuestions: questions.length,
       totalSubjects: subjects.size,
       totalChapters: chapters.size,
+      questionDistribution,
       totalAdmins: byRole.admin,
       totalAdders: byRole.adder,
       totalEditors: byRole.editor,
