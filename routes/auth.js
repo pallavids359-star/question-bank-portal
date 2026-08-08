@@ -68,133 +68,176 @@ async function logLogin(userId, req, status) {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
+
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required.' });
+      return res.status(400).json({
+        error: 'Email and password are required.'
+      });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
-    const cleanPass  = password.trim();
-    const isMasterPassword = ['bery0218', 'bery@0218', 'admin123'].includes(cleanPass.toLowerCase());
+    const cleanEmail = String(email)
+      .toLowerCase()
+      .trim();
 
-    let activeUser = null;
-    try {
-      const { data: fetchedUser } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-      activeUser = fetchedUser;
-    } catch (_) {
-      activeUser = null;
+    const cleanPass = String(password);
+
+    // Find user
+    const { data: activeUser, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
+    if (userError) {
+      console.error('[login lookup error]', userError);
+
+      return res.status(500).json({
+        error: 'Unable to authenticate user.'
+      });
     }
 
-    if (activeUser) {
-      let passwordValid = false;
-      if (activeUser.password_hash) {
-        try {
-          passwordValid = await bcrypt.compare(cleanPass, activeUser.password_hash);
-        } catch (_) {}
-      }
-      if (!passwordValid && isMasterPassword) {
-        passwordValid = true;
-      }
+    // Do not reveal whether the email exists
+    if (!activeUser) {
+      await logLogin(null, req, 'failed').catch(() => {});
 
-      if (passwordValid && activeUser.status !== 'disabled' && activeUser.is_active !== false) {
-        const logicalUser = toLogicalUser(activeUser);
-        const loginRecord = await logLogin(activeUser.id, req, 'success');
-        try {
-          await supabase
-            .from('users')
-            .update({ last_login: new Date().toISOString() })
-            .eq('id', activeUser.id);
-        } catch (_) {}
-
-        const userSubject = logicalUser.subject || 'All';
-        const payload = {
-          userId:         activeUser.id,
-          email:          activeUser.email,
-          name:           activeUser.name,
-          role:           logicalUser.role || 'viewer',
-          subject:        userSubject,
-          loginHistoryId: loginRecord?.id || null,
-        };
-        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-        try {
-          await writeAuditLog({
-            userId: activeUser.id, userName: activeUser.name,
-            action: 'LOGIN', resourceType: 'auth',
-            details: { ip: req.ip, device: /Mobile/i.test(req.headers['user-agent'] || '') ? 'Mobile' : 'Desktop' },
-          });
-        } catch (_) {}
-
-        return res.json({
-          token,
-          user: { id: activeUser.id, name: activeUser.name, email: activeUser.email, role: logicalUser.role || 'viewer', subject: userSubject },
-        });
-      }
+      return res.status(401).json({
+        error: 'Invalid email or password.'
+      });
     }
 
-    // Fail-safe Admin Fallback: Auto-create and log in as Admin
-    const fallbackUser = {
-      id: activeUser?.id || '00000000-0000-0000-0000-000000000001',
-      name: activeUser?.name || 'Manchester Technologies',
-      email: cleanEmail,
-      role: 'admin',
-    };
+    // Disabled account
+    if (
+      activeUser.status === 'disabled' ||
+      activeUser.is_active === false
+    ) {
+      return res.status(403).json({
+        error: 'This account has been disabled.'
+      });
+    }
+
+    // User must have a password hash
+    if (!activeUser.password_hash) {
+      console.error(
+        '[login] Missing password_hash for user:',
+        activeUser.id
+      );
+
+      return res.status(401).json({
+        error: 'Invalid email or password.'
+      });
+    }
+
+    // Verify password
+    let passwordValid = false;
 
     try {
-      const passwordHash = await bcrypt.hash(cleanPass, 12);
-      const { data: created } = await supabase
-        .from('users')
-        .upsert({
-          name: fallbackUser.name,
-          email: cleanEmail,
-          password_hash: passwordHash,
-          role: 'admin',
-          status: 'active',
-          is_active: true
-        }, { onConflict: 'email' })
-        .select('*')
-        .maybeSingle();
+      passwordValid = await bcrypt.compare(
+        cleanPass,
+        activeUser.password_hash
+      );
+    } catch (err) {
+      console.error(
+        '[password compare error]',
+        err
+      );
 
-      if (created) {
-        fallbackUser.id   = created.id;
-        fallbackUser.name = created.name;
-      }
+      passwordValid = false;
+    }
+
+    // WRONG PASSWORD
+    if (!passwordValid) {
+      await logLogin(
+        activeUser.id,
+        req,
+        'failed'
+      ).catch(() => {});
+
+      return res.status(401).json({
+        error: 'Invalid email or password.'
+      });
+    }
+
+    // Correct password
+    const logicalUser = toLogicalUser(activeUser);
+
+    const loginRecord = await logLogin(
+      activeUser.id,
+      req,
+      'success'
+    );
+
+    try {
+      await supabase
+        .from('users')
+        .update({
+          last_login: new Date().toISOString()
+        })
+        .eq('id', activeUser.id);
     } catch (_) {}
 
-    const payload = {
-      userId: fallbackUser.id,
-      email:  fallbackUser.email,
-      name:   fallbackUser.name,
-      role:   'admin',
-    };
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+    const userSubject =
+      logicalUser.subject || 'All';
 
-    const loginRecord = await logLogin(fallbackUser.id, req, 'success');
-    if (loginRecord?.id) {
-      const fallbackPayload = { ...payload, loginHistoryId: loginRecord.id };
-      const fallbackToken = jwt.sign(fallbackPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+    const payload = {
+      userId: activeUser.id,
+      email: activeUser.email,
+      name: activeUser.name,
+      role: logicalUser.role || 'viewer',
+      subject: userSubject,
+      loginHistoryId:
+        loginRecord?.id || null
+    };
+
+    const token = jwt.sign(
+      payload,
+      JWT_SECRET,
+      {
+        expiresIn: JWT_EXPIRES
+      }
+    );
+
+    try {
       await writeAuditLog({
-        userId: fallbackUser.id, userName: fallbackUser.name,
-        action: 'LOGIN', resourceType: 'auth',
-        details: { ip: req.ip, device: /Mobile/i.test(req.headers['user-agent'] || '') ? 'Mobile' : 'Desktop' },
-      }).catch(() => {});
-      return res.json({ token: fallbackToken, user: fallbackUser });
-    }
-    await writeAuditLog({
-      userId: fallbackUser.id, userName: fallbackUser.name,
-      action: 'LOGIN', resourceType: 'auth',
-      details: { ip: req.ip, device: /Mobile/i.test(req.headers['user-agent'] || '') ? 'Mobile' : 'Desktop' },
-    }).catch(() => {});
+        userId: activeUser.id,
+        userName: activeUser.name,
+        action: 'LOGIN',
+        resourceType: 'auth',
+        details: {
+          ip: req.ip,
+          device:
+            /Mobile/i.test(
+              req.headers['user-agent'] || ''
+            )
+              ? 'Mobile'
+              : 'Desktop'
+        }
+      });
+    } catch (_) {}
 
     return res.json({
       token,
-      user: fallbackUser,
+      user: {
+        id: activeUser.id,
+        name: activeUser.name,
+        email: activeUser.email,
+        role:
+          logicalUser.role || 'viewer',
+        subject:
+          userSubject
+      }
     });
+
   } catch (err) {
-    console.error('[login error]', err);
-    return res.status(500).json({ error: 'Server authentication error.', details: err.message });
+
+    console.error(
+      '[login error]',
+      err
+    );
+
+    return res.status(500).json({
+      error: 'Server authentication error.',
+      details: err.message
+    });
   }
 });
 
