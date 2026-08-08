@@ -2758,6 +2758,12 @@ function openCreateUserModal() {
   const cuSub = document.getElementById('cuSubject');
   if (cuSub) cuSub.value = 'All';
    const loginLimitEl =
+  document.getElementById('cuLoginLimit');
+
+if (loginLimitEl) {
+  loginLimitEl.value = '1';
+}
+   const loginLimitEl =
   document.getElementById(
     'cuLoginLimit'
   );
@@ -2772,33 +2778,72 @@ if(loginLimitEl){
 
 function openEditUserModal(userId) {
   _editingUserId = userId;
-  document.getElementById('createUserModalTitle').textContent = 'Edit User';
-  document.getElementById('cuSaveBtn').textContent = 'Save Changes';
-  document.getElementById('cuPasswordGroup').style.display = 'none';
-  document.getElementById('cuError').classList.remove('visible');
-  // Populate from the table row data
-  apiReq(`/api/users/${userId}`).then(u => {
-    document.getElementById('cuName').value  = u.name;
-    document.getElementById('cuEmail').value = u.email;
-    document.getElementById('cuRole').value  = u.role;
-    const cuSub = document.getElementById('cuSubject');
-    if (cuSub) cuSub.value = u.subject || 'All';
-     const loginLimitEl =
+
   document.getElementById(
-    'cuLoginLimit'
-  );
+    'createUserModalTitle'
+  ).textContent = 'Edit User';
 
-if(loginLimitEl){
+  document.getElementById(
+    'cuSaveBtn'
+  ).textContent = 'Save Changes';
 
-  loginLimitEl.value =
-    Number.isInteger(
-      Number(u.login_limit)
-    )
-      ? Number(u.login_limit)
-      : 1;
-}
-    document.getElementById('createUserModal').classList.add('visible');
-  }).catch(e => showToast(e.message, true));
+  document.getElementById(
+    'cuPasswordGroup'
+  ).style.display = 'none';
+
+  document.getElementById(
+    'cuError'
+  ).classList.remove('visible');
+
+  apiReq(
+    `/api/users/${encodeURIComponent(userId)}`
+  )
+  .then(u => {
+
+    document.getElementById('cuName').value =
+      u.name || '';
+
+    document.getElementById('cuEmail').value =
+      u.email || '';
+
+    document.getElementById('cuRole').value =
+      u.role || 'viewer';
+
+    const cuSub =
+      document.getElementById('cuSubject');
+
+    if (cuSub) {
+      cuSub.value =
+        u.subject || 'All';
+    }
+
+    const loginLimitEl =
+      document.getElementById(
+        'cuLoginLimit'
+      );
+
+    if (loginLimitEl) {
+      const savedLimit =
+        u.login_limit ??
+        u.loginLimit ??
+        1;
+
+      loginLimitEl.value =
+        Number(savedLimit);
+    }
+
+    document.getElementById(
+      'createUserModal'
+    ).classList.add('visible');
+
+  })
+  .catch(e => {
+    showToast(
+      e.message ||
+      'Could not load user.',
+      true
+    );
+  });
 }
 
 function closeCreateUserModal() {
@@ -2807,58 +2852,59 @@ function closeCreateUserModal() {
 }
 
 async function saveUser() {
-  const name    = document.getElementById('cuName').value.trim();
-  const email   = document.getElementById('cuEmail').value.trim();
-  const pw      = document.getElementById('cuPassword').value;
-  const role    = document.getElementById('cuRole').value;
+  const name = document.getElementById('cuName').value.trim();
+  const email = document.getElementById('cuEmail').value.trim();
+  const pw = document.getElementById('cuPassword').value;
+  const role = document.getElementById('cuRole').value;
+
   const cuSubEl = document.getElementById('cuSubject');
   const subject = cuSubEl ? cuSubEl.value : 'All';
-   const loginLimitEl =
-  document.getElementById(
-    'cuLoginLimit'
-  );
 
-const loginLimit =
-  Number.parseInt(
-    loginLimitEl?.value || '1',
+  const loginLimitEl = document.getElementById('cuLoginLimit');
+  const loginLimit = Number.parseInt(
+    loginLimitEl ? loginLimitEl.value : '1',
     10
   );
-  const errEl   = document.getElementById('cuError');
+
+  const errEl = document.getElementById('cuError');
+
   errEl.classList.remove('visible');
+  errEl.textContent = '';
 
   if (!name || !email || !role) {
     errEl.textContent = 'Name, email and role are required.';
-    errEl.classList.add('visible'); return;
+    errEl.classList.add('visible');
+    return;
   }
+
   if (!_editingUserId && pw.length < 6) {
     errEl.textContent = 'Password must be at least 6 characters.';
-    errEl.classList.add('visible'); return;
+    errEl.classList.add('visible');
+    return;
   }
-   if(
-  !Number.isInteger(loginLimit) ||
-  loginLimit < 0
-){
-  errEl.textContent =
-    'Login limit must be 0 or a positive whole number.';
 
-  errEl.classList.add('visible');
+  if (
+    !Number.isInteger(loginLimit) ||
+    loginLimit < 0
+  ) {
+    errEl.textContent =
+      'Login limit must be 0 or a positive whole number.';
+    errEl.classList.add('visible');
+    return;
+  }
 
-  return;
-}
+  try {
+    let savedUser;
 
- try {
-
-  let savedUser;
-
-  if (_editingUserId) {
-
-    savedUser =
-      await apiReq(
+    // ==========================================
+    // UPDATE EXISTING USER
+    // ==========================================
+    if (_editingUserId) {
+      savedUser = await apiReq(
         `/api/users/${_editingUserId}`,
         {
-          method:'PUT',
-
-          body:JSON.stringify({
+          method: 'PUT',
+          body: JSON.stringify({
             name,
             email,
             role,
@@ -2866,78 +2912,92 @@ const loginLimit =
           })
         }
       );
+    }
 
-  } else {
-
-    savedUser =
-      await apiReq(
+    // ==========================================
+    // CREATE NEW USER
+    // ==========================================
+    else {
+      savedUser = await apiReq(
         '/api/users',
         {
-          method:'POST',
-
-          body:JSON.stringify({
+          method: 'POST',
+          body: JSON.stringify({
             name,
             email,
-            password:pw,
+            password: pw,
             role,
             subject
           })
         }
       );
-  }
-
-
-  // User ID
-  const targetUserId =
-    _editingUserId ||
-    savedUser?.id;
-
-
-  if(!targetUserId){
-    throw new Error(
-      'User was saved but user ID was not returned.'
-    );
-  }
-
-
-  // --------------------------------------
-  // SAVE LOGIN LIMIT
-  // --------------------------------------
-
-  await apiReq(
-    `/api/auth/login-limit/${targetUserId}`,
-    {
-      method:'PUT',
-
-      body:JSON.stringify({
-        loginLimit
-      })
     }
-  );
 
+    // ==========================================
+    // VERIFY SUBJECT
+    // ==========================================
+    const requestedSubject =
+      canonicalSubject(subject);
 
-  showToast(
-    _editingUserId
-      ? 'User and login limit updated.'
-      : 'User created successfully.'
-  );
+    const storedSubject =
+      canonicalSubject(
+        savedUser?.subject || subject
+      );
 
-  closeCreateUserModal();
+    if (storedSubject !== requestedSubject) {
+      throw new Error(
+        `Subject was not saved. Requested "${requestedSubject}" but the database returned "${storedSubject}".`
+      );
+    }
 
-  await loadUsers();
+    // ==========================================
+    // GET USER ID
+    // ==========================================
+    const targetUserId =
+      _editingUserId ||
+      savedUser?.id;
 
-}catch(e){
+    if (!targetUserId) {
+      throw new Error(
+        'User was saved but user ID was not returned.'
+      );
+    }
 
-  errEl.textContent =
-    e.message;
+    // ==========================================
+    // SAVE LOGIN LIMIT
+    // ==========================================
+    await apiReq(
+      `/api/auth/login-limit/${encodeURIComponent(targetUserId)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          loginLimit: loginLimit
+        })
+      }
+    );
 
-  errEl.classList.add(
-    'visible'
-  );
-} catch(e) {
-    errEl.textContent = e.message;
+    // ==========================================
+    // SUCCESS
+    // ==========================================
+    showToast(
+      _editingUserId
+        ? 'User and login limit updated.'
+        : 'User created successfully.'
+    );
+
+    closeCreateUserModal();
+
+    await loadUsers();
+
+  } catch (e) {
+    console.error('Save user error:', e);
+
+    errEl.textContent =
+      e.message || 'Unable to save user.';
+
     errEl.classList.add('visible');
   }
+}
 
 
 async function toggleUserStatus(id, currentStatus, name) {
