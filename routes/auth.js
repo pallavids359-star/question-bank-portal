@@ -3,7 +3,10 @@ const express  = require('express');
 const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
 const supabase = require('../lib/supabase');
-const { requireAuth } = require('../middleware/auth');
+const {
+  requireAuth,
+  requireRole
+} = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');
 
@@ -62,6 +65,39 @@ async function logLogin(userId, req, status) {
   } catch (err) {
     return null;
   }
+}
+// ── Count active login sessions ───────────────────────────────
+async function countActiveLoginSessions(userId) {
+
+  if (!userId) return 0;
+
+  // Heartbeat normally updates while the user is active.
+  // Sessions with no heartbeat for 3 minutes are treated as stale.
+  const cutoff = new Date(
+    Date.now() - (3 * 60 * 1000)
+  ).toISOString();
+
+  const { count, error } = await supabase
+    .from('login_history')
+    .select('id', {
+      count: 'exact',
+      head: true
+    })
+    .eq('user_id', userId)
+    .eq('status', 'success')
+    .is('logout_time', null)
+    .gte('last_activity_at', cutoff);
+
+  if (error) {
+    console.error(
+      '[active sessions count]',
+      error.message
+    );
+
+    return 0;
+  }
+
+  return Number(count) || 0;
 }
 
 // ── POST /api/auth/login ───────────────────────────────────────────────────
@@ -159,6 +195,40 @@ router.post('/login', async (req, res) => {
 
     // Correct password
     const logicalUser = toLogicalUser(activeUser);
+    // ============================================================
+// LOGIN LIMIT CHECK
+// ============================================================
+
+const loginLimit = Math.max(
+  0,
+  Number.parseInt(
+    activeUser.login_limit,
+    10
+  ) || 0
+);
+
+// login_limit = 0 means unlimited
+if (loginLimit > 0) {
+
+  const activeSessions =
+    await countActiveLoginSessions(
+      activeUser.id
+    );
+
+  if (activeSessions >= loginLimit) {
+
+    await logLogin(
+      activeUser.id,
+      req,
+      'limit_rejected'
+    ).catch(() => {});
+
+    return res.status(403).json({
+      error:
+        `Login limit reached. This account allows only ${loginLimit} active login${loginLimit === 1 ? '' : 's'}. Please sign out from another device first.`
+    });
+  }
+}
 
     const loginRecord = await logLogin(
       activeUser.id,
@@ -325,6 +395,122 @@ router.get('/me', requireAuth, async (req, res) => {
   }
   res.json(toLogicalUser(user));
 });
+// ── ADMIN: UPDATE USER LOGIN LIMIT ─────────────────────────────
+router.put(
+  '/login-limit/:userId',
+  requireAuth,
+  requireRole('admin'),
+  async (req, res) => {
+
+    try {
+
+      const loginLimit =
+        Number.parseInt(
+          req.body?.loginLimit,
+          10
+        );
+
+      if (
+        !Number.isInteger(loginLimit) ||
+        loginLimit < 0
+      ) {
+        return res.status(400).json({
+          error:
+            'Login limit must be 0 or a positive whole number.'
+        });
+      }
+
+      const { data: user, error: findError } =
+        await supabase
+          .from('users')
+          .select(
+            'id, name, email, login_limit'
+          )
+          .eq(
+            'id',
+            req.params.userId
+          )
+          .maybeSingle();
+
+      if(findError){
+        return res.status(500).json({
+          error:findError.message
+        });
+      }
+
+      if(!user){
+        return res.status(404).json({
+          error:'User not found.'
+        });
+      }
+
+
+      const { data, error } =
+        await supabase
+          .from('users')
+          .update({
+            login_limit:loginLimit
+          })
+          .eq(
+            'id',
+            req.params.userId
+          )
+          .select(
+            'id, name, email, login_limit'
+          )
+          .single();
+
+      if(error){
+        return res.status(400).json({
+          error:error.message
+        });
+      }
+
+
+      await writeAuditLog({
+
+        userId:req.user.userId,
+
+        userName:
+          req.user.name || 'Admin',
+
+        action:
+          'UPDATE_LOGIN_LIMIT',
+
+        resourceType:
+          'user',
+
+        resourceId:
+          data.id,
+
+        details:{
+          email:data.email,
+          loginLimit
+        }
+
+      }).catch(()=>{});
+
+
+      res.json({
+        success:true,
+        id:data.id,
+        email:data.email,
+        loginLimit:data.login_limit
+      });
+
+    }catch(error){
+
+      console.error(
+        '[update login limit]',
+        error
+      );
+
+      res.status(500).json({
+        error:error.message
+      });
+    }
+  }
+);
 
 // ── PUT /api/auth/change-password ─────────────────────────────────────────
 router.put('/change-password', requireAuth, async (req, res) => {
