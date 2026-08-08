@@ -5557,19 +5557,125 @@ if(canDelete){
 }
 
 function renderQuestionPagination(){
-  const wrap=document.getElementById('questionPagination');
-  const prev=document.getElementById('questionPrevPage');
-  const next=document.getElementById('questionNextPage');
-  const status=document.getElementById('questionPageStatus');
-  if(!wrap||!prev||!next||!status)return;
-  wrap.style.display=questionTotal>questionPageSize?'flex':'none';
-  prev.disabled=questionPage<=1;
-  next.disabled=questionPage>=questionTotalPages;
-  status.textContent='Page '+questionPage+' of '+questionTotalPages;
+
+  const wrap =
+    document.getElementById(
+      'questionPagination'
+    );
+
+  const prev =
+    document.getElementById(
+      'questionPrevPage'
+    );
+
+  const next =
+    document.getElementById(
+      'questionNextPage'
+    );
+
+  const status =
+    document.getElementById(
+      'questionPageStatus'
+    );
+
+  const pageSelect =
+    document.getElementById(
+      'questionPageSelect'
+    );
+
+
+  if(wrap && prev && next && status){
+
+    wrap.style.display =
+      questionTotal > questionPageSize
+        ? 'flex'
+        : 'none';
+
+    prev.disabled =
+      questionPage <= 1;
+
+    next.disabled =
+      questionPage >= questionTotalPages;
+
+    status.textContent =
+      'Page ' +
+      questionPage +
+      ' of ' +
+      questionTotalPages;
+  }
+
+
+  // Update page dropdown
+  if(pageSelect){
+
+    pageSelect.innerHTML = '';
+
+    for(
+      let pageNumber = 1;
+      pageNumber <= questionTotalPages;
+      pageNumber++
+    ){
+
+      const option =
+        document.createElement('option');
+
+      option.value =
+        String(pageNumber);
+
+      option.textContent =
+        'Page ' + pageNumber;
+
+      if(
+        pageNumber ===
+        questionPage
+      ){
+        option.selected = true;
+      }
+
+      pageSelect.appendChild(
+        option
+      );
+    }
+
+    pageSelect.disabled =
+      questionTotalPages <= 1;
+  }
 }
 
 const questionPrevPage=document.getElementById('questionPrevPage');
 const questionNextPage=document.getElementById('questionNextPage');
+   const questionPageSelect =
+  document.getElementById(
+    'questionPageSelect'
+  );
+
+if(questionPageSelect){
+
+  questionPageSelect.addEventListener(
+    'change',
+    ()=>{
+
+      const selectedPage =
+        Number(
+          questionPageSelect.value
+        );
+
+      if(
+        selectedPage >= 1 &&
+        selectedPage <= questionTotalPages &&
+        selectedPage !== questionPage
+      ){
+
+        loadQuestions(
+          selectedPage,
+          false,
+          true
+        );
+
+      }
+    }
+  );
+}
 if(questionPrevPage)questionPrevPage.addEventListener('click',()=>{
   if(questionPage>1)loadQuestions(questionPage-1,false,true);
 });
