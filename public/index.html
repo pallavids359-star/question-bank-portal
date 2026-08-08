@@ -1551,6 +1551,7 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
             <select id="auditTimePeriod" onchange="changeAuditTimePeriod(this.value)">
               <option value="week">Weekly</option>
               <option value="month">Monthly</option>
+               <option value="month">Yearly</option>
             </select>
             <button class="btn btn-ghost btn-sm" onclick="moveAuditTimePeriod(-1)">← Previous</button>
             <div class="audit-time-label" id="auditTimeRangeLabel">Current week</div>
@@ -3116,31 +3117,192 @@ let auditTimePeriod = 'week';
 let auditTimeCursor = new Date();
 
 function startOfAuditPeriod(date, period) {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
+
+  const d = new Date(date);
+
+  d.setHours(0, 0, 0, 0);
+
   if (period === 'month') {
-    start.setDate(1);
-  } else {
-    const day = start.getDay();
-    start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+
+    d.setDate(1);
+    return d;
+
   }
-  return start;
+
+  if (period === 'year') {
+
+    d.setMonth(0, 1);
+    return d;
+
+  }
+
+  // WEEK
+  // Monday = beginning of week
+
+  const day = d.getDay();
+
+  const diff =
+    day === 0
+      ? -6
+      : 1 - day;
+
+  d.setDate(
+    d.getDate() + diff
+  );
+
+  return d;
 }
 
 function auditPeriodRange() {
-  const start = startOfAuditPeriod(auditTimeCursor, auditTimePeriod);
-  const end = new Date(start);
-  if (auditTimePeriod === 'month') end.setMonth(end.getMonth() + 1);
-  else end.setDate(end.getDate() + 7);
-  return { start, end };
+
+  const now = new Date();
+
+  let base =
+    new Date(now);
+
+  // ----------------------------------
+  // WEEK
+  // ----------------------------------
+
+  if (auditTimePeriod === 'week') {
+
+    base.setDate(
+      base.getDate() +
+      (auditTimeOffset * 7)
+    );
+
+    const start =
+      startOfAuditPeriod(
+        base,
+        'week'
+      );
+
+    const end =
+      new Date(start);
+
+    end.setDate(
+      end.getDate() + 7
+    );
+
+    end.setMilliseconds(-1);
+
+    return {
+      start,
+      end
+    };
+  }
+
+
+  // ----------------------------------
+  // MONTH
+  // ----------------------------------
+
+  if (auditTimePeriod === 'month') {
+
+    base =
+      new Date(
+        now.getFullYear(),
+        now.getMonth() +
+          auditTimeOffset,
+        1
+      );
+
+    const start =
+      startOfAuditPeriod(
+        base,
+        'month'
+      );
+
+    const end =
+      new Date(
+        start.getFullYear(),
+        start.getMonth() + 1,
+        1
+      );
+
+    end.setMilliseconds(-1);
+
+    return {
+      start,
+      end
+    };
+  }
+
+
+  // ----------------------------------
+  // YEAR
+  // ----------------------------------
+
+  base =
+    new Date(
+      now.getFullYear() +
+        auditTimeOffset,
+      0,
+      1
+    );
+
+  const start =
+    startOfAuditPeriod(
+      base,
+      'year'
+    );
+
+  const end =
+    new Date(
+      start.getFullYear() + 1,
+      0,
+      1
+    );
+
+  end.setMilliseconds(-1);
+
+  return {
+    start,
+    end
+  };
 }
 
 function auditPeriodLabel(start, end) {
-  if (auditTimePeriod === 'month') {
-    return start.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+  if (auditTimePeriod === 'year') {
+
+    return String(
+      start.getFullYear()
+    );
+
   }
-  const inclusiveEnd = new Date(end.getTime() - 1);
-  return `${fmtDate(start.toISOString())} – ${fmtDate(inclusiveEnd.toISOString())}`;
+
+  if (auditTimePeriod === 'month') {
+
+    return start.toLocaleDateString(
+      'en-GB',
+      {
+        month: 'long',
+        year: 'numeric'
+      }
+    );
+
+  }
+
+  return (
+    start.toLocaleDateString(
+      'en-GB',
+      {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }
+    ) +
+    ' – ' +
+    end.toLocaleDateString(
+      'en-GB',
+      {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }
+    )
+  );
 }
 
 function changeAuditTimePeriod(period) {
