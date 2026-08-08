@@ -2685,6 +2685,7 @@ function filterQuestionsByTimeframe(tf) {
 }
 
 function filterUsersByRole(targetRole) {
+
   if (
     !Auth.can('manage_users') &&
     Auth.getRole() !== 'admin'
@@ -2699,6 +2700,7 @@ function filterUsersByRole(targetRole) {
   showPage('pageUsers');
 
   setTimeout(() => {
+
     const tbody =
       document.getElementById('usersTableBody');
 
@@ -2707,9 +2709,10 @@ function filterUsersByRole(targetRole) {
     const rows =
       tbody.querySelectorAll('tr');
 
-    let visibleCount = 0;
+    let found = 0;
 
     rows.forEach(tr => {
+
       const roleBadge =
         tr.querySelector(
           '.role-admin, .role-adder, .role-editor, .role-viewer'
@@ -2724,20 +2727,27 @@ function filterUsersByRole(targetRole) {
 
       if (
         rowRole ===
-        String(targetRole).toLowerCase()
+        String(targetRole)
+          .trim()
+          .toLowerCase()
       ) {
+
         tr.style.display = '';
-        visibleCount++;
+        found++;
+
       } else {
+
         tr.style.display = 'none';
+
       }
+
     });
 
     showToast(
-      `${visibleCount} ${targetRole} user(s) found.`
+      `${found} ${targetRole} user(s) found.`
     );
 
-  }, 300);
+  }, 400);
 }
 
 function showMostActiveDetails() {
