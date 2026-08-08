@@ -5274,24 +5274,315 @@ else if(normType==='statement_based'){
       setFieldFromRaw('optC',q.optC||'');
       setFieldFromRaw('optD',q.optD||'');
     }else if(normType==='match'){
-      if(q.question) setFieldFromRaw('question',q.question);
-      const colA=(q.columnA&&q.columnA.length)?q.columnA:['','','',''];
-      const colB=(q.columnB&&q.columnB.length)?q.columnB:['','','',''];
-      resetColumnRows('columnARows',columnALabel,colA.length);
-      resetColumnRows('columnBRows',columnBLabel,colB.length);
-      Array.from(document.getElementById('columnARows').children).forEach((wrap,i)=>setEqFieldElFromRaw(wrap.querySelector('.eq-field'),colA[i]||''));
-      Array.from(document.getElementById('columnBRows').children).forEach((wrap,i)=>setEqFieldElFromRaw(wrap.querySelector('.eq-field'),colB[i]||''));
-      const savedMatchOptions=q.matchOptions||{};
-      const hasSavedCombination=['A','B','C','D'].some(l=>String(savedMatchOptions[l]||'').trim());
-      const mo=hasSavedCombination?savedMatchOptions:{
-        A:q.optA||q.opt_a||'',
-        B:q.optB||q.opt_b||'',
-        C:q.optC||q.opt_c||'',
-        D:q.optD||q.opt_d||''
-      };
-      resetCombos(Math.max(4,Object.keys(mo).length));
-      ['A','B','C','D'].forEach(l=>setFieldFromRaw('matchOpt'+l,mo[l]||''));
-    }else if(normType==='numerical'){
+
+  if(q.question){
+    setFieldFromRaw('question', q.question);
+  }
+
+  let colA = [];
+  let colB = [];
+
+  // -----------------------------
+  // 1. camelCase arrays
+  // -----------------------------
+
+  if(Array.isArray(q.columnA)){
+    colA = q.columnA;
+  }
+
+  if(Array.isArray(q.columnB)){
+    colB = q.columnB;
+  }
+
+
+  // -----------------------------
+  // 2. snake_case arrays
+  // -----------------------------
+
+  if(!colA.length && Array.isArray(q.column_a)){
+    colA = q.column_a;
+  }
+
+  if(!colB.length && Array.isArray(q.column_b)){
+    colB = q.column_b;
+  }
+
+
+  // -----------------------------
+  // 3. JSON STRING SUPPORT
+  // -----------------------------
+
+  function parseColumnValue(value){
+
+    if(Array.isArray(value)){
+      return value;
+    }
+
+    if(typeof value !== 'string'){
+      return [];
+    }
+
+    const raw = value.trim();
+
+    if(!raw){
+      return [];
+    }
+
+    // Try JSON first
+    try{
+
+      const parsed = JSON.parse(raw);
+
+      if(Array.isArray(parsed)){
+        return parsed;
+      }
+
+    }catch(e){}
+
+    // Try newline separated values
+    if(raw.includes('\n')){
+
+      return raw
+        .split('\n')
+        .map(v => v.trim())
+        .filter(Boolean);
+
+    }
+
+    return [];
+  }
+
+
+  if(!colA.length){
+
+    colA =
+      parseColumnValue(q.columnA).length
+        ? parseColumnValue(q.columnA)
+        : parseColumnValue(q.column_a);
+
+  }
+
+
+  if(!colB.length){
+
+    colB =
+      parseColumnValue(q.columnB).length
+        ? parseColumnValue(q.columnB)
+        : parseColumnValue(q.column_b);
+
+  }
+
+
+  // ------------------------------------------------
+  // 4. FALLBACK: READ COLUMN A/B FROM QUESTION TEXT
+  // ------------------------------------------------
+
+  if((!colA.length || !colB.length) && q.question){
+
+    const storedText =
+      String(q.question || '')
+        .replace(/\r\n?/g, '\n');
+
+
+    function cleanMatchRow(row){
+
+      return String(row || '')
+        .trim()
+        .replace(
+          /^\s*(?:Row\s+)?(?:\(\s*[A-Za-z0-9]+\s*\)|\[\s*[A-Za-z0-9]+\s*\]|[A-Za-z0-9]+)\s*(?:[.:\-–—)]\s*|\s+)/i,
+          ''
+        )
+        .trim();
+
+    }
+
+
+    // Column A / Column I
+    const columnAMatch =
+      storedText.match(
+        /(?:\*\*)?\s*(?:Column|List)\s*(?:I|A)\s*(?:\*\*)?\s*\n([\s\S]*?)(?=\n\s*(?:\*\*)?\s*(?:Column|List)\s*(?:II|B)\b)/i
+      );
+
+
+    // Column B / Column II
+    const columnBMatch =
+      storedText.match(
+        /(?:\*\*)?\s*(?:Column|List)\s*(?:II|B)\s*(?:\*\*)?\s*\n([\s\S]*?)(?=\n\s*(?:Options?|Option\s+Combinations?|Answer|Ans|Solution|Explanation)\b|$)/i
+      );
+
+
+    if(!colA.length && columnAMatch){
+
+      colA =
+        columnAMatch[1]
+          .split('\n')
+          .map(cleanMatchRow)
+          .filter(Boolean);
+
+    }
+
+
+    if(!colB.length && columnBMatch){
+
+      colB =
+        columnBMatch[1]
+          .split('\n')
+          .map(cleanMatchRow)
+          .filter(Boolean);
+
+    }
+
+  }
+
+
+  // Remove empty values
+  colA = colA
+    .map(v => String(v || '').trim())
+    .filter(Boolean);
+
+  colB = colB
+    .map(v => String(v || '').trim())
+    .filter(Boolean);
+
+
+  // ------------------------------------------------
+  // CREATE AT LEAST FOUR ROWS
+  // ------------------------------------------------
+
+  resetColumnRows(
+    'columnARows',
+    columnALabel,
+    Math.max(4, colA.length)
+  );
+
+  resetColumnRows(
+    'columnBRows',
+    columnBLabel,
+    Math.max(4, colB.length)
+  );
+
+
+  // ------------------------------------------------
+  // POPULATE COLUMN A
+  // ------------------------------------------------
+
+  const columnAContainer =
+    document.getElementById('columnARows');
+
+  if(columnAContainer){
+
+    Array.from(columnAContainer.children)
+      .forEach((wrap,i)=>{
+
+        const field =
+          wrap.querySelector('.eq-field');
+
+        if(field){
+
+          setEqFieldElFromRaw(
+            field,
+            colA[i] || ''
+          );
+
+        }
+
+      });
+
+  }
+
+
+  // ------------------------------------------------
+  // POPULATE COLUMN B
+  // ------------------------------------------------
+
+  const columnBContainer =
+    document.getElementById('columnBRows');
+
+  if(columnBContainer){
+
+    Array.from(columnBContainer.children)
+      .forEach((wrap,i)=>{
+
+        const field =
+          wrap.querySelector('.eq-field');
+
+        if(field){
+
+          setEqFieldElFromRaw(
+            field,
+            colB[i] || ''
+          );
+
+        }
+
+      });
+
+  }
+
+
+  // ------------------------------------------------
+  // OPTION COMBINATIONS
+  // ------------------------------------------------
+
+  let savedMatchOptions =
+    q.matchOptions ||
+    q.match_options ||
+    {};
+
+
+  if(typeof savedMatchOptions === 'string'){
+
+    try{
+
+      savedMatchOptions =
+        JSON.parse(savedMatchOptions);
+
+    }catch(e){
+
+      savedMatchOptions = {};
+
+    }
+
+  }
+
+
+  const hasSavedCombination =
+    ['A','B','C','D'].some(
+      l =>
+        String(
+          savedMatchOptions[l] || ''
+        ).trim()
+    );
+
+
+  const mo =
+    hasSavedCombination
+      ? savedMatchOptions
+      : {
+          A:q.optA || q.opt_a || '',
+          B:q.optB || q.opt_b || '',
+          C:q.optC || q.opt_c || '',
+          D:q.optD || q.opt_d || ''
+        };
+
+
+  resetCombos(
+    Math.max(
+      4,
+      Object.keys(mo).length
+    )
+  );
+
+
+  ['A','B','C','D'].forEach(l=>{
+
+    setFieldFromRaw(
+      'matchOpt'+l,
+      mo[l] || ''
+    );
+
+  });
+}else if(normType==='numerical'){
       setFieldFromRaw('numQuestion',q.question||'');
       setFieldFromRaw('numAnswer',q.numAnswer||q.answer||q.correctOption||q.correct_option||'');
     }else{
