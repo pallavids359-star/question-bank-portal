@@ -2685,69 +2685,29 @@ function filterQuestionsByTimeframe(tf) {
 }
 
 function filterUsersByRole(targetRole) {
-
-  if (
-    !Auth.can('manage_users') &&
-    Auth.getRole() !== 'admin'
-  ) {
-    showToast(
-      'You do not have permission to view users.',
-      true
-    );
+  if (!Auth.can('manage_users') && Auth.getRole() !== 'admin') {
+    showToast(`Showing ${targetRole} count details. Access User Management for full list.`);
     return;
   }
-
   showPage('pageUsers');
-
   setTimeout(() => {
-
-    const tbody =
-      document.getElementById('usersTableBody');
-
+    const tbody = document.getElementById('usersTableBody');
     if (!tbody) return;
-
-    const rows =
-      tbody.querySelectorAll('tr');
-
+    const rows = tbody.querySelectorAll('tr');
     let found = 0;
-
     rows.forEach(tr => {
-
-      const roleBadge =
-        tr.querySelector(
-          '.role-admin, .role-adder, .role-editor, .role-viewer'
-        );
-
-      if (!roleBadge) return;
-
-      const rowRole =
-        roleBadge.textContent
-          .trim()
-          .toLowerCase();
-
-      if (
-        rowRole ===
-        String(targetRole)
-          .trim()
-          .toLowerCase()
-      ) {
-
-        tr.style.display = '';
+      const roleText = tr.textContent.toLowerCase();
+      if (roleText.includes(targetRole.toLowerCase())) {
+        tr.style.outline = '2px solid var(--gold)';
+        tr.style.background = 'rgba(201,162,39,0.12)';
         found++;
-
       } else {
-
-        tr.style.display = 'none';
-
+        tr.style.outline = '';
+        tr.style.background = '';
       }
-
     });
-
-    showToast(
-      `${found} ${targetRole} user(s) found.`
-    );
-
-  }, 400);
+    showToast(`Highlighted ${found} user(s) with role: ${targetRole.toUpperCase()}`);
+  }, 250);
 }
 
 function showMostActiveDetails() {
