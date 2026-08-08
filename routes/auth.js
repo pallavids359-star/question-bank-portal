@@ -482,49 +482,85 @@ router.get(
 
 
       // =========================================================
-      // GET QUESTIONS ADDED DURING SELECTED PERIOD
-      // =========================================================
+// GET ALL QUESTIONS ADDED DURING SELECTED PERIOD
+// =========================================================
 
-      const {
-        data: questions,
-        error: questionError
-      } = await supabase
-        .from('questions')
-        .select(`
-          id,
-          created_by,
-          created_by_name,
-          created_at
-        `)
-        .gte(
-          'created_at',
-          startDate.toISOString()
-        )
-        .lt(
-          'created_at',
-          endDate.toISOString()
-        );
+const validQuestions = [];
 
+const QUESTION_PAGE_SIZE = 1000;
 
-      if (questionError) {
+for (
+  let from = 0;
+  ;
+  from += QUESTION_PAGE_SIZE
+) {
 
-        console.error(
-          '[user-time-summary questions]',
-          questionError
-        );
-
-        return res.status(500).json({
-          error:
-            questionError.message
-        });
-
+  const {
+    data: questionPage,
+    error: questionError
+  } = await supabase
+    .from('questions')
+    .select(`
+      id,
+      created_by,
+      created_by_name,
+      created_at
+    `)
+    .gte(
+      'created_at',
+      startDate.toISOString()
+    )
+    .lt(
+      'created_at',
+      endDate.toISOString()
+    )
+    .order(
+      'created_at',
+      {
+        ascending: true
       }
+    )
+    .range(
+      from,
+      from + QUESTION_PAGE_SIZE - 1
+    );
 
 
-      const validQuestions =
-        Array.isArray(questions)
-          ? questions
-          : [];
+  if (questionError) {
+
+    console.error(
+      '[user-time-summary questions]',
+      questionError
+    );
+
+    return res.status(500).json({
+      error:
+        questionError.message
+    });
+
+  }
+
+
+  const page =
+    Array.isArray(questionPage)
+      ? questionPage
+      : [];
+
+
+  validQuestions.push(
+    ...page
+  );
+
+
+  if (
+    page.length <
+    QUESTION_PAGE_SIZE
+  ) {
+    break;
+  }
+
+}
+
 
 
 
