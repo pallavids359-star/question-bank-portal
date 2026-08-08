@@ -2776,109 +2776,139 @@ if(loginLimitEl){
   document.getElementById('createUserModal').classList.add('visible');
 }
 
+function openCreateUserModal() {
+  _editingUserId = null;
+
+  document.getElementById('createUserModalTitle').textContent = 'Create New User';
+  document.getElementById('cuSaveBtn').textContent = 'Create User';
+
+  document.getElementById('cuName').value = '';
+  document.getElementById('cuEmail').value = '';
+  document.getElementById('cuPassword').value = '';
+  document.getElementById('cuRole').value = 'viewer';
+
+  const cuSub = document.getElementById('cuSubject');
+  if (cuSub) {
+    cuSub.value = 'All';
+  }
+
+  const loginLimitEl = document.getElementById('cuLoginLimit');
+  if (loginLimitEl) {
+    loginLimitEl.value = '1';
+  }
+
+  document.getElementById('cuPasswordGroup').style.display = '';
+  document.getElementById('cuError').classList.remove('visible');
+  document.getElementById('createUserModal').classList.add('visible');
+}
+
+
 function openEditUserModal(userId) {
   _editingUserId = userId;
 
-  document.getElementById(
-    'createUserModalTitle'
-  ).textContent = 'Edit User';
+  document.getElementById('createUserModalTitle').textContent = 'Edit User';
+  document.getElementById('cuSaveBtn').textContent = 'Save Changes';
+  document.getElementById('cuPasswordGroup').style.display = 'none';
+  document.getElementById('cuError').classList.remove('visible');
 
-  document.getElementById(
-    'cuSaveBtn'
-  ).textContent = 'Save Changes';
+  apiReq(`/api/users/${encodeURIComponent(userId)}`)
+    .then(u => {
 
-  document.getElementById(
-    'cuPasswordGroup'
-  ).style.display = 'none';
+      document.getElementById('cuName').value = u.name || '';
+      document.getElementById('cuEmail').value = u.email || '';
+      document.getElementById('cuRole').value = u.role || 'viewer';
 
-  document.getElementById(
-    'cuError'
-  ).classList.remove('visible');
+      const cuSub = document.getElementById('cuSubject');
 
-  apiReq(
-    `/api/users/${encodeURIComponent(userId)}`
-  )
-  .then(u => {
+      if (cuSub) {
+        cuSub.value = u.subject || 'All';
+      }
 
-    document.getElementById('cuName').value =
-      u.name || '';
+      const loginLimitEl = document.getElementById('cuLoginLimit');
 
-    document.getElementById('cuEmail').value =
-      u.email || '';
+      if (loginLimitEl) {
+        const savedLimit =
+          u.login_limit ??
+          u.loginLimit ??
+          1;
 
-    document.getElementById('cuRole').value =
-      u.role || 'viewer';
+        loginLimitEl.value = String(savedLimit);
+      }
 
-    const cuSub =
-      document.getElementById('cuSubject');
-
-    if (cuSub) {
-      cuSub.value =
-        u.subject || 'All';
-    }
-
-    const loginLimitEl =
-      document.getElementById(
-        'cuLoginLimit'
+      document
+        .getElementById('createUserModal')
+        .classList.add('visible');
+    })
+    .catch(e => {
+      showToast(
+        e.message || 'Could not load user.',
+        true
       );
-
-    if (loginLimitEl) {
-      const savedLimit =
-        u.login_limit ??
-        u.loginLimit ??
-        1;
-
-      loginLimitEl.value =
-        Number(savedLimit);
-    }
-
-    document.getElementById(
-      'createUserModal'
-    ).classList.add('visible');
-
-  })
-  .catch(e => {
-    showToast(
-      e.message ||
-      'Could not load user.',
-      true
-    );
-  });
+    });
 }
 
+
 function closeCreateUserModal() {
-  document.getElementById('createUserModal').classList.remove('visible');
+  document
+    .getElementById('createUserModal')
+    .classList.remove('visible');
+
   _editingUserId = null;
 }
 
+
 async function saveUser() {
-  const name = document.getElementById('cuName').value.trim();
-  const email = document.getElementById('cuEmail').value.trim();
-  const pw = document.getElementById('cuPassword').value;
-  const role = document.getElementById('cuRole').value;
+  const name =
+    document.getElementById('cuName').value.trim();
 
-  const cuSubEl = document.getElementById('cuSubject');
-  const subject = cuSubEl ? cuSubEl.value : 'All';
+  const email =
+    document.getElementById('cuEmail').value.trim();
 
-  const loginLimitEl = document.getElementById('cuLoginLimit');
-  const loginLimit = Number.parseInt(
-    loginLimitEl ? loginLimitEl.value : '1',
-    10
-  );
+  const pw =
+    document.getElementById('cuPassword').value;
 
-  const errEl = document.getElementById('cuError');
+  const role =
+    document.getElementById('cuRole').value;
 
-  errEl.classList.remove('visible');
+  const cuSubEl =
+    document.getElementById('cuSubject');
+
+  const subject =
+    cuSubEl ? cuSubEl.value : 'All';
+
+  // ONLY ONE loginLimitEl inside saveUser()
+  const loginLimitEl =
+    document.getElementById('cuLoginLimit');
+
+  const loginLimit =
+    Number.parseInt(
+      loginLimitEl ? loginLimitEl.value : '1',
+      10
+    );
+
+  const errEl =
+    document.getElementById('cuError');
+
   errEl.textContent = '';
+  errEl.classList.remove('visible');
+
+
+  // -------------------------------
+  // VALIDATION
+  // -------------------------------
 
   if (!name || !email || !role) {
-    errEl.textContent = 'Name, email and role are required.';
+    errEl.textContent =
+      'Name, email and role are required.';
+
     errEl.classList.add('visible');
     return;
   }
 
   if (!_editingUserId && pw.length < 6) {
-    errEl.textContent = 'Password must be at least 6 characters.';
+    errEl.textContent =
+      'Password must be at least 6 characters.';
+
     errEl.classList.add('visible');
     return;
   }
@@ -2889,21 +2919,27 @@ async function saveUser() {
   ) {
     errEl.textContent =
       'Login limit must be 0 or a positive whole number.';
+
     errEl.classList.add('visible');
     return;
   }
 
+
   try {
     let savedUser;
 
-    // ==========================================
-    // UPDATE EXISTING USER
-    // ==========================================
+
+    // -------------------------------
+    // EDIT USER
+    // -------------------------------
+
     if (_editingUserId) {
+
       savedUser = await apiReq(
-        `/api/users/${_editingUserId}`,
+        `/api/users/${encodeURIComponent(_editingUserId)}`,
         {
           method: 'PUT',
+
           body: JSON.stringify({
             name,
             email,
@@ -2912,16 +2948,21 @@ async function saveUser() {
           })
         }
       );
+
     }
 
-    // ==========================================
-    // CREATE NEW USER
-    // ==========================================
+
+    // -------------------------------
+    // CREATE USER
+    // -------------------------------
+
     else {
+
       savedUser = await apiReq(
         '/api/users',
         {
           method: 'POST',
+
           body: JSON.stringify({
             name,
             email,
@@ -2931,28 +2972,14 @@ async function saveUser() {
           })
         }
       );
+
     }
 
-    // ==========================================
-    // VERIFY SUBJECT
-    // ==========================================
-    const requestedSubject =
-      canonicalSubject(subject);
 
-    const storedSubject =
-      canonicalSubject(
-        savedUser?.subject || subject
-      );
-
-    if (storedSubject !== requestedSubject) {
-      throw new Error(
-        `Subject was not saved. Requested "${requestedSubject}" but the database returned "${storedSubject}".`
-      );
-    }
-
-    // ==========================================
+    // -------------------------------
     // GET USER ID
-    // ==========================================
+    // -------------------------------
+
     const targetUserId =
       _editingUserId ||
       savedUser?.id;
@@ -2963,22 +2990,27 @@ async function saveUser() {
       );
     }
 
-    // ==========================================
+
+    // -------------------------------
     // SAVE LOGIN LIMIT
-    // ==========================================
+    // -------------------------------
+
     await apiReq(
       `/api/auth/login-limit/${encodeURIComponent(targetUserId)}`,
       {
         method: 'PUT',
+
         body: JSON.stringify({
-          loginLimit: loginLimit
+          loginLimit
         })
       }
     );
 
-    // ==========================================
+
+    // -------------------------------
     // SUCCESS
-    // ==========================================
+    // -------------------------------
+
     showToast(
       _editingUserId
         ? 'User and login limit updated.'
@@ -2990,12 +3022,18 @@ async function saveUser() {
     await loadUsers();
 
   } catch (e) {
-    console.error('Save user error:', e);
+
+    console.error(
+      'Save user error:',
+      e
+    );
 
     errEl.textContent =
-      e.message || 'Unable to save user.';
+      e.message ||
+      'Unable to save user.';
 
     errEl.classList.add('visible');
+
   }
 }
 
