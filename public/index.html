@@ -5700,6 +5700,25 @@ document.addEventListener('click', function(e) {
     );
   }
 });
+   document.addEventListener('click', function (e) {
+
+  const clickedCard =
+    e.target.closest('.clickable-stat');
+
+  // Remove highlight from all dashboard boxes
+  document
+    .querySelectorAll('.clickable-stat')
+    .forEach(card => {
+      card.classList.remove('selected');
+    });
+
+  // If a dashboard box was clicked,
+  // keep that box highlighted
+  if (clickedCard) {
+    clickedCard.classList.add('selected');
+  }
+
+});
 </script>
 </body>
 </html>
