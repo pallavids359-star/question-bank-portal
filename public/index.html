@@ -3186,7 +3186,9 @@ async function loadAuditTimeSummary() {
       start: start.toISOString(),
       end: end.toISOString(),
     });
-    const result = await apiReq(`/api/user-time-summary?${params.toString()}`);
+    const result = await apiReq(
+  `/api/auth/user-time-summary?${params.toString()}`
+);
     document.getElementById('auditPeriodTotal').textContent = formatTrackedDuration(result.totalSeconds);
     document.getElementById('auditPeriodUsers').textContent = result.activeUsers || 0;
     document.getElementById('auditPeriodSessions').textContent = result.totalSessions || 0;
