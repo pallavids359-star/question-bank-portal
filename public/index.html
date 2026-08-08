@@ -734,6 +734,106 @@ textarea{resize:vertical;min-height:70px;}
 .empty-state{text-align:center;color:var(--muted);padding:40px 0;font-size:14px;}
 .filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
 .filters select{width:auto;min-width:140px;padding:8px 30px 8px 12px;font-size:13px;}
+   /* Saved Question Search */
+.saved-question-search{
+  position:relative;
+  min-width:240px;
+  flex:1;
+  max-width:340px;
+}
+
+.saved-question-search input{
+  width:100%;
+  height:38px;
+
+  background:var(--field);
+  border:1px solid var(--border);
+  border-radius:9px;
+
+  color:var(--text);
+
+  padding:
+    8px
+    38px
+    8px
+    36px;
+
+  font-family:inherit;
+  font-size:13px;
+
+  outline:none;
+
+  transition:
+    border-color .15s,
+    box-shadow .15s;
+}
+
+.saved-question-search input:focus{
+  border-color:var(--gold);
+
+  box-shadow:
+    0 0 0 3px
+    rgba(201,162,39,.10);
+}
+
+.saved-question-search input::placeholder{
+  color:#666;
+}
+
+.saved-search-icon{
+  position:absolute;
+
+  left:12px;
+  top:50%;
+
+  transform:
+    translateY(-50%);
+
+  color:var(--muted);
+
+  pointer-events:none;
+
+  font-size:16px;
+}
+
+.saved-search-clear{
+  position:absolute;
+
+  right:9px;
+  top:50%;
+
+  transform:
+    translateY(-50%);
+
+  border:none;
+  background:transparent;
+
+  color:var(--muted);
+
+  cursor:pointer;
+
+  font-size:12px;
+
+  width:24px;
+  height:24px;
+
+  border-radius:5px;
+}
+
+.saved-search-clear:hover{
+  color:var(--gold);
+  background:rgba(201,162,39,.10);
+}
+
+@media(max-width:760px){
+
+  .saved-question-search{
+    width:100%;
+    max-width:none;
+    min-width:100%;
+  }
+
+}
 .count-line{color:var(--muted);font-size:12.5px;margin-bottom:14px;}
 .li-preview{font-size:14px;line-height:1.5;}
 .li-preview .eq-img-remove{display:none;}
@@ -2650,11 +2750,25 @@ function navigateToQuestions(focusTarget) {
   const fChapter = document.getElementById('fChapter');
   const fConcept = document.getElementById('fConcept');
   const fType    = document.getElementById('fType');
+   const fSearch =
+  document.getElementById('fSearch');
   if (fSubject) fSubject.value = '';
   if (fClass)   fClass.value = '';
   if (fChapter) fChapter.value = '';
   if (fConcept) fConcept.value = '';
   if (fType)    fType.value = '';
+   if(fSearch){
+  fSearch.value='';
+}
+
+const searchClear =
+  document.getElementById(
+    'fSearchClear'
+  );
+
+if(searchClear){
+  searchClear.style.display='none';
+}
   questionTimeframe='';
   questionPage=1;
   showPage('pageQuestions');
@@ -4532,6 +4646,13 @@ const savedFilterClass=document.getElementById('fClass');
 const savedFilterChapter=document.getElementById('fChapter');
 const savedFilterConcept=document.getElementById('fConcept');
 const savedFilterType=document.getElementById('fType');
+   const savedFilterSearch =
+  document.getElementById('fSearch');
+
+const savedFilterSearchClear =
+  document.getElementById('fSearchClear');
+
+let savedQuestionSearchTimer = null;
 if(savedFilterSubject) savedFilterSubject.addEventListener('change',()=>{
   if(savedFilterClass) savedFilterClass.value='';
   if(savedFilterChapter) savedFilterChapter.value='';
@@ -4555,6 +4676,83 @@ if(savedFilterConcept) savedFilterConcept.addEventListener('change',()=>{
   questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterType) savedFilterType.addEventListener('change',()=>{questionPage=1;loadQuestions(1,false);});
+   // ------------------------------------------------------------
+// SAVED QUESTION SEARCH
+// ------------------------------------------------------------
+
+if(savedFilterSearch){
+
+  savedFilterSearch.addEventListener(
+    'input',
+    ()=>{
+
+      const searchText =
+        savedFilterSearch.value.trim();
+
+      // Show / hide clear button
+      if(savedFilterSearchClear){
+
+        savedFilterSearchClear.style.display =
+          searchText
+            ? ''
+            : 'none';
+
+      }
+
+      // Prevent API request on every keystroke
+      clearTimeout(
+        savedQuestionSearchTimer
+      );
+
+      savedQuestionSearchTimer =
+        setTimeout(
+          ()=>{
+
+            questionPage = 1;
+
+            loadQuestions(
+              1,
+              false
+            );
+
+          },
+          350
+        );
+
+    }
+  );
+
+}
+
+
+if(savedFilterSearchClear){
+
+  savedFilterSearchClear.addEventListener(
+    'click',
+    ()=>{
+
+      if(!savedFilterSearch){
+        return;
+      }
+
+      savedFilterSearch.value = '';
+
+      savedFilterSearchClear.style.display =
+        'none';
+
+      questionPage = 1;
+
+      loadQuestions(
+        1,
+        false
+      );
+
+      savedFilterSearch.focus();
+
+    }
+  );
+
+}
 
 function filterByConcept(conceptName){
   const fConcept=document.getElementById('fConcept');
@@ -5811,7 +6009,22 @@ async function loadQuestions(page=1,refreshFacets=false,scrollToList=false){
     }
     if(refreshFacets||!questionFacets.subjects.length)await loadQuestionFacets();
     const params=new URLSearchParams({paged:'1',page:String(page),pageSize:String(questionPageSize)});
+     
     const filterMap={subject:'fSubject',klass:'fClass',chapter:'fChapter',concept:'fConcept',qType:'fType'};
+     const searchText =
+  document
+    .getElementById('fSearch')
+    ?.value
+    ?.trim() || '';
+
+if(searchText){
+
+  params.set(
+    'search',
+    searchText
+  );
+
+}
     Object.entries(filterMap).forEach(([name,id])=>{
       const value=document.getElementById(id)?.value||'';
       if(value)params.set(name,value);
