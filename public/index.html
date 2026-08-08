@@ -5638,26 +5638,18 @@ window.QP                   = QP;     // already assigned above
   const clickedCard =
     e.target.closest('.clickable-stat');
 
-  // If pointer is clicked anywhere outside a dashboard box
-  if (!clickedCard) {
-    document
-      .querySelectorAll('.clickable-stat')
-      .forEach(card => {
-        card.classList.remove('selected');
-      });
-
-    return;
-  }
-
-  // Remove previous selected box
+  // Remove old highlight
   document
     .querySelectorAll('.clickable-stat')
     .forEach(card => {
       card.classList.remove('selected');
     });
 
-  // Keep current box highlighted
-  clickedCard.classList.add('selected');
+  // If a dashboard box was clicked,
+  // keep that box highlighted
+  if (clickedCard) {
+    clickedCard.classList.add('selected');
+  }
 
 });
 </script>
