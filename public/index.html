@@ -5633,90 +5633,31 @@ window.QP                   = QP;     // already assigned above
   }
 
 })();
-  document.addEventListener('click', function (e) {
-  const card = e.target.closest('.clickable-stat');
-
-  if (!card) return;
-
-  document
-    .querySelectorAll('.clickable-stat')
-    .forEach(item => {
-      item.classList.remove('selected');
-    });
-
-  card.classList.add('selected');
-});
-   document.addEventListener('click', function (e) {
-  const card = e.target.closest('.clickable-stat');
-
-  if (!card) return;
-
-  document
-    .querySelectorAll('.clickable-stat')
-    .forEach(item => {
-      item.classList.remove('selected');
-    });
-
-  card.classList.add('selected');
-});
-   function applySavedDashboardHighlight() {
-  const savedId =
-    localStorage.getItem('selectedDashboardCard');
-
-  document
-    .querySelectorAll('.clickable-stat')
-    .forEach(card => {
-      card.classList.remove('selected');
-    });
-
-  if (!savedId) return;
-
-  const card =
-    document.getElementById(savedId);
-
-  if (card) {
-    card.classList.add('selected');
-  }
-}
-
-document.addEventListener('click', function(e) {
-  const card =
-    e.target.closest('.clickable-stat');
-
-  if (!card) return;
-
-  document
-    .querySelectorAll('.clickable-stat')
-    .forEach(item => {
-      item.classList.remove('selected');
-    });
-
-  card.classList.add('selected');
-
-  if (card.id) {
-    localStorage.setItem(
-      'selectedDashboardCard',
-      card.id
-    );
-  }
-});
-   document.addEventListener('click', function (e) {
+ document.addEventListener('pointerdown', function (e) {
 
   const clickedCard =
     e.target.closest('.clickable-stat');
 
-  // Remove highlight from all dashboard boxes
+  // If pointer is clicked anywhere outside a dashboard box
+  if (!clickedCard) {
+    document
+      .querySelectorAll('.clickable-stat')
+      .forEach(card => {
+        card.classList.remove('selected');
+      });
+
+    return;
+  }
+
+  // Remove previous selected box
   document
     .querySelectorAll('.clickable-stat')
     .forEach(card => {
       card.classList.remove('selected');
     });
 
-  // If a dashboard box was clicked,
-  // keep that box highlighted
-  if (clickedCard) {
-    clickedCard.classList.add('selected');
-  }
+  // Keep current box highlighted
+  clickedCard.classList.add('selected');
 
 });
 </script>
