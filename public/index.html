@@ -1690,7 +1690,7 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
             <select id="auditTimePeriod" onchange="changeAuditTimePeriod(this.value)">
               <option value="week">Weekly</option>
               <option value="month">Monthly</option>
-               <option value="month">Yearly</option>
+               <option value="year">Yearly</option>
             </select>
             <button class="btn btn-ghost btn-sm" onclick="moveAuditTimePeriod(-1)">← Previous</button>
             <div class="audit-time-label" id="auditTimeRangeLabel">Current week</div>
@@ -3540,57 +3540,289 @@ function formatTrackedDuration(seconds) {
 }
 
 async function loadAuditTimeSummary() {
-  const body = document.getElementById('auditTimeSummaryBody');
+
+  const body =
+    document.getElementById(
+      'auditTimeSummaryBody'
+    );
+
   if (!body) return;
-  const { start, end } = auditPeriodRange();
-  const currentStart = startOfAuditPeriod(new Date(), auditTimePeriod);
-  document.getElementById('auditTimeRangeLabel').textContent = auditPeriodLabel(start, end);
-  document.getElementById('auditTimeNextBtn').disabled = start >= currentStart;
-  body.innerHTML = '<tr class="empty-row"><td colspan="6">Loading user time…</td></tr>';
+
+
+  body.innerHTML =
+    '<tr class="empty-row"><td colspan="6">Loading user summary…</td></tr>';
+
 
   try {
-    const params = new URLSearchParams({
-      period: auditTimePeriod,
-      start: start.toISOString(),
-      end: end.toISOString(),
-    });
-    const result = await apiReq(
-  `/api/auth/user-time-summary?${params.toString()}`
-);
-    document.getElementById(
-  'auditPeriodTotal'
-).textContent =
-  Number(result.totalQuestions) || 0;
-    document.getElementById('auditPeriodUsers').textContent = result.activeUsers || 0;
-    document.getElementById('auditPeriodSessions').textContent = result.totalSessions || 0;
 
-    const rows = result.data || [];
+    const { start, end } =
+      auditPeriodRange();
+
+
+    const currentStart =
+      startOfAuditPeriod(
+        new Date(),
+        auditTimePeriod
+      );
+
+
+    document.getElementById(
+      'auditTimeRangeLabel'
+    ).textContent =
+      auditPeriodLabel(
+        start,
+        end
+      );
+
+
+    document.getElementById(
+      'auditTimeNextBtn'
+    ).disabled =
+      start >= currentStart;
+
+
+    const params =
+      new URLSearchParams({
+
+        period:
+          auditTimePeriod,
+
+        start:
+          start.toISOString(),
+
+        end:
+          end.toISOString()
+
+      });
+
+
+    const result =
+      await apiReq(
+        `/api/auth/user-time-summary?${params.toString()}`
+      );
+
+
+    // =============================================
+    // TOTAL QUESTIONS
+    // =============================================
+
+    document.getElementById(
+      'auditPeriodTotal'
+    ).textContent =
+      Number(
+        result.totalQuestions
+      ) || 0;
+
+
+    // =============================================
+    // ACTIVE USERS
+    // =============================================
+
+    document.getElementById(
+      'auditPeriodUsers'
+    ).textContent =
+      Number(
+        result.activeUsers
+      ) || 0;
+
+
+    // =============================================
+    // SESSIONS
+    // =============================================
+
+    document.getElementById(
+      'auditPeriodSessions'
+    ).textContent =
+      Number(
+        result.totalSessions
+      ) || 0;
+
+
+
+    const rows =
+      Array.isArray(result.data)
+        ? result.data
+        : [];
+
+
     if (!rows.length) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="6">No users found.</td></tr>';
+
+      body.innerHTML = `
+        <tr class="empty-row">
+          <td colspan="6">
+            No user activity or questions found for this period.
+          </td>
+        </tr>
+      `;
+
       return;
     }
-    body.innerHTML = rows.map(user => `
-      <tr>
-        <td>${escapeHtml(user.name || '—')}<br><span style="font-size:11px;color:var(--muted)">${escapeHtml(user.email || '')}</span></td>
-        <td><span class="role-badge role-${escapeHtml(user.role || 'viewer')}">${escapeHtml(user.role || '—')}</span></td>
-        <td style="color:var(--muted)">${escapeHtml(user.subject || 'All')}</td>
-        <td
-  style="
-    font-weight:700;
-    color:${Number(user.questionCount) > 0
-      ? 'var(--gold)'
-      : 'var(--muted)'};
-  "
->
-  ${Number(user.questionCount) || 0}
-</td>
-        <td>${user.sessions || 0}</td>
-        <td style="color:var(--muted);white-space:nowrap">${user.lastActiveAt ? fmtDateTime(user.lastActiveAt) : '—'}</td>
-      </tr>`).join('');
+
+
+
+    body.innerHTML =
+      rows.map(user => `
+
+        <tr>
+
+          <td>
+
+            <strong>
+              ${escapeHtml(
+                user.name || '—'
+              )}
+            </strong>
+
+            <br>
+
+            <span
+              style="
+                font-size:11px;
+                color:var(--muted);
+              "
+            >
+              ${escapeHtml(
+                user.email || ''
+              )}
+            </span>
+
+          </td>
+
+
+          <td>
+
+            <span
+              class="
+                role-badge
+                role-${escapeHtml(
+                  user.role || 'viewer'
+                )}
+              "
+            >
+              ${escapeHtml(
+                user.role || '—'
+              )}
+            </span>
+
+          </td>
+
+
+          <td
+            style="
+              color:var(--muted)
+            "
+          >
+            ${escapeHtml(
+              user.subject || 'All'
+            )}
+          </td>
+
+
+          <!-- QUESTIONS ADDED -->
+          <td
+            style="
+              font-weight:700;
+              color:${
+                Number(user.questionCount) > 0
+                  ? 'var(--gold)'
+                  : 'var(--muted)'
+              };
+            "
+          >
+
+            ${
+              Number(
+                user.questionCount
+              ) || 0
+            }
+
+          </td>
+
+
+          <!-- SESSIONS -->
+          <td>
+
+            ${
+              Number(
+                user.sessions
+              ) || 0
+            }
+
+          </td>
+
+
+          <!-- LAST ACTIVE -->
+          <td
+            style="
+              color:var(--muted);
+              white-space:nowrap;
+            "
+          >
+
+            ${
+              user.lastActiveAt
+                ? fmtDateTime(
+                    user.lastActiveAt
+                  )
+                : '—'
+            }
+
+          </td>
+
+        </tr>
+
+      `).join('');
+
+
   } catch (error) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="6">${escapeHtml(error.message || 'Could not load user time.')}</td></tr>`;
-    showToast(error.message || 'Could not load user time.', true);
+
+    console.error(
+      '[Audit user summary]',
+      error
+    );
+
+
+    document.getElementById(
+      'auditPeriodTotal'
+    ).textContent = '—';
+
+    document.getElementById(
+      'auditPeriodUsers'
+    ).textContent = '—';
+
+    document.getElementById(
+      'auditPeriodSessions'
+    ).textContent = '—';
+
+
+    body.innerHTML = `
+
+      <tr class="empty-row">
+
+        <td colspan="6">
+
+          ${
+            escapeHtml(
+              error.message ||
+              'Could not load user summary.'
+            )
+          }
+
+        </td>
+
+      </tr>
+
+    `;
+
+
+    showToast(
+      error.message ||
+      'Could not load user summary.',
+      true
+    );
+
   }
+
 }
 
 async function loadAuditData() {
