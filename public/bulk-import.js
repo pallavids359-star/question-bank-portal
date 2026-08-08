@@ -2251,7 +2251,6 @@ console.log(
       });
 
       if (typeof showToast === 'function') {
-      if (typeof showToast === 'function') {
 
   const importedCount =
     Number(res.count || 0);
