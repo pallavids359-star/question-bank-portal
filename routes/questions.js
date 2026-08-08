@@ -714,12 +714,210 @@ router.get('/:id', ...READ_ROLES, async (req, res) => {
   res.json(toApi(data));
 });
 function normalizeDuplicateText(value) {
+
   return String(value || '')
     .toLowerCase()
-    .replace(/<[^>]*>/g, '')
+
+    // Remove HTML tags
+    .replace(/<[^>]*>/g, ' ')
+
+    // Normalize HTML spaces
+    .replace(/&nbsp;/gi, ' ')
+
+    // Normalize smart quotes
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+
+    // Remove question numbers at beginning
+    // 1. xxx
+    // 1) xxx
+    // Q1. xxx
+    // Question 1: xxx
+    .replace(
+      /^\s*(?:q(?:uestion)?\s*)?\d+\s*[.)\-:]\s*/i,
+      ''
+    )
+
+    // Normalize LaTeX spacing commands
+    .replace(/\\,/g, '')
+    .replace(/\\;/g, '')
+    .replace(/\\!/g, '')
+
+    // Remove unnecessary whitespace around punctuation
+    .replace(/\s*([,.;:?!])\s*/g, '$1')
+
+    // Normalize whitespace around operators
+    .replace(/\s*=\s*/g, '=')
+    .replace(/\s*\+\s*/g, '+')
+    .replace(/\s*-\s*/g, '-')
+
+    // Collapse all spaces/newlines/tabs
     .replace(/\s+/g, ' ')
-    .replace(/[“”‘’]/g, '"')
+
     .trim();
+}
+
+
+async function findDuplicateQuestion(
+  payload,
+  excludeId = null
+) {
+
+  const normalizedQuestion =
+    normalizeDuplicateText(
+      payload.question
+    );
+
+  if (!normalizedQuestion) {
+    return null;
+  }
+
+
+  // ----------------------------------------
+  // Search DB in pages
+  // Do NOT restrict by chapter/topic
+  // ----------------------------------------
+
+  const PAGE_SIZE = 1000;
+
+  for (
+    let from = 0;
+    ;
+    from += PAGE_SIZE
+  ) {
+
+    let query =
+      supabase
+        .from('questions')
+        .select(`
+          id,
+          subject,
+          klass,
+          chapter,
+          topic,
+          q_type,
+          question,
+          created_at
+        `)
+        .range(
+          from,
+          from + PAGE_SIZE - 1
+        );
+
+
+    // Optional:
+    // keep duplicate detection inside same subject
+    //
+    // Mathematics/Maths handled below in JS instead
+    // of exact Supabase comparison.
+
+
+    if (excludeId) {
+      query =
+        query.neq(
+          'id',
+          excludeId
+        );
+    }
+
+
+    const {
+      data,
+      error
+    } = await query;
+
+
+    if (error) {
+
+      console.error(
+        '[duplicate question check]',
+        error
+      );
+
+      throw error;
+    }
+
+
+    const rows =
+      Array.isArray(data)
+        ? data
+        : [];
+
+
+    const duplicate =
+      rows.find(row => {
+
+        // ----------------------------------
+        // SAME SUBJECT
+        // ----------------------------------
+
+        const sameSubject =
+          canonicalSubject(
+            row.subject
+          ).toLowerCase() ===
+          canonicalSubject(
+            payload.subject
+          ).toLowerCase();
+
+
+        // ----------------------------------
+        // SAME QUESTION TEXT
+        // ----------------------------------
+
+        const sameText =
+          normalizeDuplicateText(
+            row.question
+          ) ===
+          normalizedQuestion;
+
+
+        if (
+          sameSubject &&
+          sameText
+        ) {
+          return true;
+        }
+
+        return false;
+      });
+
+
+    if (duplicate) {
+
+      console.log(
+        '[DUPLICATE FOUND]',
+        {
+          existingId:
+            duplicate.id,
+
+          existingChapter:
+            duplicate.chapter,
+
+          newChapter:
+            payload.chapter,
+
+          question:
+            normalizedQuestion.slice(
+              0,
+              100
+            )
+        }
+      );
+
+      return duplicate;
+    }
+
+
+    if (
+      rows.length <
+      PAGE_SIZE
+    ) {
+      break;
+    }
+  }
+
+
+  return null;
 }
 
 async function findDuplicateQuestion(payload, excludeId = null) {
