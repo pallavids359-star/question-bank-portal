@@ -885,6 +885,125 @@ router.put('/:id/difficulty', ...EDIT_ROLES, async (req, res) => {
   }
 });
 // ── REVIEW QUESTION ─────────────────────────────────────────────
+// ── TOGGLE ACCEPT QUESTION ─────────────────────────────────────
+router.put('/:id/accept', ...EDIT_ROLES, async (req, res) => {
+  try {
+
+    const effectiveUser = await getEffectiveUser(req.user);
+    const userRole = String(effectiveUser?.role || '').toLowerCase();
+
+    if (!['admin', 'editor'].includes(userRole)) {
+      return res.status(403).json({
+        error: 'Only an Editor or Admin can accept questions.'
+      });
+    }
+
+    const { data: question, error: fetchError } = await supabase
+      .from('questions')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchError) {
+      return res.status(500).json({
+        error: fetchError.message
+      });
+    }
+
+    if (!question) {
+      return res.status(404).json({
+        error: 'Question not found.'
+      });
+    }
+
+    if (!hasSubjectAccess(effectiveUser, question.subject)) {
+      return res.status(403).json({
+        error: 'This question is outside your assigned subject.'
+      });
+    }
+
+    const currentlyAccepted =
+      String(question.review_status || '').toLowerCase() === 'accepted';
+
+    const shouldAccept =
+      typeof req.body?.accepted === 'boolean'
+        ? req.body.accepted
+        : !currentlyAccepted;
+
+    let payload;
+
+    if (shouldAccept) {
+
+      payload = {
+        review_status: 'accepted',
+
+        accepted_by:
+          isValidUuid(req.user?.userId)
+            ? req.user.userId
+            : null,
+
+        accepted_by_name: req.user?.name || 'Editor',
+        accepted_at: new Date().toISOString()
+      };
+
+    } else {
+
+      payload = {
+        // If it had previously been reviewed, return to Reviewed.
+        // Otherwise return to Pending.
+        review_status:
+          question.reviewed_at
+            ? 'reviewed'
+            : 'pending',
+
+        accepted_by: null,
+        accepted_by_name: null,
+        accepted_at: null
+      };
+    }
+
+    const { data, error } = await supabase
+      .from('questions')
+      .update(payload)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message
+      });
+    }
+
+    await writeAuditLog({
+      userId: isValidUuid(req.user?.userId)
+        ? req.user.userId
+        : null,
+
+      userName: req.user?.name || 'Editor',
+
+      action: shouldAccept
+        ? 'ACCEPT_QUESTION'
+        : 'UNACCEPT_QUESTION',
+
+      resourceType: 'question',
+      resourceId: req.params.id,
+
+      details: {
+        subject: question.subject
+      }
+
+    }).catch(()=>{});
+
+    res.json(toApi(data));
+
+  } catch(error) {
+
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
 router.put('/:id/review', ...EDIT_ROLES, async (req, res) => {
   try {
     const effectiveUser = await getEffectiveUser(req.user);
