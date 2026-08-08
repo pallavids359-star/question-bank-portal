@@ -92,49 +92,183 @@ function sessionDurationSeconds(session, nowMs) {
   return seconds;
 }
 
-function buildUserTimeStats(users, sessions, now) {
-  const nowMs = now.getTime();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const sessionsByUser = new Map();
+function buildUserTimeStats(
+  users,
+  sessions,
+  questions,
+  now
+) {
+
+  const nowMs =
+    now.getTime();
+
+  const todayStartDate =
+    new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+
+  const todayStart =
+    todayStartDate.getTime();
+
+  const sessionsByUser =
+    new Map();
+
 
   sessions.forEach(session => {
-    if (!session.user_id || session.status !== 'success') return;
-    const key = String(session.user_id);
-    if (!sessionsByUser.has(key)) sessionsByUser.set(key, []);
-    sessionsByUser.get(key).push(session);
+
+    if(
+      !session.user_id ||
+      session.status !== 'success'
+    ){
+      return;
+    }
+
+    const key =
+      String(session.user_id);
+
+    if(!sessionsByUser.has(key)){
+      sessionsByUser.set(key, []);
+    }
+
+    sessionsByUser
+      .get(key)
+      .push(session);
+
   });
 
-  return users.map(user => {
-    const userSessions = sessionsByUser.get(String(user.id)) || [];
-    let totalSeconds = 0;
-    let todaySeconds = 0;
-    let lastSeenMs = 0;
-    let online = false;
 
-    userSessions.forEach(session => {
-      const duration = sessionDurationSeconds(session, nowMs);
-      const lastMs = timeValue(session.last_activity_at) || timeValue(session.logout_time) || timeValue(session.login_time);
-      totalSeconds += duration;
-      if (lastMs >= todayStart) todaySeconds += duration;
-      lastSeenMs = Math.max(lastSeenMs, lastMs);
-      if (!session.logout_time && timeValue(session.last_activity_at) && nowMs - timeValue(session.last_activity_at) <= 120000) {
-        online = true;
-      }
-    });
+  return users
+    .map(user => {
 
-    return {
-      id: user.id,
-      name: user.name || user.email || 'Unnamed User',
-      email: user.email || '',
-      role: user.role || 'viewer',
-      subject: user.subject || 'All',
-      totalSeconds,
-      todaySeconds,
-      sessionsCount: userSessions.length,
-      lastSeen: lastSeenMs ? new Date(lastSeenMs).toISOString() : null,
-      online,
-    };
-  }).sort((a, b) => b.totalSeconds - a.totalSeconds || a.name.localeCompare(b.name));
+      const userSessions =
+        sessionsByUser.get(
+          String(user.id)
+        ) || [];
+
+
+      // Number of questions added TODAY
+      const questionsToday =
+        questions.filter(question => {
+
+          return (
+            questionBelongsToUser(
+              question,
+              user
+            ) &&
+            isOnOrAfter(
+              question.created_at,
+              todayStartDate
+            )
+          );
+
+        }).length;
+
+
+      let totalSeconds = 0;
+      let todaySeconds = 0;
+      let lastSeenMs = 0;
+      let online = false;
+
+
+      userSessions.forEach(session => {
+
+        const duration =
+          sessionDurationSeconds(
+            session,
+            nowMs
+          );
+
+        const lastMs =
+          timeValue(
+            session.last_activity_at
+          ) ||
+          timeValue(
+            session.logout_time
+          ) ||
+          timeValue(
+            session.login_time
+          );
+
+
+        totalSeconds += duration;
+
+
+        if(lastMs >= todayStart){
+          todaySeconds += duration;
+        }
+
+
+        lastSeenMs =
+          Math.max(
+            lastSeenMs,
+            lastMs
+          );
+
+
+        if(
+          !session.logout_time &&
+          timeValue(
+            session.last_activity_at
+          ) &&
+          nowMs -
+            timeValue(
+              session.last_activity_at
+            ) <= 120000
+        ){
+          online = true;
+        }
+
+      });
+
+
+      return {
+
+        id: user.id,
+
+        name:
+          user.name ||
+          user.email ||
+          'Unnamed User',
+
+        email:
+          user.email || '',
+
+        role:
+          user.role || 'viewer',
+
+        subject:
+          user.subject || 'All',
+
+        questionsToday,
+
+        totalSeconds,
+
+        todaySeconds,
+
+        sessionsCount:
+          userSessions.length,
+
+        lastSeen:
+          lastSeenMs
+            ? new Date(
+                lastSeenMs
+              ).toISOString()
+            : null,
+
+        online
+      };
+
+    })
+    .sort(
+      (a,b) =>
+        b.totalSeconds -
+          a.totalSeconds ||
+        a.name.localeCompare(
+          b.name
+        )
+    );
 }
 
 // GET /api/dashboard
@@ -217,8 +351,12 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       })
       .filter(user => user.questionCount > 0)
       .sort((a, b) => b.questionCount - a.questionCount || a.name.localeCompare(b.name));
-    const userTimeStats = buildUserTimeStats(users, loginSessions, now);
-
+    const userTimeStats = buildUserTimeStats(
+  users,
+  loginSessions,
+  questions,
+  now
+);
     // Supply a name when ownership IDs exist but the denormalized name columns do not.
     const displayRows = questions.map(question => ({
       ...question,
