@@ -4134,32 +4134,40 @@ window.QP={
     );
   }
 },
-   accept: async function(id){
+  accept: async function(id, currentlyAccepted){
 
-  if(!confirm(
-    'Accept this question? The acceptance will be recorded.'
-  )){
+  const message = currentlyAccepted
+    ? 'Remove acceptance from this question?'
+    : 'Accept this question?';
+
+  if(!confirm(message)){
     return;
   }
 
   try{
 
-    await apiRequest(
+    const result = await apiRequest(
       '/'+encodeURIComponent(id)+'/accept',
       {
         method:'PUT',
-        body:JSON.stringify({})
+        body:JSON.stringify({
+          accepted: !currentlyAccepted
+        })
       }
     );
 
-    showToast('Question accepted successfully.');
+    showToast(
+      result.reviewStatus === 'accepted'
+        ? 'Question accepted.'
+        : 'Question acceptance removed.'
+    );
 
     await loadQuestions(questionPage,false);
 
   }catch(error){
 
     showToast(
-      error.message || 'Unable to accept question.',
+      error.message || 'Unable to update acceptance.',
       true
     );
   }
