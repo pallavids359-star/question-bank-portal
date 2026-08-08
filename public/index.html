@@ -1784,11 +1784,27 @@ function showLoginPage() {
 function showAppPage() {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('appPage').style.display   = 'block';
+
   buildSidebar();
   updateSidebarUser();
   applyRoleRestrictions();
   startActivityTracking();
-  showPage(Auth.can('dashboard') ? 'pageDashboard' : 'pageQuestions');
+
+  // IMPORTANT: always show a page first
+  const startPage = Auth.can('dashboard')
+    ? 'pageDashboard'
+    : 'pageQuestions';
+
+  showPage(startPage);
+
+  // Notification loading must NEVER block the main page
+  try {
+    if (typeof loadNotifications === 'function') {
+      loadNotifications();
+    }
+  } catch (err) {
+    console.warn('Notification loading failed:', err);
+  }
 }
 
 // ============================================================
