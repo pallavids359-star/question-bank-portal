@@ -2747,34 +2747,7 @@ function renderUsersTable(users) {
     </tr>`).join('');
 }
 
-function openCreateUserModal() {
-  _editingUserId = null;
-  document.getElementById('createUserModalTitle').textContent = 'Create New User';
-  document.getElementById('cuSaveBtn').textContent = 'Create User';
-  document.getElementById('cuName').value = '';
-  document.getElementById('cuEmail').value = '';
-  document.getElementById('cuPassword').value = '';
-  document.getElementById('cuRole').value = 'viewer';
-  const cuSub = document.getElementById('cuSubject');
-  if (cuSub) cuSub.value = 'All';
-   const loginLimitEl =
-  document.getElementById('cuLoginLimit');
 
-if (loginLimitEl) {
-  loginLimitEl.value = '1';
-}
-   const loginLimitEl =
-  document.getElementById(
-    'cuLoginLimit'
-  );
-
-if(loginLimitEl){
-  loginLimitEl.value='1';
-}
-  document.getElementById('cuPasswordGroup').style.display = '';
-  document.getElementById('cuError').classList.remove('visible');
-  document.getElementById('createUserModal').classList.add('visible');
-}
 
 function openCreateUserModal() {
   _editingUserId = null;
