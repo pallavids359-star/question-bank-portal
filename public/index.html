@@ -1775,6 +1775,65 @@ function showAppPage() {
   // Load review notifications
   loadNotifications();
 }
+   // ============================================================
+// ── PAGE ROUTING ─────────────────────────────────────────────
+// ============================================================
+
+function showPage(id) {
+
+  document
+    .querySelectorAll('.page-section')
+    .forEach(p => p.classList.remove('active'));
+
+  const el = document.getElementById(id);
+
+  if (el) {
+    el.classList.add('active');
+  } else {
+    console.error('Page not found:', id);
+    return;
+  }
+
+  document
+    .querySelectorAll('.nav-item')
+    .forEach(b => {
+      b.classList.toggle(
+        'active',
+        b.dataset.page === id
+      );
+    });
+
+  if (id === 'pageDashboard') {
+    loadDashboard();
+  }
+
+  else if (id === 'pageUsers') {
+    loadUsers();
+  }
+
+  else if (id === 'pageAudit') {
+    loadAuditData();
+  }
+
+  else if (id === 'pageSettings') {
+    loadSettings();
+  }
+
+  else if (id === 'pageProfile') {
+    loadProfile();
+  }
+
+  else if (id === 'pageBulkImport') {
+    if (window.BulkModule) {
+      window.BulkModule.init();
+    }
+  }
+
+  else if (id === 'pageQuestions') {
+    questionTimeframe = '';
+    loadQuestions(1, false);
+  }
+}
 
 function showLoginPage() {
   document.getElementById('loginPage').style.display = 'flex';
