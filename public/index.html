@@ -2724,9 +2724,12 @@ function renderUsersTable(users) {
 <td>
   <strong style="color:var(--gold);">
     ${
-      Number(u.login_limit) === 0
-        ? 'Unlimited'
-        : Number(u.login_limit || 1)
+      u.login_limit === null ||
+      u.login_limit === undefined
+        ? '—'
+        : Number(u.login_limit) === 0
+          ? 'Unlimited'
+          : Number(u.login_limit)
     }
   </strong>
 </td>
