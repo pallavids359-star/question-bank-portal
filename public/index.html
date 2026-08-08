@@ -1291,14 +1291,49 @@ textarea{resize:vertical;min-height:70px;}
               <h1 style="font-size:18px;">Saved Questions</h1>
             </div>
             <div class="filters">
-              <select id="fSubject"><option value="">All Subjects</option></select>
-              <select id="fClass"><option value="">All Classes</option></select>
-              <select id="fChapter"><option value="">All Chapters</option></select>
-              <select id="fConcept"><option value="">All Concepts</option></select>
-              <select id="fType">
-                <option value="">All Question Types</option>
-              </select>
-            </div>
+
+  <div class="saved-question-search">
+    <span class="saved-search-icon">⌕</span>
+
+    <input
+      type="text"
+      id="fSearch"
+      placeholder="Search questions..."
+      autocomplete="off"
+    >
+
+    <button
+      type="button"
+      id="fSearchClear"
+      class="saved-search-clear"
+      title="Clear search"
+      style="display:none;"
+    >
+      ✕
+    </button>
+  </div>
+
+  <select id="fSubject">
+    <option value="">All Subjects</option>
+  </select>
+
+  <select id="fClass">
+    <option value="">All Classes</option>
+  </select>
+
+  <select id="fChapter">
+    <option value="">All Chapters</option>
+  </select>
+
+  <select id="fConcept">
+    <option value="">All Concepts</option>
+  </select>
+
+  <select id="fType">
+    <option value="">All Question Types</option>
+  </select>
+
+</div>
             <div class="count-line" id="countLine"></div>
             <div id="listContainer"></div>
             <div class="question-pagination" id="questionPagination" style="display:none;">
