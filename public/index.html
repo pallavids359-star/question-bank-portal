@@ -788,6 +788,37 @@ textarea{resize:vertical;min-height:70px;}
       </nav>
 
       <div class="sidebar-footer">
+         <button
+  type="button"
+  id="notificationBtn"
+  class="logout-btn"
+  style="
+    margin-bottom:10px;
+    border-color:#3a3a3a;
+    position:relative;
+  "
+  onclick="openNotifications()"
+>
+  🔔 Notifications
+
+  <span
+    id="notificationBadge"
+    style="
+      display:none;
+      position:absolute;
+      right:8px;
+      top:5px;
+      min-width:18px;
+      height:18px;
+      line-height:18px;
+      border-radius:20px;
+      background:#d4af37;
+      color:#000;
+      font-size:10px;
+      font-weight:800;
+    "
+  >0</span>
+</button>
         <div class="user-card" id="sidebarUserCard">
           <div class="user-card-name" id="sbUserName">—</div>
           <div class="user-card-email" id="sbUserEmail">—</div>
@@ -1474,6 +1505,40 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeAdderQuestionsModal()">Close</button></div>
   </div>
 </div>
+   <!-- NOTIFICATION MODAL -->
+<div
+  class="modal-overlay"
+  id="notificationModal"
+  onclick="if(event.target===this)closeNotifications()"
+>
+  <div class="modal" style="max-width:700px;">
+
+    <h3>Notifications</h3>
+
+    <div
+      id="notificationList"
+      style="
+        max-height:500px;
+        overflow-y:auto;
+        margin-top:15px;
+      "
+    >
+      <div class="empty-state">
+        Loading notifications…
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button
+        class="btn btn-ghost"
+        onclick="closeNotifications()"
+      >
+        Close
+      </button>
+    </div>
+
+  </div>
+</div>
 
 <!-- RESET PASSWORD MODAL -->
 <div class="modal-overlay" id="resetPwModal">
@@ -1692,19 +1757,23 @@ window.addEventListener('beforeunload', () => {
 // ============================================================
 // ── PAGE ROUTING ─────────────────────────────────────────────
 // ============================================================
-function showPage(id) {
-  document.querySelectorAll('.page-section').forEach(p => p.classList.remove('active'));
-  const el = document.getElementById(id);
-  if (el) el.classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === id));
+function showAppPage() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('appPage').style.display   = 'block';
 
-  if (id === 'pageDashboard') loadDashboard();
-  else if (id === 'pageUsers')  loadUsers();
-  else if (id === 'pageAudit')  loadAuditData();
-  else if (id === 'pageSettings') loadSettings();
-  else if (id === 'pageProfile')  loadProfile();
-  else if (id === 'pageBulkImport') { if (window.BulkModule) window.BulkModule.init(); }
-  else if (id === 'pageQuestions') { questionTimeframe=''; loadQuestions(1,false); }
+  buildSidebar();
+  updateSidebarUser();
+  applyRoleRestrictions();
+  startActivityTracking();
+
+  showPage(
+    Auth.can('dashboard')
+      ? 'pageDashboard'
+      : 'pageQuestions'
+  );
+
+  // Load review notifications
+  loadNotifications();
 }
 
 function showLoginPage() {
@@ -4055,7 +4124,201 @@ function extractStatementPairForForm(questionText){
   const second=text.match(/(?:^|\n)\s*@?Statement\s*(?:II|2|B)\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*(?:\(?[A-D]\)?\s*[).:\-]|(?:Ans|Answer|Solution|Explanation)\s*[:.\-])|$)/i);
   return {statement1:first?first[1].trim():'',statement2:second?second[1].trim():''};
 }
+let userNotifications = [];
 
+
+async function loadNotifications(){
+
+  const role = Auth.getRole();
+
+  // Only contributors/admin need this notification box
+  if(!['admin','adder'].includes(role)){
+    const btn =
+      document.getElementById('notificationBtn');
+
+    if(btn){
+      btn.style.display='none';
+    }
+
+    return;
+  }
+
+  try{
+
+    userNotifications =
+      await apiRequest('/my/notifications');
+
+    const unread =
+      userNotifications.filter(
+        n => !n.is_read
+      ).length;
+
+    const badge =
+      document.getElementById(
+        'notificationBadge'
+      );
+
+    if(badge){
+
+      badge.textContent =
+        unread > 99 ? '99+' : unread;
+
+      badge.style.display =
+        unread > 0
+          ? 'inline-block'
+          : 'none';
+    }
+
+  }catch(error){
+
+    console.warn(
+      'Unable to load notifications:',
+      error.message
+    );
+  }
+}
+
+
+async function openNotifications(){
+
+  const modal =
+    document.getElementById(
+      'notificationModal'
+    );
+
+  const list =
+    document.getElementById(
+      'notificationList'
+    );
+
+  if(!modal || !list){
+    return;
+  }
+
+  modal.classList.add('visible');
+
+  list.innerHTML =
+    '<div class="empty-state">Loading…</div>';
+
+  await loadNotifications();
+
+  if(!userNotifications.length){
+
+    list.innerHTML =
+      '<div class="empty-state">No notifications.</div>';
+
+    return;
+  }
+
+  list.innerHTML =
+    userNotifications.map(n=>`
+
+      <div
+        style="
+          border:1px solid var(--border);
+          background:${n.is_read ? '#111' : 'rgba(212,175,55,.06)'};
+          border-radius:9px;
+          padding:12px 14px;
+          margin-bottom:10px;
+        "
+      >
+
+        <div
+          style="
+            display:flex;
+            justify-content:space-between;
+            gap:10px;
+          "
+        >
+
+          <strong style="color:var(--gold)">
+            ${escapeHtml(n.title || 'Question Review')}
+          </strong>
+
+          ${
+            !n.is_read
+            ? `<button
+                 class="btn btn-ghost btn-sm"
+                 onclick="markNotificationRead('${n.id}')"
+               >
+                 Mark Read
+               </button>`
+            : ''
+          }
+
+        </div>
+
+        <div
+          style="
+            margin-top:8px;
+            font-size:13px;
+            line-height:1.6;
+          "
+        >
+          ${escapeHtml(n.message || '')}
+        </div>
+
+        <div
+          style="
+            margin-top:8px;
+            color:var(--muted);
+            font-size:11px;
+          "
+        >
+          From:
+          ${escapeHtml(n.sender_name || 'Editor')}
+          ·
+          ${
+            n.created_at
+              ? new Date(n.created_at).toLocaleString()
+              : ''
+          }
+        </div>
+
+      </div>
+
+    `).join('');
+}
+
+
+function closeNotifications(){
+
+  const modal =
+    document.getElementById(
+      'notificationModal'
+    );
+
+  if(modal){
+    modal.classList.remove('visible');
+  }
+}
+
+
+async function markNotificationRead(id){
+
+  try{
+
+    await apiRequest(
+      '/my/notifications/'+
+      encodeURIComponent(id)+
+      '/read',
+      {
+        method:'PUT',
+        body:'{}'
+      }
+    );
+
+    await openNotifications();
+
+  }catch(error){
+
+    showToast(
+      error.message ||
+      'Unable to mark notification as read.',
+      true
+    );
+  }
+}
 window.QP={
    review: async function(id){
 
