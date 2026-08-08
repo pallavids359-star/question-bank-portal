@@ -279,12 +279,7 @@ body{
 }
 
 /* Persistent selected dashboard box */
-.clickable-stat.selected{
-  border-color:var(--gold) !important;
-  box-shadow:0 8px 24px rgba(201,162,39,.35);
-  background:rgba(201,162,39,.10);
-  transform:translateY(-3px);
-}
+
    .clickable-stat{
   cursor:pointer !important;
   transition:
@@ -293,7 +288,12 @@ body{
     border-color .2s ease,
     background .2s ease;
 }
-
+.clickable-stat.selected{
+  border-color:var(--gold) !important;
+  box-shadow:0 8px 24px rgba(201,162,39,.40);
+  background:rgba(201,162,39,.12);
+  transform:translateY(-3px);
+}
 .clickable-stat:hover{
   transform:translateY(-3px);
   box-shadow:0 8px 24px rgba(201,162,39,.35);
@@ -5658,6 +5658,47 @@ window.QP                   = QP;     // already assigned above
     });
 
   card.classList.add('selected');
+});
+   function applySavedDashboardHighlight() {
+  const savedId =
+    localStorage.getItem('selectedDashboardCard');
+
+  document
+    .querySelectorAll('.clickable-stat')
+    .forEach(card => {
+      card.classList.remove('selected');
+    });
+
+  if (!savedId) return;
+
+  const card =
+    document.getElementById(savedId);
+
+  if (card) {
+    card.classList.add('selected');
+  }
+}
+
+document.addEventListener('click', function(e) {
+  const card =
+    e.target.closest('.clickable-stat');
+
+  if (!card) return;
+
+  document
+    .querySelectorAll('.clickable-stat')
+    .forEach(item => {
+      item.classList.remove('selected');
+    });
+
+  card.classList.add('selected');
+
+  if (card.id) {
+    localStorage.setItem(
+      'selectedDashboardCard',
+      card.id
+    );
+  }
 });
 </script>
 </body>
