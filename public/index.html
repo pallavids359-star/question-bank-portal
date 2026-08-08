@@ -261,48 +261,38 @@ body{
 }
 .clickable-stat{
   cursor:pointer !important;
-  transition:transform .2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow .2s ease, border-color .2s ease;
-}
-.clickable-stat:hover{
-  transform:translateY(-3px);
-  box-shadow:0 8px 24px rgba(201,162,39,.25);
-  border-color:var(--gold) !important;
-}
-.clickable-stat:active{
-  transform:translateY(0);
-}
-   .clickable-stat.selected{
-  border-color:var(--gold) !important;
-  box-shadow:0 8px 24px rgba(201,162,39,.35);
-  background:rgba(201,162,39,.10);
-  transform:translateY(-3px);
-}
 
-/* Persistent selected dashboard box */
-
-   .clickable-stat{
-  cursor:pointer !important;
   transition:
-    transform .2s cubic-bezier(0.16, 1, 0.3, 1),
+    transform .2s ease,
     box-shadow .2s ease,
     border-color .2s ease,
     background .2s ease;
 }
-.clickable-stat.selected{
-  border-color:var(--gold) !important;
-  box-shadow:0 8px 24px rgba(201,162,39,.40);
-  background:rgba(201,162,39,.12);
-  transform:translateY(-3px);
-}
+
+/* Pointer is inside the box:
+   KEEP highlight continuously */
 .clickable-stat:hover{
-  transform:translateY(-3px);
-  box-shadow:0 8px 24px rgba(201,162,39,.35);
+  transform:translateY(-3px) !important;
+
   border-color:var(--gold) !important;
-  background:rgba(201,162,39,.10);
+
+  background:rgba(201,162,39,.12) !important;
+
+  box-shadow:
+    0 8px 24px rgba(201,162,39,.40) !important;
 }
 
+/* Clicking must NOT make the highlight disappear
+   before navigation happens */
 .clickable-stat:active{
-  transform:translateY(-3px);
+  transform:translateY(-3px) !important;
+
+  border-color:var(--gold) !important;
+
+  background:rgba(201,162,39,.16) !important;
+
+  box-shadow:
+    0 8px 28px rgba(201,162,39,.50) !important;
 }
 .stat-card::before{
   content:''; position:absolute; top:0; left:0; right:0; height:2px;
