@@ -6,22 +6,29 @@
   'use strict';
 
   // ── STATE ────────────────────────────────────────────────────────
-  const state = {
-    rawText: '',
-    parsedQuestions: [],
-    existingQuestions: [],
-    historyStack: [],
-    historyIndex: -1,
-    autoSaveTimer: null,
-    debounceTimer: null,
-    wordWrap: true,
-    filterSearch: '',
-    filterType: '',
-    filterDiff: '',
-    filterStatus: '',
-    filterDup: '',
-    editingIndex: null,
-  };
+ const state = {
+  rawText: '',
+  parsedQuestions: [],
+  existingQuestions: [],
+
+  // FAST duplicate lookup
+  duplicateMap: new Map(),
+
+  historyStack: [],
+  historyIndex: -1,
+  autoSaveTimer: null,
+  debounceTimer: null,
+  wordWrap: true,
+  filterSearch: '',
+  filterType: '',
+  filterDiff: '',
+  filterStatus: '',
+  filterDup: '',
+  editingIndex: null,
+
+  // Prevent duplicate event listeners
+  editorInitialized: false,
+};
 
   // ── METADATA PANEL HELPERS ───────────────────────────────────────
   function getMeta() {
@@ -1321,144 +1328,87 @@ function normalizeForDuplicate(value) {
     .trim();
 }
 
-
 function checkDuplicates(
-  questions,
-  dbList
+  questions
 ) {
 
   if (!Array.isArray(questions)) {
     return;
   }
 
-  const existing =
-    Array.isArray(dbList)
-      ? dbList
-      : [];
-
-
-  console.log(
-    '[DUP CHECK] Questions pasted:',
-    questions.length
-  );
-
-  console.log(
-    '[DUP CHECK] Questions in DB:',
-    existing.length
-  );
-
-
-  const databaseMap =
-    new Map();
-
-
-  existing.forEach(dbQuestion => {
-
-    const key =
-      normalizeForDuplicate(
-        dbQuestion.question
-      );
-
-    if (key) {
-      databaseMap.set(
-        key,
-        dbQuestion
-      );
-    }
-  });
-
-
   const currentImport =
     new Map();
 
 
-  questions.forEach(
-    (question, index) => {
+  for (
+    let index = 0;
+    index < questions.length;
+    index++
+  ) {
 
-      const key =
-        normalizeForDuplicate(
-          question.question
-        );
+    const question =
+      questions[index];
 
-
-      question.isDuplicate = false;
-
-      question.existingId = null;
-
-      question.duplicateReason = '';
-
-
-      console.log(
-        '[DUP CHECK]',
-        index + 1,
-        {
-          original:
-            question.question,
-
-          normalized:
-            key,
-
-          exists:
-            databaseMap.has(key)
-        }
+    const key =
+      normalizeForDuplicate(
+        question.question
       );
 
 
-      if (!key) {
-        return;
-      }
+    question.isDuplicate = false;
+    question.existingId = null;
+    question.duplicateReason = '';
 
 
-      // Already present in database
-      if (
-        databaseMap.has(key)
-      ) {
-
-        const existingQuestion =
-          databaseMap.get(key);
-
-        question.isDuplicate =
-          true;
-
-        question.existingId =
-          existingQuestion.id;
-
-        question.duplicateReason =
-          'Already exists in database';
-
-        return;
-      }
-
-
-      // Duplicate inside same pasted import
-      if (
-        currentImport.has(key)
-      ) {
-
-        question.isDuplicate =
-          true;
-
-        question.duplicateReason =
-          'Repeated inside current import';
-
-        return;
-      }
-
-
-      currentImport.set(
-        key,
-        index
-      );
+    if (!key) {
+      continue;
     }
-  );
 
 
-  console.log(
-    '[DUP CHECK] Duplicates found:',
-    questions.filter(
-      q => q.isDuplicate
-    ).length
-  );
+    // ==================================
+    // EXISTS IN DATABASE
+    // ==================================
+
+    const existingQuestion =
+      state.duplicateMap.get(key);
+
+
+    if (existingQuestion) {
+
+      question.isDuplicate = true;
+
+      question.existingId =
+        existingQuestion.id || null;
+
+      question.duplicateReason =
+        'Already exists in database';
+
+      continue;
+    }
+
+
+    // ==================================
+    // DUPLICATE INSIDE CURRENT IMPORT
+    // ==================================
+
+    if (
+      currentImport.has(key)
+    ) {
+
+      question.isDuplicate = true;
+
+      question.duplicateReason =
+        'Repeated inside current import';
+
+      continue;
+    }
+
+
+    currentImport.set(
+      key,
+      index
+    );
+  }
 }
   // ── RENDER ENGINE ──────────────────────────────────────────────────
   function autoWrapStandaloneLatex(text) {
@@ -1792,20 +1742,59 @@ function checkDuplicates(
 
     const questions = parseText(text);
     validateAll(questions);
-    checkDuplicates(questions, state.existingQuestions);
+    checkDuplicates(
+  questions
+);
     state.parsedQuestions = questions;
     renderCards();
   }
 
   function scheduleReparse() {
-    clearTimeout(state.debounceTimer);
-    state.debounceTimer = setTimeout(runParse, 800);
+
+  clearTimeout(
+    state.debounceTimer
+  );
+
+  state.debounceTimer =
+    setTimeout(
+      runParse,
+      1200
+    );
+}
+
+function initEditor() {
+
+  if (
+    state.editorInitialized
+  ) {
+    return;
   }
 
-  function initEditor() {
-    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
-    const ln = document.getElementById('bqLineNumbers') || document.getElementById('bulkLineNumbers');
-    if (!ta) return;
+
+  const ta =
+    document.getElementById(
+      'bqTextarea'
+    ) ||
+    document.getElementById(
+      'bulkEditorTextarea'
+    );
+
+  const ln =
+    document.getElementById(
+      'bqLineNumbers'
+    ) ||
+    document.getElementById(
+      'bulkLineNumbers'
+    );
+
+  if (!ta) {
+    return;
+  }
+
+
+  state.editorInitialized =
+    true;
+    
 
     function updateLineNumbers() {
       if (!ln) return;
@@ -1820,7 +1809,7 @@ function checkDuplicates(
       updateLineNumbers();
       scheduleReparse();
       autoSave();
-      pushHistory(ta.value);
+      scheduleHistorySave();
     });
 
     ta.addEventListener('scroll', () => {
@@ -1853,7 +1842,40 @@ function checkDuplicates(
       updateLineNumbers();
     }
   }
+let historySaveTimer = null;
 
+
+function scheduleHistorySave() {
+
+  clearTimeout(
+    historySaveTimer
+  );
+
+
+  historySaveTimer =
+    setTimeout(
+      () => {
+
+        const ta =
+          document.getElementById(
+            'bqTextarea'
+          ) ||
+          document.getElementById(
+            'bulkEditorTextarea'
+          );
+
+
+        if (ta) {
+
+          pushHistory(
+            ta.value
+          );
+        }
+
+      },
+      800
+    );
+}
   function pushHistory(text) {
     if (state.historyStack[state.historyIndex] === text) return;
     state.historyStack = state.historyStack.slice(0, state.historyIndex + 1);
@@ -2168,12 +2190,18 @@ if (
 
 
 // Refresh duplicate cache
-await fetchExistingQuestions();
+const duplicateKey =
+  normalizeForDuplicate(
+    payload.question
+  );
 
-console.log(
-  '[BULK] Database cache refreshed after single save:',
-  state.existingQuestions.length
-);
+if (duplicateKey) {
+
+  state.duplicateMap.set(
+    duplicateKey,
+    payload
+  );
+}
     } catch (err) {
       console.error('Save single question error:', err);
       if (typeof showToast === 'function') showToast('Failed to save question: ' + err.message, true);
@@ -2288,12 +2316,24 @@ if (
 // REFRESH DUPLICATE DATABASE CACHE
 // ==========================================
 
-await fetchExistingQuestions();
+for (
+  const item
+  of payload
+) {
 
-console.log(
-  '[BULK] Database cache refreshed after import:',
-  state.existingQuestions.length
-);
+  const key =
+    normalizeForDuplicate(
+      item.question
+    );
+
+  if (key) {
+
+    state.duplicateMap.set(
+      key,
+      item
+    );
+  }
+}
 
 
 // Clear textarea only AFTER cache refresh
@@ -2341,8 +2381,7 @@ if (ta) {
     }
 
 
-    // Refresh duplicate cache
-    await fetchExistingQuestions();
+   
 
 
     // Re-check pasted questions
@@ -2422,6 +2461,7 @@ if (ta) {
 
     state.existingQuestions =
       allQuestions;
+     rebuildDuplicateMap();
 
     console.log(
       '[BULK] Total database questions:',
@@ -2445,12 +2485,25 @@ if (ta) {
     '[BULK] Loading existing questions...'
   );
 
-  await fetchExistingQuestions();
+  // Add newly imported questions directly
+// into local duplicate cache.
+// No need to download database again.
 
-  console.log(
-    '[BULK] Existing questions loaded:',
-    state.existingQuestions.length
-  );
+for (const item of payload) {
+
+  const key =
+    normalizeForDuplicate(
+      item.question
+    );
+
+  if (key) {
+
+    state.duplicateMap.set(
+      key,
+      item
+    );
+  }
+}
 
   initEditor();
 
