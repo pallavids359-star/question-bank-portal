@@ -18,6 +18,8 @@
   historyIndex: -1,
   autoSaveTimer: null,
   debounceTimer: null,
+  duplicateRequestId: 0,
+  duplicateCheckPromise: Promise.resolve(),
   wordWrap: true,
   filterSearch: '',
   filterType: '',
@@ -1411,6 +1413,39 @@ function checkDuplicates(
     );
   }
 }
+
+async function checkPreviousImports(questions, requestId) {
+  const candidates = questions
+    .map(question => question.question || '')
+    .filter(Boolean);
+
+  if (!candidates.length) {
+    return;
+  }
+
+  try {
+    const result = await apiReq('/api/questions/duplicates', {
+      method: 'POST',
+      body: JSON.stringify({ questions: candidates }),
+    });
+
+    if (requestId !== state.duplicateRequestId) {
+      return;
+    }
+
+    state.duplicateMap.clear();
+    for (const duplicate of (result.duplicates || [])) {
+      if (duplicate.key) {
+        state.duplicateMap.set(duplicate.key, duplicate);
+      }
+    }
+
+    checkDuplicates(state.parsedQuestions);
+    renderCards();
+  } catch (error) {
+    console.error('[BULK] Duplicate check failed:', error);
+  }
+}
   // ── RENDER ENGINE ──────────────────────────────────────────────────
   function autoWrapStandaloneLatex(text) {
     if (!text) return '';
@@ -1736,6 +1771,8 @@ function checkDuplicates(
     if (!ta) return;
     const text = ta.value;
     if (!text.trim()) {
+      state.duplicateRequestId++;
+      state.duplicateCheckPromise = Promise.resolve();
       state.parsedQuestions = [];
       renderCards();
       return;
@@ -1748,6 +1785,9 @@ function checkDuplicates(
 );
     state.parsedQuestions = questions;
     renderCards();
+
+    const requestId = ++state.duplicateRequestId;
+    state.duplicateCheckPromise = checkPreviousImports(questions, requestId);
   }
 
   function scheduleReparse() {
@@ -2224,6 +2264,8 @@ if (duplicateKey) {
       return;
     }
 
+    await state.duplicateCheckPromise;
+
     const importList = state.parsedQuestions.filter(q => {
       if (q.ignored) return false;
       if (!q.isValid) return false;
@@ -2483,7 +2525,6 @@ if (ta) {
     if (state.initialized) return;
     state.initialized = true;
     initEditor();
-    fetchExistingQuestions();
 
     const searchInput = document.getElementById('bqFilterSearch') || document.getElementById('bulkSearchInput');
     const typeFilter = document.getElementById('bqFilterType');
