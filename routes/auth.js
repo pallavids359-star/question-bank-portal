@@ -140,13 +140,6 @@ async function closeLoginSession(userId, sessionId) {
   return { closed: Boolean(closed), alreadyClosed: !closed };
 }
 
-function requestSessionId(req) {
-  const value = String(req.headers['x-qbp-session-id'] || '').trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-    ? value
-    : null;
-}
-
 // ── POST /api/auth/login ───────────────────────────────────────────────────
 router.post('/login', loginRateLimit, async (req, res) => {
   try {
@@ -242,23 +235,6 @@ router.post('/login', loginRateLimit, async (req, res) => {
 
     // Correct password
     const logicalUser = toLogicalUser(activeUser);
-
-    // A logout request can occasionally fail after the browser has already
-    // returned to the login screen. Reclaim only this browser's exact previous
-    // session before counting other active logins. This keeps limit=1 strict:
-    // the first login/re-login succeeds, while a second device is still blocked.
-    const previousSessionId = requestSessionId(req);
-    if (previousSessionId) {
-      try {
-        await closeLoginSession(activeUser.id, previousSessionId);
-      } catch (error) {
-        console.error('[login previous session close]', error.message);
-        return res.status(503).json({
-          error: 'Unable to verify the previous login session. Please try again.'
-        });
-      }
-    }
-
     // ============================================================
 // LOGIN LIMIT CHECK
 // ============================================================
@@ -353,7 +329,6 @@ if (loginLimit > 0) {
 
     return res.json({
       token,
-      loginSessionId: loginRecord.id,
       user: {
         id: activeUser.id,
         name: activeUser.name,

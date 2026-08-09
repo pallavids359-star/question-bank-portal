@@ -41,16 +41,6 @@ test('logout closes the exact session and reports storage failure', () => {
   assert.match(auth, /Unable to close this login session/);
 });
 
-test('limit one reclaims only this browser previous session before counting', () => {
-  const reclaimAt = auth.indexOf('await closeLoginSession(activeUser.id, previousSessionId)');
-  const countAt = auth.indexOf('await countActiveLoginSessions(');
-  assert.ok(reclaimAt >= 0 && countAt > reclaimAt);
-  assert.match(auth, /if \(activeSessions >= loginLimit\)/);
-  assert.match(auth, /loginSessionId: loginRecord\.id/);
-  assert.match(frontend, /'X-QBP-Session-Id': sessionId/);
-  assert.match(frontend, /preserveSession: !logoutSucceeded/);
-});
-
 test('assigned subject is applied before database profile refresh', () => {
   const init = frontend.slice(frontend.indexOf('async function initializeAuthenticatedApp'), frontend.indexOf('function sameSubject'));
   assert.ok(init.indexOf('showAppPage();') < init.indexOf("apiReq('/api/auth/me')"));
