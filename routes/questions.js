@@ -7,7 +7,7 @@ const { toLogicalUser } = require('../lib/user-role');
 
 const router = express.Router();
 
-// ── field map: API camelCase ↔ DB snake_case ───────────────────────────────
+// â”€â”€ field map: API camelCase â†” DB snake_case â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const fieldMap = {
   subject:       'subject',
   klass:         'klass',
@@ -39,13 +39,6 @@ const fieldMap = {
   author:        'author',
   referenceBook: 'reference_book',
   status:        'status',
-  reviewStatus:   'review_status',
-reviewedBy:     'reviewed_by',
-reviewedByName: 'reviewed_by_name',
-reviewedAt:     'reviewed_at',
-acceptedBy:     'accepted_by',
-acceptedByName: 'accepted_by_name',
-acceptedAt:     'accepted_at',
   tags:          'tags',
   year:          'year',
   attemptLevel:  'attempt_level',
@@ -80,6 +73,73 @@ const DB_QTYPE_MAP = {
 
 const isValidUuid = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
+const DUPLICATE_CACHE_TTL_MS = 5 * 60 * 1000;
+let duplicateQuestionCache = { loadedAt: 0, total: -1, entries: new Map() };
+
+function normalizeDuplicateQuestion(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, '')
+    .replace(/[â€œâ€"'â€˜â€™]/g, '')
+    .replace(/[â€“â€”âˆ’-]/g, '')
+    .replace(/\$\$/g, '')
+    .replace(/\$/g, '')
+    .replace(/\\\(/g, '')
+    .replace(/\\\)/g, '')
+    .replace(/\\\[/g, '')
+    .replace(/\\\]/g, '')
+    .replace(/\\[,;!]/g, '')
+    .replace(/\\qquad|\\quad/g, '')
+    .replace(/^(?:question|q)?\s*\d+\s*[.):\-]*/i, '')
+    .replace(/[^\p{L}\p{N}]/gu, '')
+    .trim();
+}
+
+async function loadDuplicateQuestionCache(forceRefresh = false) {
+  const countResult = await supabase
+    .from('questions')
+    .select('id', { count: 'exact', head: true });
+  if (countResult.error) throw countResult.error;
+
+  const total = Number(countResult.count) || 0;
+  const cacheIsFresh = duplicateQuestionCache.loadedAt > 0
+    && duplicateQuestionCache.total === total
+    && Date.now() - duplicateQuestionCache.loadedAt < DUPLICATE_CACHE_TTL_MS;
+  if (!forceRefresh && cacheIsFresh) return duplicateQuestionCache.entries;
+
+  const entries = new Map();
+  const pageSize = 1000;
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from('questions')
+      .select('id, question')
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+
+    for (const row of (data || [])) {
+      const key = normalizeDuplicateQuestion(row.question);
+      if (key && !entries.has(key)) entries.set(key, { id: row.id, key });
+    }
+
+    if (!data || data.length < pageSize) break;
+  }
+
+  duplicateQuestionCache = { loadedAt: Date.now(), total, entries };
+  return entries;
+}
+
+function rememberDuplicateQuestions(rows) {
+  for (const row of (rows || [])) {
+    const key = normalizeDuplicateQuestion(row.question);
+    if (key) duplicateQuestionCache.entries.set(key, { id: row.id, key });
+  }
+}
+
 const CORE_FIELDS = [
   'subject', 'klass', 'chapter', 'topic', 'exams', 'q_type',
   'question', 'opt_a', 'opt_b', 'opt_c', 'opt_d', 'assertion', 'reason',
@@ -87,13 +147,7 @@ const CORE_FIELDS = [
   'predef_options', 'column_a', 'column_b', 'match_options',
   'num_answer', 'correct_option', 'solution_text',
   'difficulty', 'marks', 'neg_marks', 'language', 'source', 'author', 'reference_book',
-  'created_by', 'created_by_name', 'updated_by', 'updated_by_name','review_status',
-'reviewed_by',
-'reviewed_by_name',
-'reviewed_at',
-'accepted_by',
-'accepted_by_name',
-'accepted_at'
+  'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
 ];
 
 const BASIC_LEGACY_FIELDS = [
@@ -164,25 +218,14 @@ function readLegacyData(solutionText) {
 }
 
 function extractStatementPair(questionText) {
-  const text = String(questionText || '')
-    .replace(/\r\n?/g, '\n')
-    .trim();
-
-  if (!text) {
-    return {
-      statement1: '',
-      statement2: ''
-    };
-  }
-
+  const text = String(questionText || '').replace(/\r\n?/g, '\n').trim();
+  if (!text) return { statement1: '', statement2: '' };
   const first = text.match(
-    /(?:^|\n)\s*@?Statement\s*[-–—]?\s*\(?\s*(?:I|1|A)\s*\)?\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\b)/i
+    /(?:^|\n)\s*@?Statement\s*(?:I|1|A)\s*[:.\-)â€”]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*(?:II|2|B)\b)/i
   );
-
   const second = text.match(
-    /(?:^|\n)\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\s*[:.\-)—]?\s*([\s\S]*?)(?=\n\s*(?:\(?[A-D]\)?\s*[).:\-]|(?:Ans|Answer|Solution|Explanation)\s*[:.\-])|$)/i
+    /(?:^|\n)\s*@?Statement\s*(?:II|2|B)\s*[:.\-)â€”]?\s*([\s\S]*?)(?=\n\s*(?:\(?[A-D]\)?\s*[).:\-]|(?:Ans|Answer|Solution|Explanation)\s*[:.\-])|$)/i
   );
-
   return {
     statement1: first ? first[1].trim() : '',
     statement2: second ? second[1].trim() : ''
@@ -239,6 +282,33 @@ function canonicalSubject(subject) {
   return known[value.toLowerCase()] || value;
 }
 
+const EXAMS_BY_SUBJECT = Object.freeze({
+  Mathematics: ['JEE', 'KCET'],
+  Biology: ['NEET', 'KCET'],
+});
+
+function allowedExamsForSubject(subject) {
+  return EXAMS_BY_SUBJECT[canonicalSubject(subject)] || ['NEET', 'JEE', 'KCET'];
+}
+
+function defaultExamForSubject(subject) {
+  return allowedExamsForSubject(subject)[0];
+}
+
+function validateSubjectExams(record) {
+  const subject = canonicalSubject(record?.subject);
+  const exams = Array.isArray(record?.exams)
+    ? record.exams.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+  const allowed = allowedExamsForSubject(subject);
+  const invalid = exams.filter(exam => !allowed.includes(exam));
+
+  if (invalid.length) {
+    return `${subject} questions can be assigned only to ${allowed.join(' or ')}. Remove: ${invalid.join(', ')}.`;
+  }
+  return '';
+}
+
 async function getEffectiveUser(sessionUser) {
   const columns = 'id, name, email, role, subject, status';
 
@@ -267,6 +337,8 @@ async function getEffectiveUser(sessionUser) {
 function hasSubjectAccess(user, subject) {
   const role = (user?.role || '').toLowerCase();
   const assignedSubject = canonicalSubject(user?.subject || 'All');
+  // Admins have full access. Every other role, including Editor, follows the
+  // subject assigned in User Management.
   if (role === 'admin' || assignedSubject === 'All') return true;
   return canonicalSubject(subject) === assignedSubject;
 }
@@ -288,7 +360,7 @@ function toDatabase(input) {
   if (!out.chapter) out.chapter = 'General';
   if (!out.topic)   out.topic   = 'General';
   if (!out.exams || !Array.isArray(out.exams) || out.exams.length === 0) {
-    out.exams = ['NEET'];
+    out.exams = [defaultExamForSubject(out.subject)];
   }
 
   // Fallback for correct_option if missing
@@ -326,28 +398,10 @@ function toDatabase(input) {
   const rawRequestedQType = String(input.qType || input.q_type || '').toLowerCase();
   const requestedQType = rawRequestedQType === 'matrix' ? 'match' : rawRequestedQType;
   if (requestedQType === 'statement_based') {
-  const extractedStatements = extractStatementPair(input.question);
-
-  out.statement1 =
-    input.statement1 ||
-    out.statement1 ||
-    extractedStatements.statement1 ||
-    '';
-
-  out.statement2 =
-    input.statement2 ||
-    out.statement2 ||
-    extractedStatements.statement2 ||
-    '';
-
-  // IMPORTANT:
-  // Also store both statements inside the legacy "question" column.
-  // This guarantees that Statement I & II remain available even when
-  // the database does not contain statement1 / statement2 columns.
-  out.question =
-    'Statement I: ' + out.statement1 +
-    '\nStatement II: ' + out.statement2;
-}
+    const extractedStatements = extractStatementPair(input.question);
+    out.statement1 = input.statement1 || out.statement1 || extractedStatements.statement1 || '';
+    out.statement2 = input.statement2 || out.statement2 || extractedStatements.statement2 || '';
+  }
   if (requestedQType === 'true_false') {
     out.opt_a = 'True';
     out.opt_b = 'False';
@@ -404,20 +458,10 @@ function toApi(row) {
   output.difficulty = row.difficulty || legacyDifficulty || 'Medium';
   output.qType = legacyQuestionType || output.qType;
   if (output.qType === 'statement_based') {
-  const extractedStatements = extractStatementPair(row.question || '');
-
-  output.statement1 =
-    output.statement1 ||
-    legacyData.statement1 ||
-    extractedStatements.statement1 ||
-    '';
-
-  output.statement2 =
-    output.statement2 ||
-    legacyData.statement2 ||
-    extractedStatements.statement2 ||
-    '';
-}
+    const extractedStatements = extractStatementPair(row.question);
+    output.statement1 = output.statement1 || legacyData.statement1 || extractedStatements.statement1 || '';
+    output.statement2 = output.statement2 || legacyData.statement2 || extractedStatements.statement2 || '';
+  }
   if (legacyQuestionType === 'true_false') {
     output.optA = output.optA || 'True';
     output.optB = output.optB || 'False';
@@ -479,7 +523,7 @@ const READ_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor', 'view
 // Adders create/import questions; editors update existing questions.
 const CREATE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 const EDIT_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor')];
-const DELETE_ROLES = [requireAuth, requireRole('admin', 'adder')];
+const DELETE_ROLES = [requireAuth, requireRole('admin')];
 
 const FACET_PAGE_SIZE = 1000;
 const FACET_CACHE_TTL_MS = 60 * 1000;
@@ -590,7 +634,7 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
   }
 });
 
-// ── GET /api/questions?subject=X&qType=Y ──────────────────────────────────
+// â”€â”€ GET /api/questions?subject=X&qType=Y â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/', ...READ_ROLES, async (req, res) => {
   const effectiveUser = await getEffectiveUser(req.user);
   const paged = req.query.paged === '1' || req.query.page !== undefined;
@@ -628,76 +672,37 @@ router.get('/', ...READ_ROLES, async (req, res) => {
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
   });
 });
-// ── GET CURRENT USER NOTIFICATIONS ─────────────────────────────
-router.get('/my/notifications', ...READ_ROLES, async (req, res) => {
 
-  const effectiveUser =
-    await getEffectiveUser(req.user);
-
-  const userId =
-    effectiveUser?.id ||
-    req.user?.userId;
-
-  if (!isValidUuid(userId)) {
-    return res.json([]);
+// â”€â”€ POST /api/questions/duplicates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+router.post('/duplicates', ...READ_ROLES, async (req, res) => {
+  const questions = Array.isArray(req.body?.questions) ? req.body.questions : [];
+  if (!questions.length || questions.length > 500) {
+    return res.status(400).json({ error: 'Provide between 1 and 500 questions.' });
   }
 
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('*')
-    .eq('recipient_id', userId)
-    .order('created_at', {
-      ascending:false
-    })
-    .limit(100);
+  try {
+    const index = await loadDuplicateQuestionCache();
+    const duplicates = [];
+    const seen = new Set();
 
-  if(error){
-    return res.status(500).json({
-      error:error.message
-    });
+    for (const question of questions) {
+      const key = normalizeDuplicateQuestion(question);
+      const match = key ? index.get(key) : null;
+      if (match && !seen.has(key)) {
+        duplicates.push(match);
+        seen.add(key);
+      }
+    }
+
+    res.json({ duplicates });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to check duplicate questions.', details: error.message });
   }
-
-  res.json(data || []);
 });
-// ── MARK NOTIFICATION READ ─────────────────────────────────────
-router.put('/my/notifications/:notificationId/read', ...READ_ROLES, async (req,res)=>{
 
-  const effectiveUser =
-    await getEffectiveUser(req.user);
-
-  const userId =
-    effectiveUser?.id ||
-    req.user?.userId;
-
-  const { data, error } = await supabase
-    .from('notifications')
-    .update({
-      is_read:true
-    })
-    .eq(
-      'id',
-      req.params.notificationId
-    )
-    .eq(
-      'recipient_id',
-      userId
-    )
-    .select()
-    .maybeSingle();
-
-  if(error){
-    return res.status(500).json({
-      error:error.message
-    });
-  }
-
-  res.json({
-    success:true,
-    notification:data
-  });
-});
-// ── GET /api/questions/:id ─────────────────────────────────────────────────
+// â”€â”€ GET /api/questions/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/:id', ...READ_ROLES, async (req, res) => {
+  const effectiveUser = await getEffectiveUser(req.user);
   const { data, error } = await supabase
     .from('questions')
     .select('*')
@@ -707,496 +712,102 @@ router.get('/:id', ...READ_ROLES, async (req, res) => {
   if (error) {
     return res.status(500).json({ error: 'Failed to fetch question.', details: error.message });
   }
+
   if (!data) return res.status(404).json({ error: 'Question not found.' });
-  if (!hasSubjectAccess(req.user, data.subject)) {
+  if (!hasSubjectAccess(effectiveUser, data.subject)) {
     return res.status(403).json({ error: 'You do not have access to this subject.' });
   }
   res.json(toApi(data));
 });
-function normalizeDuplicateText(value) {
 
-  return String(value || '')
-    .toLowerCase()
-
-    // HTML
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-
-    // Unicode normalization
-    .normalize('NFKC')
-
-    // Smart quotes/dashes
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[–—−]/g, '-')
-
-    // Remove question numbering
-    .replace(
-      /^\s*(?:q(?:uestion)?\s*)?\d+\s*[.)\-:]\s*/i,
-      ''
-    )
-
-    // Remove LaTeX math wrappers
-    .replace(/\$\$/g, '')
-    .replace(/\$/g, '')
-    .replace(/\\\(/g, '')
-    .replace(/\\\)/g, '')
-    .replace(/\\\[/g, '')
-    .replace(/\\\]/g, '')
-
-    // Ignore LaTeX spacing commands
-    .replace(/\\,/g, '')
-    .replace(/\\;/g, '')
-    .replace(/\\!/g, '')
-    .replace(/\\quad/g, ' ')
-    .replace(/\\qquad/g, ' ')
-
-    // Normalize escaped percent etc.
-    .replace(/\\%/g, '%')
-    .replace(/\\_/g, '_')
-
-    // Normalize spaces around punctuation
-    .replace(/\s*([,.;:?!])\s*/g, '$1')
-
-    // Normalize operators
-    .replace(/\s*=\s*/g, '=')
-    .replace(/\s*\+\s*/g, '+')
-    .replace(/\s*-\s*/g, '-')
-    .replace(/\s*\/\s*/g, '/')
-
-    // Collapse spaces
-    .replace(/\s+/g, ' ')
-
-    .trim();
-}
-
-
-async function findDuplicateQuestion(
-  payload,
-  excludeId = null
-) {
-
-  const normalizedQuestion =
-    normalizeDuplicateText(
-      payload.question
-    );
-
-  if (!normalizedQuestion) {
-    return null;
-  }
-
-  const PAGE_SIZE = 1000;
-
-  for (
-    let from = 0;
-    ;
-    from += PAGE_SIZE
-  ) {
-
-    let query =
-      supabase
-        .from('questions')
-        .select(`
-          id,
-          subject,
-          klass,
-          chapter,
-          topic,
-          q_type,
-          question,
-          created_at
-        `)
-        .range(
-          from,
-          from + PAGE_SIZE - 1
-        );
-
-    if (excludeId) {
-      query =
-        query.neq(
-          'id',
-          excludeId
-        );
-    }
-
-    const {
-      data,
-      error
-    } = await query;
-
-    if (error) {
-
-      console.error(
-        '[duplicate question check]',
-        error
-      );
-
-      throw error;
-    }
-
-    const rows =
-      Array.isArray(data)
-        ? data
-        : [];
-
-    const duplicate =
-      rows.find(row => {
-
-        const sameText =
-  normalizeDuplicateText(
-    row.question
-  ) ===
-  normalizedQuestion;
-
-return sameText;
-      });
-
-    if (duplicate) {
-
-      console.log(
-        '[DUPLICATE FOUND]',
-        {
-          existingId:
-            duplicate.id,
-
-          existingChapter:
-            duplicate.chapter,
-
-          newChapter:
-            payload.chapter,
-
-          question:
-            normalizedQuestion.slice(
-              0,
-              100
-            )
-        }
-      );
-
-      return duplicate;
-    }
-
-    if (
-      rows.length <
-      PAGE_SIZE
-    ) {
-      break;
-    }
-  }
-
-  return null;
-}
-
-
-
-// ── POST /api/questions ────────────────────────────────────────────────────
+// â”€â”€ POST /api/questions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/', ...CREATE_ROLES, async (req, res) => {
-  try {
-    const payload = toDatabase(req.body);
+  const payload = toDatabase(req.body);
+  const effectiveUser = await getEffectiveUser(req.user);
 
-    if (!hasSubjectAccess(req.user, payload.subject)) {
-      return res.status(403).json({
-        error:
-          'You can add questions only to your assigned subject.'
-      });
-    }
+  const examError = validateSubjectExams(payload);
+  if (examError) return res.status(400).json({ error: examError });
 
-    // ==========================================
-    // DUPLICATE CHECK
-    // ==========================================
-
-    const duplicate =
-      await findDuplicateQuestion(payload);
-
-    if (duplicate) {
-      return res.status(409).json({
-        error: 'Duplicate question detected.',
-        duplicate: true,
-
-        existingQuestion: {
-          id: duplicate.id,
-          subject: duplicate.subject,
-          klass: duplicate.klass,
-          chapter: duplicate.chapter,
-          topic: duplicate.topic,
-          question: duplicate.question,
-          createdAt: duplicate.created_at
-        }
-      });
-    }
-
-    // ==========================================
-    // OWNERSHIP
-    // ==========================================
-
-    if (isValidUuid(req.user?.userId)) {
-      payload.created_by =
-        req.user.userId;
-
-      payload.updated_by =
-        req.user.userId;
-    }
-
-    payload.created_by_name =
-      req.user?.name || '';
-
-    payload.updated_by_name =
-      req.user?.name || '';
-
-    // ==========================================
-    // INSERT
-    // ==========================================
-
-    const { data, error } =
-      await supabase
-        .from('questions')
-        .insert(payload)
-        .select()
-        .single();
-
-    if (error) {
-      console.error(
-        '[create question]',
-        error
-      );
-
-      return res.status(400).json({
-        error:
-          'Failed to create question.',
-        details:
-          error.message
-      });
-    }
-
-    await writeAuditLog({
-      userId:
-        req.user?.userId,
-
-      userName:
-        req.user?.name,
-
-      action:
-        'CREATE',
-
-      resourceType:
-        'question',
-
-      resourceId:
-        data.id,
-
-      details: {
-        subject:
-          payload.subject,
-
-        chapter:
-          payload.chapter
-      }
-    }).catch(() => {});
-
-    return res.status(201).json(
-      toApi(data)
-    );
-
-  } catch (err) {
-    console.error(
-      '[create question]',
-      err
-    );
-
-    return res.status(500).json({
-      error:
-        'Failed to create question.',
-      details:
-        err.message
-    });
+  if (!hasSubjectAccess(effectiveUser, payload.subject)) {
+    return res.status(403).json({ error: 'You can add questions only to your assigned subject.' });
   }
+
+  // Inject ownership safely
+  if (isValidUuid(req.user?.userId)) {
+    payload.created_by = req.user.userId;
+    payload.updated_by = req.user.userId;
+  }
+  payload.created_by_name = req.user?.name || '';
+  payload.updated_by_name = req.user?.name || '';
+
+  let { data, error } = await supabase
+    .from('questions')
+    .insert(payload)
+    .select()
+    .single();
+
+  // Auto-fallback if database missing extended columns (e.g. statement1, assertion)
+  if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
+    console.warn('Single insert missing extended columns, auto-stripping to basic legacy schema...');
+    const basicPayload = sanitizeRecord(payload, BASIC_LEGACY_FIELDS);
+    const retry = await supabase
+      .from('questions')
+      .insert(basicPayload)
+      .select()
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) {
+    return res.status(400).json({ error: 'Failed to create question: ' + error.message, details: error.message });
+  }
+
+  rememberDuplicateQuestions([data]);
+
+  await writeAuditLog({
+    userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
+    userName: req.user?.name || 'User',
+    action: 'CREATE_QUESTION', resourceType: 'question',
+    resourceId: data.id,
+    details: { subject: data.subject, qType: data.q_type, chapter: data.chapter },
+  }).catch(err => console.warn('Audit log failed:', err.message));
+
+  res.status(201).json(toApi(data));
 });
 
 
-// ── POST /api/questions/batch ──────────────────────────────────────────────
+// â”€â”€ POST /api/questions/batch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/batch', ...CREATE_ROLES, async (req, res) => {
-
   const items = req.body;
-
   if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({
-      error:
-        'Payload must be a non-empty array of questions.'
-    });
+    return res.status(400).json({ error: 'Payload must be a non-empty array of questions.' });
   }
 
   const userId = req.user.userId;
   const userName = req.user.name;
+  const effectiveUser = await getEffectiveUser(req.user);
 
+  const recordsToInsert = items.map(item => {
+    const payload = toDatabase(item);
+    if (isValidUuid(userId)) {
+      payload.created_by = userId;
+      payload.updated_by = userId;
+    }
+    payload.created_by_name = userName || '';
+    payload.updated_by_name = userName || '';
+    return sanitizeRecord(payload, CORE_FIELDS);
+  });
 
-  // ==========================================
-  // PREPARE QUESTIONS
-  // ==========================================
-
-  const preparedRecords =
-    items.map((item, index) => {
-
-      const payload =
-        toDatabase(item);
-
-      if (isValidUuid(userId)) {
-        payload.created_by = userId;
-        payload.updated_by = userId;
-      }
-
-      payload.created_by_name =
-        userName || '';
-
-      payload.updated_by_name =
-        userName || '';
-
-      return {
-        originalIndex: index,
-
-        record:
-          sanitizeRecord(
-            payload,
-            CORE_FIELDS
-          )
-      };
-    });
-
-
-  // ==========================================
-  // SUBJECT ACCESS CHECK
-  // ==========================================
-
-  if (
-    preparedRecords.some(
-      item =>
-        !hasSubjectAccess(
-          req.user,
-          item.record.subject
-        )
-    )
-  ) {
-
-    return res.status(403).json({
-      error:
-        'The batch contains questions outside your assigned subject.'
-    });
-
+  if (recordsToInsert.some(record => !hasSubjectAccess(effectiveUser, record.subject))) {
+    return res.status(403).json({ error: 'The batch contains questions outside your assigned subject.' });
   }
 
-
-  // ==========================================
-  // ADD YOUR DUPLICATE BLOCK HERE
-  // ==========================================
-
-  const recordsToInsert = [];
-  const duplicates = [];
-
-  const batchFingerprints =
-    new Map();
-
-  for (const prepared of preparedRecords) {
-
-    const record =
-      prepared.record;
-
-    const normalizedQuestion =
-      normalizeDuplicateText(
-        record.question
-      );
-
-   const fingerprint =
-  normalizedQuestion;
-
-
-    // Duplicate inside same import
-    if (
-      normalizedQuestion &&
-      batchFingerprints.has(
-        fingerprint
-      )
-    ) {
-
-      duplicates.push({
-        index:
-          prepared.originalIndex,
-
-        question:
-          record.question,
-
-        reason:
-          'Duplicate inside current bulk import'
-      });
-
-      continue;
-    }
-
-
-    if (normalizedQuestion) {
-
-      batchFingerprints.set(
-        fingerprint,
-        prepared.originalIndex
-      );
-
-    }
-
-
-    // Duplicate already in database
-    const existingDuplicate =
-      await findDuplicateQuestion(
-        record
-      );
-
-
-    if (existingDuplicate) {
-
-      duplicates.push({
-
-        index:
-          prepared.originalIndex,
-
-        question:
-          record.question,
-
-        reason:
-          'Question already exists',
-
-        existingQuestionId:
-          existingDuplicate.id
-      });
-
-      continue;
-    }
-
-
-    recordsToInsert.push(
-      record
-    );
+  const invalidExamRecord = recordsToInsert.find(record => validateSubjectExams(record));
+  if (invalidExamRecord) {
+    return res.status(400).json({ error: validateSubjectExams(invalidExamRecord) });
   }
 
-
-  if (recordsToInsert.length === 0) {
-
-    return res.status(409).json({
-
-      error:
-        'All questions are duplicates.',
-
-      duplicate: true,
-
-      duplicateCount:
-        duplicates.length,
-
-      duplicates
-    });
-  }
-
-
-  // ==========================================
-  // YOUR EXISTING CHUNK INSERT CODE CONTINUES
-  // ==========================================
-
- 
   // Batch insert into Supabase in chunks of 50
   const chunkSize = 50;
   const insertedData = [];
@@ -1260,6 +871,8 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
     });
   }
 
+  rememberDuplicateQuestions(insertedData);
+
 
   await writeAuditLog({
     userId: isValidUuid(userId) ? userId : null,
@@ -1275,503 +888,12 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
     data: insertedData.map(toApi)
   });
 });
-// ── UPDATE DIFFICULTY ONLY ─────────────────────────────────────
-router.put('/:id/difficulty', ...EDIT_ROLES, async (req, res) => {
-  try {
-    const effectiveUser = await getEffectiveUser(req.user);
 
-    const { data: question, error: fetchError } = await supabase
-      .from('questions')
-      .select('*')
-      .eq('id', req.params.id)
-      .maybeSingle();
 
-    if (fetchError) {
-      return res.status(500).json({ error: fetchError.message });
-    }
 
-    if (!question) {
-      return res.status(404).json({ error: 'Question not found.' });
-    }
-
-    if (!hasSubjectAccess(effectiveUser, question.subject)) {
-      return res.status(403).json({
-        error: 'You can update only questions from your assigned subject.'
-      });
-    }
-
-    const difficulty = String(req.body?.difficulty || '').trim();
-
-    if (!/^(easy|medium|hard)$/i.test(difficulty)) {
-      return res.status(400).json({
-        error: 'Difficulty must be Easy, Medium, or Hard.'
-      });
-    }
-
-    const normalized =
-      difficulty.charAt(0).toUpperCase() +
-      difficulty.slice(1).toLowerCase();
-
-    const storedType =
-      readLegacyQuestionType(question.solution_text) ||
-      question.q_type ||
-      'mcq_single';
-
-    const storedData = readLegacyData(question.solution_text);
-
-    const payload = {
-      solution_text: storeLegacyMetadata(
-        question.solution_text,
-        normalized,
-        storedType,
-        storedData
-      ),
-      updated_by_name: req.user?.name || ''
-    };
-
-    const { data, error } = await supabase
-      .from('questions')
-      .update(payload)
-      .eq('id', req.params.id)
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    await writeAuditLog({
-      userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
-      userName: req.user?.name || 'Editor',
-      action: 'UPDATE_QUESTION_DIFFICULTY',
-      resourceType: 'question',
-      resourceId: req.params.id,
-      details: {
-        subject: question.subject,
-        difficulty: normalized
-      }
-    }).catch(() => {});
-
-    res.json(toApi(data));
-
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-// ── REVIEW QUESTION ─────────────────────────────────────────────
-// ── TOGGLE ACCEPT QUESTION ─────────────────────────────────────
-
-
-// ── ACCEPT QUESTION ─────────────────────────────────────────────
-router.put('/:id/accept', ...EDIT_ROLES, async (req, res) => {
-  try {
-    const effectiveUser = await getEffectiveUser(req.user);
-
-    const { data: question, error: fetchError } = await supabase
-      .from('questions')
-      .select('*')
-      .eq('id', req.params.id)
-      .maybeSingle();
-
-    if (fetchError) {
-      return res.status(500).json({ error: fetchError.message });
-    }
-
-    if (!question) {
-      return res.status(404).json({ error: 'Question not found.' });
-    }
-
-    if (!hasSubjectAccess(effectiveUser, question.subject)) {
-      return res.status(403).json({
-        error: 'You can accept only questions from your assigned subject.'
-      });
-    }
-
-    const payload = {
-      review_status: 'accepted',
-
-      accepted_by:
-        isValidUuid(req.user?.userId)
-          ? req.user.userId
-          : null,
-
-      accepted_by_name: req.user?.name || 'Editor',
-      accepted_at: new Date().toISOString(),
-
-      updated_by_name: req.user?.name || 'Editor'
-    };
-
-    const { data, error } = await supabase
-      .from('questions')
-      .update(payload)
-      .eq('id', req.params.id)
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    await writeAuditLog({
-      userId: isValidUuid(req.user?.userId)
-        ? req.user.userId
-        : null,
-
-      userName: req.user?.name || 'Editor',
-
-      action: 'ACCEPT_QUESTION',
-
-      resourceType: 'question',
-      resourceId: req.params.id,
-
-      details: {
-        subject: question.subject,
-        status: 'accepted'
-      }
-
-    }).catch(() => {});
-
-    res.json(toApi(data));
-
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-// ── REVIEW QUESTION + SEND NOTIFICATION ────────────────────────
-router.put('/:id/review', ...EDIT_ROLES, async (req, res) => {
-  try {
-
-    const effectiveUser = await getEffectiveUser(req.user);
-    const userRole = String(effectiveUser?.role || '').toLowerCase();
-
-    if (!['admin', 'editor'].includes(userRole)) {
-      return res.status(403).json({
-        error: 'Only an Editor or Admin can review questions.'
-      });
-    }
-
-    const reviewMessage =
-      String(req.body?.message || '').trim();
-
-    if (!reviewMessage) {
-      return res.status(400).json({
-        error: 'Review message is required.'
-      });
-    }
-
-    const { data: question, error: fetchError } = await supabase
-      .from('questions')
-      .select(
-        'id, subject, chapter, q_type, created_by, created_by_name'
-      )
-      .eq('id', req.params.id)
-      .maybeSingle();
-
-    if (fetchError) {
-      return res.status(500).json({
-        error: fetchError.message
-      });
-    }
-
-    if (!question) {
-      return res.status(404).json({
-        error: 'Question not found.'
-      });
-    }
-
-    if (!hasSubjectAccess(effectiveUser, question.subject)) {
-      return res.status(403).json({
-        error: 'This question is outside your assigned subject.'
-      });
-    }
-
-    // ------------------------------------
-    // UPDATE QUESTION REVIEW INFORMATION
-    // ------------------------------------
-
-    const reviewPayload = {
-
-      review_status: 'reviewed',
-
-      review_message: reviewMessage,
-
-      reviewed_by:
-        isValidUuid(req.user?.userId)
-          ? req.user.userId
-          : null,
-
-      reviewed_by_name:
-        req.user?.name || 'Editor',
-
-      reviewed_at:
-        new Date().toISOString(),
-
-      // A new review removes previous acceptance
-      accepted_by: null,
-      accepted_by_name: null,
-      accepted_at: null
-    };
-
-    const { data: updated, error: updateError } =
-      await supabase
-        .from('questions')
-        .update(reviewPayload)
-        .eq('id', req.params.id)
-        .select()
-        .single();
-
-    if (updateError) {
-      return res.status(400).json({
-        error: updateError.message
-      });
-    }
-
-
-    // ------------------------------------
-    // FIND WHO ADDED THE QUESTION
-    // ------------------------------------
-// ------------------------------------
-// FIND WHO ADDED THE QUESTION
-// ------------------------------------
-
-let recipients = [];
-
-
-// 1. First try exact creator user ID
-if (isValidUuid(question.created_by)) {
-
-  const { data: creatorById, error: creatorIdError } =
-    await supabase
-      .from('users')
-      .select('id, name, email, role')
-      .eq('id', question.created_by)
-      .maybeSingle();
-
-  if (creatorIdError) {
-    console.error(
-      '[review notification creator lookup by id]',
-      creatorIdError
-    );
-  }
-
-  if (
-    creatorById &&
-    isValidUuid(creatorById.id)
-  ) {
-    recipients.push(creatorById.id);
-  }
-}
-
-
-// 2. If ID failed, try created_by_name
-if (
-  recipients.length === 0 &&
-  question.created_by_name
-) {
-
-  const creatorName =
-    String(question.created_by_name)
-      .trim()
-      .toLowerCase();
-
-  const { data: users, error: usersError } =
-    await supabase
-      .from('users')
-      .select('id, name, email, role');
-
-  if (usersError) {
-
-    console.error(
-      '[review notification creator lookup]',
-      usersError
-    );
-
-  } else {
-
-    const matchingUser =
-      (users || []).find(user => {
-
-        const name =
-          String(user.name || '')
-            .trim()
-            .toLowerCase();
-
-        const email =
-          String(user.email || '')
-            .trim()
-            .toLowerCase();
-
-        return (
-          name === creatorName ||
-          email === creatorName
-        );
-
-      });
-
-    if (
-      matchingUser &&
-      isValidUuid(matchingUser.id)
-    ) {
-      recipients.push(matchingUser.id);
-    }
-  }
-}
-
-
-// Remove duplicates
-recipients =
-  [...new Set(recipients)];
-
-console.log(
-  '[REVIEW NOTIFICATION RECIPIENTS]',
-  {
-    questionId: question.id,
-    createdBy: question.created_by,
-    createdByName: question.created_by_name,
-    recipients
-  }
-);
-
-
-// Do NOT silently continue when creator is not found
-if (recipients.length === 0) {
-
-  return res.status(400).json({
-    error:
-      'Review was saved, but notification could not be sent because the original contributor could not be identified.',
-    details:
-      `created_by=${question.created_by || 'NULL'}, created_by_name=${question.created_by_name || 'NULL'}`
-  });
-
-}
-
-
-    // ------------------------------------
-    // CREATE NOTIFICATION
-    // ------------------------------------
-
-    if (recipients.length) {
-
-     const notifications = recipients.map(recipientId => ({
-
-  recipient_id: recipientId,
-
-  sender_id:
-    isValidUuid(req.user?.userId)
-      ? req.user.userId
-      : null,
-
-  sender_name:
-    req.user?.name || 'Editor',
-
-  question_id:
-    question.id,
-
-  title:
-    'Question Review',
-
-  message:
-    reviewMessage,
-
-  is_read:
-    false
-}));
-      const {
-  data: createdNotifications,
-  error: notifyError
-} = await supabase
-  .from('notifications')
-  .insert(notifications)
-  .select();
-
-
-if (notifyError) {
-
-  console.error(
-    '[REVIEW NOTIFICATION INSERT ERROR]',
-    notifyError
-  );
-
-  return res.status(500).json({
-    error:
-      'Review was saved, but notification could not be created.',
-    details:
-      notifyError.message
-  });
-
-}
-
-
-console.log(
-  '[REVIEW NOTIFICATION CREATED]',
-  createdNotifications
-);
-
-
-if (
-  !createdNotifications ||
-  createdNotifications.length === 0
-) {
-
-  return res.status(500).json({
-    error:
-      'Review was saved, but no notification row was created.'
-  });
-
-}
-    }
-
-
-    await writeAuditLog({
-
-      userId:
-        isValidUuid(req.user?.userId)
-          ? req.user.userId
-          : null,
-
-      userName:
-        req.user?.name || 'Editor',
-
-      action:
-        'REVIEW_QUESTION',
-
-      resourceType:
-        'question',
-
-      resourceId:
-        question.id,
-
-      details: {
-        subject:
-          question.subject,
-
-        contributor:
-          question.created_by_name || '',
-
-        reviewMessage:
-          reviewMessage
-      }
-
-    }).catch(()=>{});
-
-
-    res.json(toApi(updated));
-
-  } catch(error) {
-
-    console.error(
-      'Review question failed:',
-      error
-    );
-
-    res.status(500).json({
-      error: error.message
-    });
-  }
-});
-
-// ── PUT /api/questions/:id ─────────────────────────────────────────────────
+// â”€â”€ PUT /api/questions/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/:id', ...EDIT_ROLES, async (req, res) => {
+  const effectiveUser = await getEffectiveUser(req.user);
   const { data: existingQuestion, error: existingError } = await supabase
     .from('questions')
     .select('*')
@@ -1808,14 +930,16 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
   } else {
     // Admins and Adders can fully edit the question.
     payload = toDatabase(req.body);
+    const examError = validateSubjectExams(payload);
+    if (examError) return res.status(400).json({ error: examError });
   }
 
   if (Object.keys(payload).length === 0) {
     return res.status(400).json({ error: 'No valid fields supplied.' });
   }
 
-  if (!hasSubjectAccess(req.user, existingQuestion.subject) ||
-      (payload.subject && !hasSubjectAccess(req.user, payload.subject))) {
+  if (!hasSubjectAccess(effectiveUser, existingQuestion.subject) ||
+      (payload.subject && !hasSubjectAccess(effectiveUser, payload.subject))) {
     return res.status(403).json({ error: 'You can edit questions only in your assigned subject.' });
   }
 
@@ -1863,94 +987,29 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
 });
 
 
-// ── DELETE /api/questions/:id ──────────────────────────────────────────────
-// ── DELETE /api/questions/:id ──────────────────────────────────────────────
+// â”€â”€ DELETE /api/questions/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.delete('/:id', ...DELETE_ROLES, async (req, res) => {
-  try {
-    const effectiveUser = await getEffectiveUser(req.user);
+  const { data, error } = await supabase
+    .from('questions')
+    .delete()
+    .eq('id', req.params.id)
+    .select('id, subject, q_type')
+    .maybeSingle();
 
-    // First fetch the question before deleting
-    const { data: existingQuestion, error: fetchError } = await supabase
-      .from('questions')
-      .select('id, subject, q_type, created_by, created_by_name')
-      .eq('id', req.params.id)
-      .maybeSingle();
-
-    if (fetchError) {
-      return res.status(500).json({
-        error: 'Failed to fetch question.',
-        details: fetchError.message
-      });
-    }
-
-    if (!existingQuestion) {
-      return res.status(404).json({
-        error: 'Question not found.'
-      });
-    }
-
-    // Adders can delete only questions from their assigned subject
-    if (!hasSubjectAccess(effectiveUser, existingQuestion.subject)) {
-      return res.status(403).json({
-        error: 'You can delete questions only from your assigned subject.'
-      });
-    }
-
-    const { data, error } = await supabase
-      .from('questions')
-      .delete()
-      .eq('id', req.params.id)
-      .select('id, subject, q_type')
-      .maybeSingle();
-
-    if (error) {
-      return res.status(500).json({
-        error: 'Failed to delete question.',
-        details: error.message
-      });
-    }
-
-    if (!data) {
-      return res.status(404).json({
-        error: 'Question not found.'
-      });
-    }
-
-    // Clear facet cache because chapter/topic values may have changed
-    facetCache = {
-      expiresAt: 0,
-      rows: []
-    };
-
-    await writeAuditLog({
-      userId: isValidUuid(req.user?.userId)
-        ? req.user.userId
-        : null,
-      userName: req.user?.name || 'User',
-      action: 'DELETE_QUESTION',
-      resourceType: 'question',
-      resourceId: req.params.id,
-      details: {
-        subject: data.subject,
-        qType: data.q_type
-      },
-    }).catch(err =>
-      console.warn('Audit log failed:', err.message)
-    );
-
-    res.json({
-      success: true,
-      deletedId: data.id
-    });
-
-  } catch (error) {
-    console.error('Delete question error:', error);
-
-    res.status(500).json({
-      error: 'Failed to delete question.',
-      details: error.message
-    });
+  if (error) {
+    return res.status(500).json({ error: 'Failed to delete question.', details: error.message });
   }
+  if (!data) return res.status(404).json({ error: 'Question not found.' });
+
+  await writeAuditLog({
+    userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
+    userName: req.user?.name || 'User',
+    action: 'DELETE_QUESTION', resourceType: 'question',
+    resourceId: req.params.id,
+    details: { subject: data.subject, qType: data.q_type },
+  }).catch(err => console.warn('Audit log failed:', err.message));
+
+  res.json({ success: true, deletedId: data.id });
 });
 
 module.exports = router;
