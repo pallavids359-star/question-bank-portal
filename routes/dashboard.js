@@ -42,6 +42,17 @@ function recentRows(rows, field) {
     .slice(0, 5);
 }
 
+async function readRecentQuestions(field) {
+  const { data, error } = await supabase
+    .from('questions')
+    .select('id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by_name, updated_by_name')
+    .not(field, 'is', null)
+    .order(field, { ascending: false })
+    .limit(5);
+  if (error) throw error;
+  return data || [];
+}
+
 function questionBelongsToUser(question, user) {
   if (question.created_by && user.id) {
     return String(question.created_by) === String(user.id);
@@ -270,6 +281,20 @@ function buildUserTimeStats(
         )
     );
 }
+
+// Fast endpoint so Recently Added/Edited does not wait for the full analytics scan.
+router.get('/recent', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const [recentAdded, recentEdited] = await Promise.all([
+      readRecentQuestions('created_at'),
+      readRecentQuestions('updated_at'),
+    ]);
+    res.json({ recentAdded, recentEdited });
+  } catch (error) {
+    console.error('[dashboard recent]', error.message);
+    res.status(500).json({ error: 'Failed to load recent questions.' });
+  }
+});
 
 // GET /api/dashboard
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {

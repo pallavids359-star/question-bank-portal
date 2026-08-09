@@ -11,6 +11,9 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="stylesheet" href="bulk-import.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="content-renderer.js"></script>
+<script src="dashboard-view.js"></script>
+<script src="auth-view-state.js"></script>
 <style>
 /* ============================================================
    DESIGN TOKENS
@@ -993,6 +996,17 @@ textarea{resize:vertical;min-height:70px;}
   .audit-time-label{order:-1;width:100%;text-align:left;}
 }
 </style>
+<style>
+#pageQuestions.viewer-protected #listContainer{-webkit-user-select:none;user-select:none;position:relative;}
+#pageQuestions.viewer-protected #listContainer img{-webkit-user-drag:none;user-drag:none;}
+#pageQuestions.viewer-protected [data-export],#pageQuestions.viewer-protected .export-btn,#pageQuestions.viewer-protected a[download]{display:none!important;}
+#viewerWatermark{position:absolute;inset:0;z-index:20;pointer-events:none;overflow:hidden;display:grid;grid-template-columns:repeat(3,1fr);gap:90px 40px;opacity:.12;color:#c9a227;font-size:12px;font-weight:700;transform:rotate(-18deg);transform-origin:center;padding:30px;}
+#viewerWatermark span{white-space:nowrap;align-self:center;justify-self:center;}
+@media print{
+  #pageQuestions.viewer-protected #listContainer>*:not(#viewerPrintNotice){display:none!important;}
+  #pageQuestions.viewer-protected #viewerPrintNotice{display:block!important;color:#000;font-size:18pt;padding:2cm;}
+}
+</style>
 </head>
 <body>
 
@@ -1779,21 +1793,6 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
         </div>
       </div>
 
-      <!-- ── SETTINGS ───────────────────────────────────────── -->
-      <div id="pageSettings" class="page-section">
-        <div class="page-header">
-          <h2>System Settings</h2>
-          <p>Portal configuration and options.</p>
-        </div>
-        <div class="card" style="max-width:540px;">
-          <div class="section-title">System Information</div>
-          <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:16px;">
-            Question Bank Portal v3.2<br>
-            All subject access and permissions are managed via User Management.
-          </p>
-        </div>
-      </div>
-
       <!-- ── PROFILE ────────────────────────────────────────── -->
       <div id="pageProfile" class="page-section">
         <div class="page-header"><h2>My Profile</h2></div>
@@ -1990,25 +1989,29 @@ function fillSelect(id, options, placeholder) {
 const Auth = {
   TOKEN_KEY: 'qb_token',
   USER_KEY:  'qb_user',
+  SESSION_KEY: 'qb_login_session',
   getToken() { return localStorage.getItem(this.TOKEN_KEY); },
+  getSessionId() { return localStorage.getItem(this.SESSION_KEY); },
   getUser()  {
     try { return JSON.parse(localStorage.getItem(this.USER_KEY)); }
     catch { return null; }
   },
-  setAuth(token, user) {
+  setAuth(token, user, sessionId) {
     localStorage.setItem(this.TOKEN_KEY, token);
     localStorage.setItem(this.USER_KEY, JSON.stringify(user));
+    if (sessionId) localStorage.setItem(this.SESSION_KEY, sessionId);
   },
-  clearAuth() {
+  clearAuth(options = {}) {
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.USER_KEY);
+    if (!options.preserveSession) localStorage.removeItem(this.SESSION_KEY);
   },
   isLoggedIn() { return !!this.getToken(); },
   getRole()    { return (this.getUser() || {}).role; },
   can(action)  {
     const role = this.getRole();
     const map = {
-      admin:  ['view','add','edit','delete','manage_users','dashboard','audit','settings','bulk_import'],
+      admin:  ['view','add','edit','delete','manage_users','dashboard','audit','bulk_import'],
       adder:  ['view','add','edit','delete','bulk_import'],
       editor: ['view','edit'],
       viewer: ['view'],
@@ -2058,18 +2061,20 @@ function resolveApiUrl(url) {
 async function apiReq(url, options = {}) {
   const fullUrl = resolveApiUrl(url);
   const token = Auth.getToken();
+  const sessionId = Auth.getSessionId();
   const resp  = await fetch(fullUrl, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(sessionId ? { 'X-QBP-Session-Id': sessionId } : {}),
       ...(options.headers || {}),
     },
   });
 
   if (resp.status === 401 && !url.includes('/auth/login')) {
     if (!_isLoggingIn) {
-      Auth.clearAuth();
+      Auth.clearAuth({ preserveSession: url.includes('/auth/logout') });
       showLoginPage();
     }
     throw new Error('Session expired. Please log in again.');
@@ -2081,7 +2086,9 @@ async function apiReq(url, options = {}) {
   if (!resp.ok) {
     const msg = body && typeof body === 'object'
       ? (body.details || body.error)
-      : body;
+      : (/^\s*<!doctype|^\s*<html/i.test(String(body || ''))
+          ? 'This action is not available on the deployed server. Deploy the matching backend and refresh the page.'
+          : body);
     throw new Error(msg || `Request failed (${resp.status})`);
   }
   return body;
@@ -2195,6 +2202,8 @@ function showPage(id) {
       );
     });
 
+  syncViewerProtection(id);
+
   if (id === 'pageDashboard') {
     loadDashboard();
   }
@@ -2205,10 +2214,6 @@ function showPage(id) {
 
   else if (id === 'pageAudit') {
     loadAuditData();
-  }
-
-  else if (id === 'pageSettings') {
-    loadSettings();
   }
 
   else if (id === 'pageProfile') {
@@ -2275,7 +2280,6 @@ function buildSidebar() {
     { label: 'Administration', items: [
       { icon:'👥', text:'User Management',   page:'pageUsers',     roles:['admin'] },
       { icon:'📋', text:'Audit Log',         page:'pageAudit',     roles:['admin'] },
-      { icon:'⚙️', text:'Settings',          page:'pageSettings',  roles:['admin'] },
     ]},
     { label: 'Account', items: [
       { icon:'👤', text:'My Profile',        page:'pageProfile',   roles:['admin','adder','editor','viewer'] },
@@ -2321,10 +2325,89 @@ function canonicalSubject(subject) {
 }
 
 function assignedSubjectFor(user) {
-  user = user || {};
-  if (user.role === 'admin') return '';
-  const subject = canonicalSubject(user.subject || 'All');
+  const subject = canonicalSubject(window.QbpAuthViewState.permittedSubject(user));
   return subject && subject !== 'All' ? subject : '';
+}
+
+function neutralizeSubjectControls() {
+  ['subject','fSubject'].forEach(id => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    select.innerHTML = '';
+    const option = document.createElement('option');
+    option.value = ''; option.textContent = 'Loading permitted subjects…';
+    select.appendChild(option); select.disabled = true;
+  });
+}
+
+function clearUserSpecificState() {
+  disableViewerProtection();
+  allQuestions = [];
+  questionFacets = { subjects:[], classes:[], chapters:[], concepts:[], types:[] };
+  dashboardAdderStats = [];
+  userNotifications = [];
+  selectedExams = new Set();
+  questionLoadSequence += 1;
+  neutralizeSubjectControls();
+  const badge = document.getElementById('notificationBadge');
+  if (badge) { badge.textContent = ''; badge.style.display = 'none'; }
+}
+
+let viewerProtectionActive=false;
+let viewerWatermarkTimer=null;
+function viewerProtectedTarget(event){return viewerProtectionActive&&event.target&&event.target.closest&&event.target.closest('#listContainer');}
+function blockViewerContentEvent(event){if(viewerProtectedTarget(event)){event.preventDefault();event.stopPropagation();}}
+function blockViewerShortcut(event){
+  if(!viewerProtectionActive||!window.QbpAuthViewState.isCopyShortcut(event))return;
+  const list=document.getElementById('listContainer');const selection=window.getSelection();
+  const focusedInside=list&&(list.contains(document.activeElement)||(selection&&selection.rangeCount&&list.contains(selection.anchorNode)));
+  if(focusedInside)event.preventDefault();
+}
+function updateViewerWatermark(){
+  const watermark=document.getElementById('viewerWatermark');if(!watermark)return;
+  const label=window.QbpAuthViewState.watermarkIdentity(Auth.getUser())+' · '+new Date().toLocaleString();
+  watermark.querySelectorAll('span').forEach(item=>{item.textContent=label;});
+}
+function enableViewerProtection(){
+  if(viewerProtectionActive)return;
+  const page=document.getElementById('pageQuestions');const list=document.getElementById('listContainer');if(!page||!list)return;
+  viewerProtectionActive=true;page.classList.add('viewer-protected');
+  const watermark=document.createElement('div');watermark.id='viewerWatermark';watermark.setAttribute('aria-hidden','true');
+  for(let i=0;i<18;i++){const item=document.createElement('span');watermark.appendChild(item);}list.appendChild(watermark);updateViewerWatermark();
+  const notice=document.createElement('div');notice.id='viewerPrintNotice';notice.style.display='none';notice.textContent='Protected question content is unavailable for printing.';list.appendChild(notice);
+  ['copy','cut','dragstart','contextmenu','selectstart'].forEach(name=>list.addEventListener(name,blockViewerContentEvent));
+  document.addEventListener('keydown',blockViewerShortcut,true);
+  viewerWatermarkTimer=setInterval(updateViewerWatermark,60000);
+}
+function disableViewerProtection(){
+  const page=document.getElementById('pageQuestions');const list=document.getElementById('listContainer');
+  if(list)['copy','cut','dragstart','contextmenu','selectstart'].forEach(name=>list.removeEventListener(name,blockViewerContentEvent));
+  document.removeEventListener('keydown',blockViewerShortcut,true);
+  if(viewerWatermarkTimer)clearInterval(viewerWatermarkTimer);viewerWatermarkTimer=null;
+  page?.classList.remove('viewer-protected');document.getElementById('viewerWatermark')?.remove();document.getElementById('viewerPrintNotice')?.remove();viewerProtectionActive=false;
+}
+function syncViewerProtection(pageId){
+  if(pageId==='pageQuestions'&&Auth.getRole()==='viewer')enableViewerProtection();else disableViewerProtection();
+}
+function refreshViewerProtection(){if(viewerProtectionActive){disableViewerProtection();enableViewerProtection();}}
+
+async function initializeAuthenticatedApp() {
+  neutralizeSubjectControls();
+  // The signed login response already contains the assigned subject. Apply it
+  // immediately while the latest database profile refreshes in the background.
+  showAppPage();
+  try {
+    const databaseUser = await apiReq('/api/auth/me');
+    const sessionUser = Auth.getUser() || {};
+    Auth.setAuth(Auth.getToken(), { ...sessionUser, ...databaseUser });
+    buildSidebar();
+    updateSidebarUser();
+    applyRoleRestrictions();
+    renderFilterSubjects();
+  } catch (error) {
+    clearUserSpecificState(); Auth.clearAuth(); showLoginPage();
+    showToast('Unable to verify your account. Please sign in again.', true);
+  }
 }
 
 function sameSubject(left, right) {
@@ -2357,7 +2440,26 @@ function applyRoleRestrictions() {
       if (typeof updateExamOptionsForSubject === 'function') updateExamOptionsForSubject(assignedSubject);
       if (typeof updateChapterOptions === 'function') updateChapterOptions();
     } else {
+      subjectSel.innerHTML = '<option value="">Select Subject</option>';
+      SUBJECTS.forEach(subject => {
+        const option = document.createElement('option'); option.value = subject; option.textContent = subject;
+        subjectSel.appendChild(option);
+      });
       subjectSel.disabled = false;
+    }
+  }
+
+  const filterSubject = document.getElementById('fSubject');
+  if (filterSubject) {
+    const assignedSubject = assignedSubjectFor(user);
+    if (assignedSubject) {
+      filterSubject.innerHTML = '';
+      const assignedOption = document.createElement('option');
+      assignedOption.value = assignedSubject;
+      assignedOption.textContent = assignedSubject;
+      filterSubject.appendChild(assignedOption);
+      filterSubject.value = assignedSubject;
+      filterSubject.disabled = true;
     }
   }
 }
@@ -2413,7 +2515,8 @@ async function doLogin(e) {
       throw new Error((data && data.error) ? data.error : 'Invalid response from server.');
     }
 
-    Auth.setAuth(data.token, data.user);
+    Auth.setAuth(data.token, data.user, data.loginSessionId);
+    clearUserSpecificState();
     showAppPage();
     emailEl.value    = '';
     passwordEl.value = '';
@@ -2431,13 +2534,26 @@ async function doLogin(e) {
 async function doLogout() {
   if (_isLoggingOut) return;
   _isLoggingOut = true;
+  let logoutSucceeded = false;
   try {
     await sendActivityHeartbeat();
     await apiReq('/api/auth/logout', { method: 'POST' });
-  } catch (_) { /* ignore */ }
+    logoutSucceeded = true;
+  } catch (error) {
+    // Retry once so a transient request failure does not leave a counted login.
+    try {
+      await apiReq('/api/auth/logout', { method: 'POST' });
+      logoutSucceeded = true;
+    }
+    catch (_) { console.warn('[QBP] Logout session close failed:', error.message); }
+  }
   finally {
     stopActivityTracking();
-    Auth.clearAuth();
+    clearUserSpecificState();
+    // If both logout requests fail, retain only the harmless session id. The
+    // next successful password login uses it to close this browser's exact old
+    // session before enforcing the simultaneous-login limit.
+    Auth.clearAuth({ preserveSession: !logoutSucceeded });
     showLoginPage();
     _isLoggingOut = false;
   }
@@ -2474,6 +2590,16 @@ function showToast(msg, isError) {
 // ── DASHBOARD ────────────────────────────────────────────────
 // ============================================================
 async function loadDashboard() {
+  const recentPromise = apiReq('/api/dashboard/recent')
+    .then(recent => {
+      renderRecentList('dashRecentAdded', recent.recentAdded, 'created_at', 'created_by_name');
+      renderRecentList('dashRecentEdited', recent.recentEdited, 'updated_at', 'updated_by_name');
+    })
+    .catch(error => {
+      const added=document.getElementById('dashRecentAdded');if(added)added.innerHTML='<div class="empty-state">Could not load recent questions.</div>';
+      const edited=document.getElementById('dashRecentEdited');if(edited)edited.innerHTML='<div class="empty-state">Could not load recent questions.</div>';
+      console.warn('[QBP] Recent questions failed:', error.message);
+    });
   try {
     const d = await apiReq('/api/dashboard');
     const realCount=value=>Number.isFinite(Number(value))?Number(value):'—';
@@ -2512,8 +2638,6 @@ renderUserTimeStats(
   } catch(e) {
     ['dTotalQ','dTotalSub','dTotalCh','dToday','dWeek','dMonth','dAdmins','dAdders','dEditors','dViewers','dActiveUser']
       .forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});
-    const added=document.getElementById('dashRecentAdded');if(added)added.innerHTML='<div class="empty-state">Could not load live data.</div>';
-    const edited=document.getElementById('dashRecentEdited');if(edited)edited.innerHTML='<div class="empty-state">Could not load live data.</div>';
     const adders=document.getElementById('adderPerformanceList');if(adders)adders.innerHTML='<div class="empty-state">Could not load Adder details.</div>';
     const userTime=document.getElementById('userTimeTableBody');if(userTime)userTime.innerHTML='<tr class="empty-row"><td colspan="7">Could not load user activity.</td></tr>';
      const distribution =
@@ -2527,6 +2651,7 @@ if (distribution) {
 }
     showToast('Dashboard load failed: ' + e.message, true);
   }
+  await recentPromise;
 }
    function renderQuestionDistribution(distribution) {
 
@@ -2855,8 +2980,10 @@ function closeAdderQuestionsModal(){
 
 function renderRecentList(containerId, items, timeField, byField) {
   const el = document.getElementById(containerId);
-  if (!items || !items.length) { el.innerHTML = '<div class="empty-state">No data yet.</div>'; return; }
-  el.innerHTML = items.map(q => `
+  if (!el) return;
+  const state = window.QbpDashboardView.recentState(items);
+  if (state.kind === 'empty') { el.innerHTML = '<div class="empty-state">No data yet.</div>'; return; }
+  el.innerHTML = state.items.map(q => `
     <div class="recent-item">
       <div class="recent-meta">
         <div class="recent-title">${escapeHtml(q.subject||'')} › ${escapeHtml(q.chapter||'')} › ${escapeHtml(q.topic||'')}</div>
@@ -3297,6 +3424,7 @@ async function toggleUserStatus(id, currentStatus, name) {
       method: 'PUT',
       body: JSON.stringify({ status: newStatus, is_active: newIsActive }),
     });
+
     showToast(`${name} ${newIsActive ? 'enabled' : 'disabled'}.`);
     loadUsers();
   } catch(e) { showToast(e.message, true); }
@@ -3926,72 +4054,6 @@ function actionClass(action) {
   if (action.includes('DELETE'))   return 'ab-delete';
   if (action.includes('SETTINGS')) return 'ab-settings';
   return '';
-}
-
-// ============================================================
-// ── SETTINGS ─────────────────────────────────────────────────
-// ============================================================
-let _diff = { easy: 45, medium: 35, hard: 20 };
-
-async function loadSettings() {
-  try {
-    const d = await apiReq('/api/settings/difficulty');
-    _diff = { easy: +d.easy, medium: +d.medium, hard: +d.hard };
-    syncDiffSliders();
-  } catch(e) { showToast('Could not load settings: ' + e.message, true); }
-}
-
-function syncDiffSliders() {
-  document.getElementById('easyRange').value   = _diff.easy;
-  document.getElementById('mediumRange').value = _diff.medium;
-  document.getElementById('hardRange').value   = _diff.hard;
-  updateDiffUI();
-}
-
-function onDiffSlider(which, val) {
-  _diff[which] = +val;
-  updateDiffUI();
-}
-
-function updateDiffUI() {
-  const { easy, medium, hard } = _diff;
-  const total = easy + medium + hard;
-
-  document.getElementById('easyPct').textContent   = easy + '%';
-  document.getElementById('mediumPct').textContent = medium + '%';
-  document.getElementById('hardPct').textContent   = hard + '%';
-
-  document.getElementById('dbEasy').style.width   = easy + '%';
-  document.getElementById('dbMedium').style.width = medium + '%';
-  document.getElementById('dbHard').style.width   = hard + '%';
-
-  // CSS custom property for range gradient
-  document.getElementById('easyRange').style.setProperty('--pct', easy + '%');
-  document.getElementById('mediumRange').style.setProperty('--pct', medium + '%');
-  document.getElementById('hardRange').style.setProperty('--pct', hard + '%');
-
-  const totalEl = document.getElementById('diffTotal');
-  totalEl.textContent = total + '%';
-  totalEl.className   = 'diff-total-value ' + (Math.abs(total - 100) < 0.01 ? 'ok' : 'bad');
-
-  const errEl = document.getElementById('diffError');
-  if (Math.abs(total - 100) < 0.01) errEl.classList.remove('visible');
-}
-
-async function saveDifficulty() {
-  const { easy, medium, hard } = _diff;
-  const total = easy + medium + hard;
-  if (Math.abs(total - 100) > 0.01) {
-    document.getElementById('diffError').textContent = 'Values must sum to 100%.';
-    document.getElementById('diffError').classList.add('visible');
-    return;
-  }
-  try {
-    await apiReq('/api/settings/difficulty', {
-      method: 'PUT', body: JSON.stringify({ easy, medium, hard }),
-    });
-    showToast('Difficulty settings saved.');
-  } catch(e) { showToast(e.message, true); }
 }
 
 // ============================================================
@@ -4914,8 +4976,16 @@ optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
       allQuestions.unshift(saved);
     }
     showToast(wasEditing?'Question updated successfully.':'Question saved successfully.');resetForm();
-    questionTimeframe='';
-    await loadQuestions(1,true);
+    if(wasEditing){
+      // The API has already returned the updated record. Re-render from local
+      // state so Saved Questions never flashes "Loading…" or loses its filters.
+      renderList();
+    }else{
+      // A new question can affect facets and the first page ordering, so keep
+      // the normal lightweight data refresh for the create flow only.
+      questionTimeframe='';
+      await loadQuestions(1,true);
+    }
   }catch(e){
     console.error('Save failed:',e);
     showToast('Save failed: '+(e.message || 'Server error'),true);
@@ -5188,59 +5258,19 @@ function getCleanQuestionText(q){
 }
 
 function ensureMathDelimiters(text) {
-  if (!text || typeof text !== 'string') return text || '';
-  let i = 0;
-  const n = text.length;
-  let result = '';
-  let buf = '';
-  let hasDelimiters = false;
-
-  while (i < n) {
-    if (text[i] === '$') {
-      const isDisplay = text[i + 1] === '$';
-      const delim = isDisplay ? '$$' : '$';
-      const end = text.indexOf(delim, i + delim.length);
-      if (end !== -1) {
-        hasDelimiters = true;
-        if (buf) { result += buf; buf = ''; }
-        result += text.slice(i, end + delim.length);
-        i = end + delim.length;
-        continue;
-      }
-    }
-    if (text.startsWith('\\(', i) || text.startsWith('\\[', i)) {
-      const isDisplay = text.startsWith('\\[', i);
-      const closeDelim = isDisplay ? '\\]' : '\\)';
-      const end = text.indexOf(closeDelim, i + 2);
-      if (end !== -1) {
-        hasDelimiters = true;
-        if (buf) { result += buf; buf = ''; }
-        result += text.slice(i, end + closeDelim.length);
-        i = end + closeDelim.length;
-        continue;
-      }
-    }
-    buf += text[i];
-    i++;
-  }
-
-  if (buf) {
-    if (!hasDelimiters && /\\(?:dfrac|frac|sqrt|int|sum|prod|lim|alpha|beta|gamma|theta|lambda|omega|pi|mu|sigma|phi|delta|epsilon|mathrm|mathbf|text|vec|hat|bar|left|right)\b/.test(buf)) {
-      result += `$${buf.trim()}$`;
-    } else {
-      result += buf;
-    }
-  }
-
-  return result;
+  return window.QbpContentRenderer.ensureMathDelimiters(text);
 }
 
 
 function renderStaticPreview(raw){
   const span=document.createElement('span');
   span.className='li-preview';
-  const processed = ensureMathDelimiters(raw || '');
-  span.appendChild(buildEquationFragment(processed));
+  const tokens=window.QbpContentRenderer.tokenizeMarkdown(raw||'');
+  tokens.forEach(token=>{
+    const target=token.type==='strong'?document.createElement('strong'):document.createDocumentFragment();
+    target.appendChild(buildEquationFragment(ensureMathDelimiters(token.value)));
+    span.appendChild(target);
+  });
   return span;
 }
 
@@ -5263,7 +5293,7 @@ function renderList(){
   const cl=document.getElementById('countLine');
   if(cl) cl.textContent=questionTotal+' question'+(questionTotal===1?'':'s');
   listContainer.innerHTML='';
-  if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';renderQuestionPagination();return;}
+  if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';renderQuestionPagination();refreshViewerProtection();return;}
 
   const canEdit = Auth.can('edit');
 const canDelete = Auth.can('delete');
@@ -5493,20 +5523,18 @@ acceptBtn.className =
   'icon-btn accept-btn' + (isAccepted ? ' accepted' : '');
 
 acceptBtn.title = isAccepted
-  ? 'Click to remove acceptance'
+  ? 'Question already accepted'
   : 'Accept Question';
 
 acceptBtn.textContent = isAccepted
   ? '✓ Accepted'
   : 'Accept';
 
+acceptBtn.disabled = isAccepted;
+
 acceptBtn.addEventListener('click',()=>{
   QP.accept(q.id, isAccepted);
 });
-
-  acceptBtn.addEventListener('click',()=>{
-    QP.accept(q.id);
-  });
 
   btns.appendChild(acceptBtn);
 }
@@ -5554,6 +5582,7 @@ if(canDelete){
   });
   if(renderErrors>0) console.warn('[QBP] '+renderErrors+' question(s) failed to render. Check errors above.');
   renderQuestionPagination();
+  refreshViewerProtection();
 }
 
 function renderQuestionPagination(){
@@ -5710,10 +5739,16 @@ async function loadNotifications(){
     return;
   }
 
+  const btn=document.getElementById('notificationBtn');
+  if(btn) btn.style.display='';
+
   try{
 
-    userNotifications =
-      await apiRequest('/my/notifications');
+    const notificationResult =
+      await apiReq('/api/notifications?limit=100');
+    userNotifications = Array.isArray(notificationResult)
+      ? notificationResult
+      : (notificationResult.data || []);
 
     const unread =
       userNotifications.filter(
@@ -5727,10 +5762,7 @@ async function loadNotifications(){
 
 if (badge) {
 
-  badge.textContent =
-    unread > 99
-      ? '99+'
-      : String(unread);
+  badge.textContent = window.QbpAuthViewState.badgeText(unread);
 
   badge.style.display =
     unread > 0
@@ -5739,6 +5771,10 @@ if (badge) {
 }
 
   }catch(error){
+
+    userNotifications=[];
+    const badge=document.getElementById('notificationBadge');
+    if(badge){badge.textContent='';badge.style.display='none';}
 
     console.warn(
       'Unable to load notifications:',
@@ -5867,10 +5903,8 @@ async function markNotificationRead(id){
 
   try{
 
-    await apiRequest(
-      '/my/notifications/'+
-      encodeURIComponent(id)+
-      '/read',
+    await apiReq(
+      '/api/notifications/'+encodeURIComponent(id)+'/read',
       {
         method:'PUT',
         body:'{}'
@@ -5918,11 +5952,12 @@ window.QP={
 
   try{
 
-    await apiRequest(
-      '/'+encodeURIComponent(id)+'/review',
+    const result = await apiReq(
+      '/api/notifications/review',
       {
-        method:'PUT',
+        method:'POST',
         body:JSON.stringify({
+          questionId: id,
           message: cleanMessage
         })
       }
@@ -5931,8 +5966,11 @@ window.QP={
     showToast(
       'Review sent to the question contributor.'
     );
-
-    await loadQuestions(questionPage,false);
+    const state=result&&result.state?result.state:{};
+    q.reviewStatus=state.status||'reviewed';
+    q.reviewedByName=state.last_editor_name||(Auth.getUser()||{}).name||'Editor';
+    q.reviewedAt=state.updated_at||new Date().toISOString();
+    renderList();
 
   }catch(error){
 
@@ -5969,19 +6007,20 @@ window.QP={
 
   try{
 
-    await apiRequest(
-      '/'+encodeURIComponent(id)+'/difficulty',
+    await apiReq(
+      '/api/notifications/difficulty',
       {
-        method:'PUT',
+        method:'POST',
         body:JSON.stringify({
+          questionId: id,
           difficulty
         })
       }
     );
 
     showToast('Difficulty updated.');
-
-    await loadQuestions(questionPage,false);
+    q.difficulty=difficulty.charAt(0).toUpperCase()+difficulty.slice(1).toLowerCase();
+    renderList();
 
   }catch(error){
 
@@ -5993,9 +6032,18 @@ window.QP={
 },
   accept: async function(id, currentlyAccepted){
 
-  const message = currentlyAccepted
-    ? 'Remove acceptance from this question?'
-    : 'Accept this question?';
+  const q=allQuestions.find(
+    x=>String(x.id)===String(id)
+  );
+
+  if(!q) return;
+
+  if(currentlyAccepted){
+    showToast('This question is already accepted.');
+    return;
+  }
+
+  const message = 'Accept this question?';
 
   if(!confirm(message)){
     return;
@@ -6003,23 +6051,20 @@ window.QP={
 
   try{
 
-    const result = await apiRequest(
-      '/'+encodeURIComponent(id)+'/accept',
+    const result = await apiReq(
+      '/api/notifications/accept',
       {
-        method:'PUT',
-        body:JSON.stringify({
-          accepted: !currentlyAccepted
-        })
+        method:'POST',
+        body:JSON.stringify({ questionId: id })
       }
     );
 
-    showToast(
-      result.reviewStatus === 'accepted'
-        ? 'Question accepted.'
-        : 'Question acceptance removed.'
-    );
-
-    await loadQuestions(questionPage,false);
+    showToast('Question accepted.');
+    const state=result&&result.state?result.state:{};
+    q.reviewStatus='accepted';
+    q.acceptedByName=state.last_editor_name||(Auth.getUser()||{}).name||'Editor';
+    q.acceptedAt=state.accepted_at||state.updated_at||new Date().toISOString();
+    renderList();
 
   }catch(error){
 
@@ -6464,12 +6509,18 @@ else if(normType==='statement_based'){
     if(qFormCard) qFormCard.scrollIntoView({behavior:'smooth'});
   },
   remove:async function(id){
-    if(!Auth.can('delete')){showToast('Only an Admin can delete questions.',true);return;}
+    if(!Auth.can('delete')){showToast('Only an Admin or Adder can delete questions.',true);return;}
     if(!confirm('Delete this question? This cannot be undone.'))return;
     try{
       await apiRequest('/'+encodeURIComponent(id),{method:'DELETE'});
       showToast('Question deleted.');
-      loadQuestions(questionPage,false);
+      const previousLength=allQuestions.length;
+      allQuestions=allQuestions.filter(q=>String(q.id)!==String(id));
+      if(allQuestions.length<previousLength){
+        questionTotal=Math.max(0,questionTotal-1);
+        questionTotalPages=Math.max(1,Math.ceil(questionTotal/questionPageSize));
+      }
+      renderList();
     }catch(e){console.error('Delete failed:',e);showToast('Delete failed: '+e.message,true);}
   }
 };
@@ -6491,17 +6542,6 @@ async function loadQuestions(page=1,refreshFacets=false,scrollToList=false){
   const listContainer=document.getElementById('listContainer');
   if(listContainer)listContainer.innerHTML='<div class="empty-state">Loading questions…</div>';
   try{
-    try {
-      const databaseUser = await apiReq('/api/auth/me');
-      const sessionUser = Auth.getUser() || {};
-      if (databaseUser && (databaseUser.id || databaseUser.email)) {
-        Auth.setAuth(Auth.getToken(), { ...sessionUser, ...databaseUser });
-        updateSidebarUser();
-        applyRoleRestrictions();
-      }
-    } catch (profileError) {
-      console.warn('[QBP] Could not refresh assigned subject:', profileError.message);
-    }
     if(refreshFacets||!questionFacets.subjects.length)await loadQuestionFacets();
     const params=new URLSearchParams({paged:'1',page:String(page),pageSize:String(questionPageSize)});
      
@@ -6529,6 +6569,26 @@ if(searchText){
     if(loadSequence!==questionLoadSequence)return;
     if(!data||!Array.isArray(data.items))throw new Error('Questions API returned an unexpected data format.');
     allQuestions=data.items;
+    const questionIds=allQuestions.map(question=>question.id).filter(Boolean);
+    if(questionIds.length){
+      try{
+        const stateResult=await apiReq('/api/notifications/question-states?ids='+encodeURIComponent(questionIds.join(',')));
+        const states=new Map((stateResult.data||[]).map(state=>[String(state.question_id),state]));
+        allQuestions.forEach(question=>{
+          const state=states.get(String(question.id));
+          if(!state)return;
+          question.reviewStatus=state.status||question.reviewStatus;
+          question.reviewedByName=state.last_editor_name||question.reviewedByName;
+          question.reviewedAt=state.updated_at||question.reviewedAt;
+          if(state.status==='accepted'){
+            question.acceptedByName=state.last_editor_name||question.acceptedByName;
+            question.acceptedAt=state.accepted_at||state.updated_at||question.acceptedAt;
+          }
+        });
+      }catch(stateError){
+        console.warn('[QBP] Could not load review status:',stateError.message);
+      }
+    }
     questionPage=Number(data.page)||1;
     questionTotal=Number(data.total)||0;
     questionTotalPages=Math.max(1,Number(data.totalPages)||1);
@@ -6548,8 +6608,9 @@ if(searchText){
 // ── INITIALISATION ───────────────────────────────────────────
 // ============================================================
 if(Auth.isLoggedIn()){
-  showAppPage();
+  initializeAuthenticatedApp();
 }else{
+  clearUserSpecificState();
   showLoginPage();
 }
 

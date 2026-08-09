@@ -9,10 +9,16 @@ const {
 } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');
+const { getJwtSecret } = require('../lib/config');
+const { createRateLimiter } = require('../lib/security');
 
 const router       = express.Router();
-const JWT_SECRET   = process.env.JWT_SECRET || 'manchester-tech-question-bank-portal-super-secret-jwt-key-2026';
 const JWT_EXPIRES  = process.env.JWT_EXPIRES_IN || '8h';
+const loginRateLimit = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  key: req => `${req.ip || 'unknown'}:${String(req.body?.email || '').trim().toLowerCase()}`,
+});
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -100,8 +106,49 @@ async function countActiveLoginSessions(userId) {
   return Number(count) || 0;
 }
 
+async function closeLoginSession(userId, sessionId) {
+  if (!userId || !sessionId) return { closed: false, alreadyClosed: true };
+
+  const now = new Date();
+  const { data: session, error: readError } = await supabase
+    .from('login_history')
+    .select('id, user_id, login_time, logout_time, last_activity_at, duration_seconds')
+    .eq('id', sessionId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (readError) throw readError;
+  if (!session || session.logout_time) return { closed: false, alreadyClosed: true };
+
+  const previous = new Date(session.last_activity_at || session.login_time || now);
+  const rawDelta = Math.max(0, Math.floor((now.getTime() - previous.getTime()) / 1000));
+  const durationSeconds = Math.max(0, Number(session.duration_seconds) || 0) + Math.min(rawDelta, 90);
+  const { data: closed, error: updateError } = await supabase
+    .from('login_history')
+    .update({
+      logout_time: now.toISOString(),
+      last_activity_at: now.toISOString(),
+      duration_seconds: durationSeconds,
+    })
+    .eq('id', session.id)
+    .eq('user_id', userId)
+    .is('logout_time', null)
+    .select('id')
+    .maybeSingle();
+
+  if (updateError) throw updateError;
+  return { closed: Boolean(closed), alreadyClosed: !closed };
+}
+
+function requestSessionId(req) {
+  const value = String(req.headers['x-qbp-session-id'] || '').trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
+}
+
 // ── POST /api/auth/login ───────────────────────────────────────────────────
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimit, async (req, res) => {
   try {
     const { email, password } = req.body || {};
 
@@ -195,6 +242,23 @@ router.post('/login', async (req, res) => {
 
     // Correct password
     const logicalUser = toLogicalUser(activeUser);
+
+    // A logout request can occasionally fail after the browser has already
+    // returned to the login screen. Reclaim only this browser's exact previous
+    // session before counting other active logins. This keeps limit=1 strict:
+    // the first login/re-login succeeds, while a second device is still blocked.
+    const previousSessionId = requestSessionId(req);
+    if (previousSessionId) {
+      try {
+        await closeLoginSession(activeUser.id, previousSessionId);
+      } catch (error) {
+        console.error('[login previous session close]', error.message);
+        return res.status(503).json({
+          error: 'Unable to verify the previous login session. Please try again.'
+        });
+      }
+    }
+
     // ============================================================
 // LOGIN LIMIT CHECK
 // ============================================================
@@ -235,6 +299,9 @@ if (loginLimit > 0) {
       req,
       'success'
     );
+    if (!loginRecord?.id) {
+      return res.status(503).json({ error: 'Authentication session service is unavailable.' });
+    }
 
     try {
       await supabase
@@ -260,7 +327,7 @@ if (loginLimit > 0) {
 
     const token = jwt.sign(
       payload,
-      JWT_SECRET,
+      getJwtSecret(),
       {
         expiresIn: JWT_EXPIRES
       }
@@ -286,6 +353,7 @@ if (loginLimit > 0) {
 
     return res.json({
       token,
+      loginSessionId: loginRecord.id,
       user: {
         id: activeUser.id,
         name: activeUser.name,
@@ -1112,34 +1180,17 @@ for (
 );
 // ── POST /api/auth/logout ──────────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res) => {
-  if (req.user.loginHistoryId) {
-    const now = new Date();
-    const { data: session } = await supabase
-      .from('login_history')
-      .select('id, user_id, login_time, last_activity_at, duration_seconds')
-      .eq('id', req.user.loginHistoryId)
-      .eq('user_id', req.user.userId)
-      .maybeSingle();
-
-    if (session) {
-      const previous = new Date(session.last_activity_at || session.login_time || now);
-      const rawDelta = Math.max(0, Math.floor((now.getTime() - previous.getTime()) / 1000));
-      const durationSeconds = Math.max(0, Number(session.duration_seconds) || 0) + Math.min(rawDelta, 90);
-      await supabase
-        .from('login_history')
-        .update({
-          logout_time: now.toISOString(),
-          last_activity_at: now.toISOString(),
-          duration_seconds: durationSeconds,
-        })
-        .eq('id', session.id);
-    }
+  try {
+    await closeLoginSession(req.user.userId, req.user.loginHistoryId);
+  } catch (error) {
+    console.error('[logout session close]', error.message);
+    return res.status(503).json({ error: 'Unable to close this login session. Please try signing out again.' });
   }
 
   await writeAuditLog({
     userId: req.user.userId, userName: req.user.name,
     action: 'LOGOUT', resourceType: 'auth', details: {},
-  });
+  }).catch(() => {});
 
   res.json({ message: 'Logged out successfully.' });
 });

@@ -448,6 +448,12 @@ function toApi(row) {
     updatedAt:     row.updated_at,
     createdBy:     row.created_by_name || '',
     updatedBy:     row.updated_by_name || '',
+    reviewStatus:  row.review_status || 'pending',
+    reviewMessage: row.review_message || '',
+    reviewedAt:    row.reviewed_at || null,
+    reviewedByName: row.reviewed_by_name || '',
+    acceptedAt:    row.accepted_at || null,
+    acceptedByName: row.accepted_by_name || '',
   };
   for (const [apiField, dbField] of Object.entries(fieldMap)) {
     output[apiField] = row[dbField];
@@ -523,7 +529,7 @@ const READ_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor', 'view
 // Adders create/import questions; editors update existing questions.
 const CREATE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 const EDIT_ROLES   = [requireAuth, requireRole('admin', 'adder', 'editor')];
-const DELETE_ROLES = [requireAuth, requireRole('admin')];
+const DELETE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 
 const FACET_PAGE_SIZE = 1000;
 const FACET_CACHE_TTL_MS = 60 * 1000;
@@ -888,8 +894,6 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
     data: insertedData.map(toApi)
   });
 });
-
-
 
 // â”€â”€ PUT /api/questions/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/:id', ...EDIT_ROLES, async (req, res) => {

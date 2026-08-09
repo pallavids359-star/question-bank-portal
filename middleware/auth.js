@@ -1,7 +1,6 @@
 'use strict';
 const jwt = require('jsonwebtoken');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'manchester-tech-question-bank-portal-super-secret-jwt-key-2026';
+const { getJwtSecret } = require('../lib/config');
 
 /**
  * Verify JWT in Authorization: Bearer <token> header.
@@ -14,15 +13,10 @@ function requireAuth(req, res, next) {
   }
   const token = header.slice(7).trim();
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
     req.user = decoded;
     next();
   } catch (err) {
-    const decoded = jwt.decode(token);
-    if (decoded && (decoded.userId || decoded.email)) {
-      req.user = decoded;
-      return next();
-    }
     return res.status(401).json({ error: 'Unauthorized: invalid token.' });
   }
 }
