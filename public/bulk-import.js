@@ -2479,16 +2479,6 @@ if (ta) {
   }
 }
 
-  async function init() {
-
-  console.log(
-    '[BULK] Loading existing questions...'
-  );
-
-  // Add newly imported questions directly
-// into local duplicate cache.
-// No need to download database again.
-
 for (const item of payload) {
 
   const key =
@@ -2501,107 +2491,6 @@ for (const item of payload) {
     state.duplicateMap.set(
       key,
       item
-    );
-  }
-}
-
-  initEditor();
-
-  // Recheck anything already present
-  runParse();
-
-  const searchInput =
-    document.getElementById('bqFilterSearch') ||
-    document.getElementById('bulkSearchInput');
-
-  const typeFilter =
-    document.getElementById('bqFilterType');
-
-  const diffFilter =
-    document.getElementById('bqFilterDiff') ||
-    document.getElementById('bulkFilterDiff');
-
-  const statusFilter =
-    document.getElementById('bqFilterStatus') ||
-    document.getElementById('bulkFilterStatus');
-
-  const dupFilter =
-    document.getElementById('bqFilterDup') ||
-    document.getElementById('bulkFilterDup');
-
-  const conceptFilter =
-    document.getElementById('bqFilterConcept') ||
-    document.getElementById('bulkFilterConcept');
-
-  if (searchInput) {
-    searchInput.addEventListener(
-      'input',
-      e => {
-        state.filterSearch =
-          e.target.value;
-
-        renderCards();
-      }
-    );
-  }
-
-  if (typeFilter) {
-    typeFilter.addEventListener(
-      'change',
-      e => {
-        state.filterType =
-          e.target.value;
-
-        renderCards();
-      }
-    );
-  }
-
-  if (diffFilter) {
-    diffFilter.addEventListener(
-      'change',
-      e => {
-        state.filterDiff =
-          e.target.value;
-
-        renderCards();
-      }
-    );
-  }
-
-  if (statusFilter) {
-    statusFilter.addEventListener(
-      'change',
-      e => {
-        state.filterStatus =
-          e.target.value;
-
-        renderCards();
-      }
-    );
-  }
-
-  if (dupFilter) {
-    dupFilter.addEventListener(
-      'change',
-      e => {
-        state.filterDup =
-          e.target.value;
-
-        renderCards();
-      }
-    );
-  }
-
-  if (conceptFilter) {
-    conceptFilter.addEventListener(
-      'change',
-      e => {
-        state.filterSearch =
-          e.target.value;
-
-        renderCards();
-      }
     );
   }
 }
