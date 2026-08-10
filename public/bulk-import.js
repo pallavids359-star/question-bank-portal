@@ -930,65 +930,8 @@ class StatementBasedParser extends BaseQuestionParser {
 // ------------------------------------------------------------
 
 function extractFlexibleMatchRows(rawLine) {
-
-  const text = String(rawLine || '').trim();
-
-  if (!text) return [];
-
-  /*
-    A row marker may look like:
-
-    A
-    A.
-    A)
-    (A)
-    [A]
-    P
-    1
-    i
-    ii
-    III
-    Row A
-    Row 1
-    Row ii
-  */
-
-  const marker =
-    String.raw`(?:Row\s*)?(?:\(\s*[A-Za-z0-9]+\s*\)|\[\s*[A-Za-z0-9]+\s*\]|[A-Za-z0-9]+)(?:\s*[.:\-–—)]\s*|\s+)`;
-
-  const markerRegex =
-    new RegExp(`(^|\\s)(${marker})`, 'gi');
-
-  const matches = [...text.matchAll(markerRegex)];
-
-  if (!matches.length) {
-    return [];
-  }
-
-  const rows = [];
-
-  for (let i = 0; i < matches.length; i++) {
-
-    const current = matches[i];
-
-    const start =
-      current.index +
-      current[0].length;
-
-    const end =
-      i + 1 < matches.length
-        ? matches[i + 1].index
-        : text.length;
-
-    let value =
-      text.slice(start, end).trim();
-
-    if (value) {
-      rows.push(value);
-    }
-  }
-
-  return rows;
+  if (window.QPMatchDisplay) return window.QPMatchDisplay.extractExplicitRows(rawLine);
+  return [];
 }
 
 
@@ -1569,7 +1512,10 @@ async function checkPreviousImports(questions, requestId) {
 
     const metaLine = document.createElement('div');
     metaLine.className = 'bq-card-meta';
-    metaLine.textContent = (q.subject || '') + ' · Class ' + (q.klass || '') + ' · Chapter: ' + (q.chapter || '') + (q.concept ? ' · Concept: ' + q.concept : '');
+    const visibleChapter = typeof window.chapterDisplayName === 'function'
+      ? window.chapterDisplayName(q.subject, q.klass, q.chapter)
+      : (q.chapter || '');
+    metaLine.textContent = (q.subject || '') + ' · Class ' + (q.klass || '') + ' · Chapter: ' + visibleChapter + (q.concept ? ' · Concept: ' + q.concept : '');
     card.appendChild(metaLine);
 
     if (q.collapsed) return card;
@@ -1579,10 +1525,61 @@ async function checkPreviousImports(questions, requestId) {
 
     const qtext = document.createElement('div');
     qtext.className = 'bq-card-qtext';
-    qtext.appendChild(renderCardNode(q.question || ''));
+    const visibleQuestion = q.qType === 'match'
+      ? String(q.question || '').split(/\n\s*\n\*\*Column\s+(?:I|A)\*\*/i)[0].trim()
+      : (q.question || '');
+    if (visibleQuestion) qtext.appendChild(renderCardNode(visibleQuestion));
     body.appendChild(qtext);
 
-    if (q.optA || q.optB || q.optC || q.optD) {
+    if (q.qType === 'match' && ((q.columnA || []).length || (q.columnB || []).length)) {
+      const columns = document.createElement('div');
+      columns.className = 'bq-match-columns';
+      [['Column A', q.columnA || [], 'left'], ['Column B', q.columnB || [], 'right']].forEach(([title, rawEntries, labelType]) => {
+        const column = document.createElement('div');
+        column.className = 'bq-match-column';
+        const heading = document.createElement('div');
+        heading.className = 'bq-match-heading';
+        heading.textContent = title;
+        column.appendChild(heading);
+        const reconstructed = window.QPMatchDisplay
+          ? window.QPMatchDisplay.reconstructEntries(q, labelType, rawEntries)
+          : { entries: rawEntries, labels: [] };
+        const entries = reconstructed.entries;
+        const labels = reconstructed.labels;
+        entries.forEach((value, entryIndex) => {
+          const row = document.createElement('div');
+          row.className = 'bq-match-row';
+          const label = document.createElement('span');
+          label.className = 'bq-match-index';
+          label.textContent = '(' + (labels[entryIndex] || (labelType === 'left' ? entryIndex + 1 : String.fromCharCode(97 + entryIndex))) + ')';
+          const content = document.createElement('span');
+          content.className = 'bq-match-value';
+          content.appendChild(renderCardNode(value || ''));
+          row.appendChild(label);
+          row.appendChild(content);
+          column.appendChild(row);
+        });
+        columns.appendChild(column);
+      });
+      body.appendChild(columns);
+
+      const mappings = document.createElement('div');
+      mappings.className = 'bq-card-opts';
+      ['A', 'B', 'C', 'D'].forEach(letter => {
+        const rawMapping = window.QPMatchDisplay ? window.QPMatchDisplay.optionFor(q, letter) : '';
+        if (!rawMapping) return;
+        const isCorrect = String(q.answer || '').trim().toUpperCase() === letter;
+        const option = document.createElement('div');
+        option.className = 'bq-opt' + (isCorrect ? ' correct' : '');
+        option.appendChild(document.createTextNode(letter + ': '));
+        option.appendChild(renderCardNode(window.QPMatchDisplay ? window.QPMatchDisplay.formatMapping(rawMapping) : rawMapping));
+        if (isCorrect) option.appendChild(document.createTextNode(' ✓'));
+        mappings.appendChild(option);
+      });
+      if (mappings.children.length) body.appendChild(mappings);
+    }
+
+    if (q.qType !== 'match' && (q.optA || q.optB || q.optC || q.optD)) {
       const optsGrid = document.createElement('div');
       optsGrid.className = 'bq-card-opts';
       ['A', 'B', 'C', 'D'].forEach(letter => {

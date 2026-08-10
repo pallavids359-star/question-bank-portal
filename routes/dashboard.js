@@ -420,7 +420,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       updated_by_name: question.updated_by_name || userNamesById.get(String(question.updated_by || '')) || '',
     }));
 // ============================================================
-// SUBJECT -> CHAPTER -> CONCEPT QUESTION COUNTS
+// SUBJECT -> CLASS -> CHAPTER -> CONCEPT QUESTION COUNTS
 // ============================================================
 
 const questionDistribution = {};
@@ -430,6 +430,10 @@ questions.forEach(question => {
   const subject = String(
     question.subject || 'General'
   ).trim();
+
+  const klass = String(
+    question.klass || 'General'
+  ).replace(/^class\s*/i, '').trim() || 'General';
 
   const chapter = String(
     question.chapter || 'General'
@@ -442,15 +446,26 @@ questions.forEach(question => {
   if (!questionDistribution[subject]) {
     questionDistribution[subject] = {
       questionCount: 0,
-      chapters: {}
+      classes: {}
     };
   }
 
   // Subject total
   questionDistribution[subject].questionCount += 1;
 
-  if (!questionDistribution[subject].chapters[chapter]) {
-    questionDistribution[subject].chapters[chapter] = {
+  if (!questionDistribution[subject].classes[klass]) {
+    questionDistribution[subject].classes[klass] = {
+      questionCount: 0,
+      chapters: {}
+    };
+  }
+
+  questionDistribution[subject]
+    .classes[klass]
+    .questionCount += 1;
+
+  if (!questionDistribution[subject].classes[klass].chapters[chapter]) {
+    questionDistribution[subject].classes[klass].chapters[chapter] = {
       questionCount: 0,
       concepts: {}
     };
@@ -458,21 +473,25 @@ questions.forEach(question => {
 
   // Chapter total
   questionDistribution[subject]
+    .classes[klass]
     .chapters[chapter]
     .questionCount += 1;
 
   if (
     !questionDistribution[subject]
+      .classes[klass]
       .chapters[chapter]
       .concepts[concept]
   ) {
     questionDistribution[subject]
+      .classes[klass]
       .chapters[chapter]
       .concepts[concept] = 0;
   }
 
   // Concept total
   questionDistribution[subject]
+    .classes[klass]
     .chapters[chapter]
     .concepts[concept] += 1;
 });

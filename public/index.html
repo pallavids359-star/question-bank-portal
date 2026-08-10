@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="bulk-import.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
 <script src="content-renderer.js"></script>
+<script src="match-display.js"></script>
 <script src="dashboard-view.js"></script>
 <script src="auth-view-state.js"></script>
 <style>
@@ -390,7 +391,35 @@ body{
 }
 
 .subject-distribution.open
-.chapter-distribution-list{
+.class-distribution-list{
+  display:block;
+}
+
+.class-distribution-list{
+  display:none;
+  padding:0 14px 14px;
+}
+
+.class-distribution{
+  border-top:1px solid var(--border);
+  padding:10px 4px;
+}
+
+.class-distribution-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:700;
+}
+
+.class-name{
+  color:#f0d982;
+}
+
+.class-distribution.open > .chapter-distribution-list{
   display:block;
 }
 
@@ -703,6 +732,27 @@ textarea{resize:vertical;min-height:70px;}
   color:var(--text);
 }
 
+.difficulty-button-group{
+  display:inline-flex;
+  flex-wrap:wrap;
+  gap:5px;
+}
+
+.difficulty-level-btn{
+  min-width:58px;
+  padding:0 9px;
+}
+
+.difficulty-level-btn.difficulty-easy{ color:#78d69d; }
+.difficulty-level-btn.difficulty-medium{ color:#f0c75e; }
+.difficulty-level-btn.difficulty-hard{ color:#ff8585; }
+
+.difficulty-level-btn.selected{
+  background:rgba(201,162,39,.16);
+  border-color:var(--gold);
+  box-shadow:inset 0 0 0 1px rgba(201,162,39,.22);
+}
+
 .icon-btn.del{
   width:38px;
   min-width:38px;
@@ -844,6 +894,53 @@ textarea{resize:vertical;min-height:70px;}
 .li-preview img{max-width:160px;max-height:120px;}
 .li-combo{font-size:13px;color:#c9c9c9;margin-top:4px;}
 .li-combo .correct{color:var(--ok);font-weight:700;}
+.match-columns-display{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:12px;
+  margin-top:10px;
+  overflow-x:auto;
+}
+.match-display-column{
+  min-width:0;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#111;
+  overflow:hidden;
+}
+.match-display-heading{
+  padding:7px 10px;
+  color:var(--gold);
+  font-size:12px;
+  font-weight:700;
+  border-bottom:1px solid var(--border);
+  background:#171717;
+}
+.match-display-row{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  min-height:38px;
+  padding:8px 10px;
+  color:#ddd;
+  font-size:13px;
+  line-height:1.55;
+  border-bottom:1px solid #242424;
+  overflow-wrap:anywhere;
+}
+.match-display-row:last-child{border-bottom:0;}
+.match-display-index{
+  flex:0 0 auto;
+  min-width:28px;
+  color:var(--muted);
+  font-weight:700;
+}
+.match-display-value{min-width:0;overflow-x:auto;}
+.match-options-display{margin-top:9px;display:grid;gap:4px;}
+.match-options-display>span{display:block;}
+@media(max-width:560px){
+  .match-columns-display{grid-template-columns:minmax(230px,1fr) minmax(230px,1fr);}
+}
 .latex-preview{
   background:#0d0d0d;border:1px dashed var(--border);border-radius:8px;
   padding:9px 12px;margin-top:6px;font-size:14.5px;min-height:18px;color:#d8d8d8;
@@ -1261,7 +1358,7 @@ img,svg,canvas{max-width:100%;}
       margin-bottom:16px;
     "
   >
-    Subject → Chapter → Concept question count
+    Subject → Class → Chapter → Concept question count
   </p>
 
   <div id="questionDistributionList">
@@ -1537,7 +1634,9 @@ img,svg,canvas{max-width:100%;}
             </div>
             <div class="form-group" style="margin:0;">
               <label style="font-size:11px;color:#8f9bba;">Chapter *</label>
-              <input type="text" id="bqMetaChapter" value="General" placeholder="e.g. Chemical Bonding" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+              <select id="bqMetaChapter" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+                <option value="">Select Chapter</option>
+              </select>
             </div>
             <div class="form-group" style="margin:0;">
               <label style="font-size:11px;color:#8f9bba;">Exam Category</label>
@@ -2810,22 +2909,26 @@ if (distribution) {
     subjects.map(
       ([subject, subjectData]) => {
 
-        const chapters =
+        const classes =
           Object.entries(
-            subjectData.chapters || {}
+            subjectData.classes || {}
           )
-          .filter(([chapter]) =>
-            chapter &&
-            chapter !== 'General'
+          .filter(([klass]) =>
+            klass &&
+            klass !== 'General'
           )
           .sort((a,b) =>
-            a[0].localeCompare(b[0])
+            a[0].localeCompare(b[0], undefined, { numeric:true })
           );
 
+        const classHtml =
+          classes.map(
+            ([klass, classData]) => {
+              const chapters = Object.entries(classData.chapters || {})
+                .filter(([chapter]) => chapter && chapter !== 'General')
+                .sort((a,b) => a[0].localeCompare(b[0]));
 
-        const chapterHtml =
-          chapters.map(
-            ([chapter, chapterData]) => {
+              const chapterHtml = chapters.map(([chapter, chapterData]) => {
 
               const concepts =
                 Object.entries(
@@ -2917,6 +3020,22 @@ if (distribution) {
                 </div>
 
               `;
+              }).join('');
+
+              return `
+                <div class="class-distribution">
+                  <div
+                    class="class-distribution-header"
+                    onclick="this.parentElement.classList.toggle('open')"
+                  >
+                    <span class="class-name">▸ Class ${escapeHtml(klass)}</span>
+                    <span class="distribution-count">${Number(classData.questionCount) || 0}</span>
+                  </div>
+                  <div class="chapter-distribution-list">
+                    ${chapterHtml || '<div class="empty-state">No chapters available.</div>'}
+                  </div>
+                </div>
+              `;
             }
           ).join('');
 
@@ -2954,14 +3073,14 @@ if (distribution) {
 
 
             <div
-              class="chapter-distribution-list"
+              class="class-distribution-list"
             >
 
               ${
-                chapterHtml ||
+                classHtml ||
                 `
                 <div class="empty-state">
-                  No chapters available.
+                  No classes available.
                 </div>
                 `
               }
@@ -4282,7 +4401,7 @@ const NCERT_CHAPTERS = {
   "Physics-11": ["Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
   "Physics-12": ["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
   "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Chemical Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry – Some Basic Principles and Techniques","Hydrocarbons","The s-Block Elements","The p-Block Elements","Environmental Chemistry","Hydrogen"],
-  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f-Block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","Surface Chemistry","General Principles and Processes of Isolation of Elements","The Solid State"],
+  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","Surface Chemistry","General Principles and Processes of Isolation of Elements","The Solid State"],
   "Mathematics-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
   "Maths-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
   "Mathematics-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Applications of Derivatives","Integrals","Applications of Integrals","Differential Equations","Vector Algebra","Three-dimensional Geometry","Linear Programming","Probability"],
@@ -4295,9 +4414,44 @@ const EXAMS_BY_SUBJECT = {
   Mathematics: ["JEE", "KCET"],
   Biology: ["NEET", "KCET"]
 };
+const CHAPTER_NAME_ALIASES = {
+  "Physics-12": {
+    "geometric optics/ray optics": "Ray Optics and Optical Instruments",
+    "magnetic effects of current": "Moving Charges and Magnetism",
+    "magnetic force and motion of charge": "Moving Charges and Magnetism"
+  },
+  "Chemistry-12": {
+    "d and f block elements": "The d- and f- block Elements",
+    "the d- and f-block elements": "The d- and f- block Elements"
+  },
+  "Mathematics-12": {
+    "3d geometry": "Three-dimensional Geometry",
+    "three dimensional geometry": "Three-dimensional Geometry",
+    "application of derivatives": "Applications of Derivatives",
+    "exponential and logarithmic functions": "Continuity and Differentiability"
+  },
+  "Maths-12": {
+    "3d geometry": "Three-dimensional Geometry",
+    "three dimensional geometry": "Three-dimensional Geometry",
+    "application of derivatives": "Applications of Derivatives",
+    "exponential and logarithmic functions": "Continuity and Differentiability"
+  },
+  "Chemistry-11": {
+    "thermodynamics and thermochemistry": "Chemical Thermodynamics"
+  }
+};
+function chapterDisplayName(subject, klass, chapter) {
+  var storedName = String(chapter || '').trim();
+  if (!storedName) return storedName;
+  var key = canonicalSubject(subject) + '-' + String(klass || '').replace(/^class\s*/i, '').trim();
+  var aliases = CHAPTER_NAME_ALIASES[key] || {};
+  return aliases[storedName.toLowerCase()] || storedName;
+}
 window.SUBJECTS = SUBJECTS;
 window.CLASSES = CLASSES;
 window.NCERT_CHAPTERS = NCERT_CHAPTERS;
+window.CHAPTER_NAME_ALIASES = CHAPTER_NAME_ALIASES;
+window.chapterDisplayName = chapterDisplayName;
 window.EXAMS = EXAMS;
 
 function allowedExamsForSubject(subject) {
@@ -4825,9 +4979,34 @@ fillDefaultPredef();
   if (klassEl) klassEl.addEventListener('change', updateChapterOptions);
 
   const bulkSubjectEl = document.getElementById('bqMetaSubject');
-  if (bulkSubjectEl) bulkSubjectEl.addEventListener('change', updateBulkExamOptions);
+  const bulkClassEl = document.getElementById('bqMetaClass');
+  if (bulkSubjectEl) bulkSubjectEl.addEventListener('change', function() {
+    updateBulkExamOptions();
+    updateBulkChapterOptions();
+  });
+  if (bulkClassEl) bulkClassEl.addEventListener('change', updateBulkChapterOptions);
   updateBulkExamOptions();
+  updateBulkChapterOptions();
 })();
+
+function updateBulkChapterOptions(presetChapter) {
+  var subjectEl = document.getElementById('bqMetaSubject');
+  var klassEl = document.getElementById('bqMetaClass');
+  var chapterEl = document.getElementById('bqMetaChapter');
+  if (!chapterEl) return;
+  var targetVal = presetChapter !== undefined ? presetChapter : chapterEl.value;
+  var key = (subjectEl ? subjectEl.value : '') + '-' + (klassEl ? klassEl.value : '');
+  var chapters = NCERT_CHAPTERS[key] || [];
+  chapterEl.innerHTML = '<option value="">Select Chapter</option>';
+  chapters.forEach(function(chapterName) {
+    var option = document.createElement('option');
+    option.value = chapterName;
+    option.textContent = chapterName;
+    chapterEl.appendChild(option);
+  });
+  if (targetVal && chapters.includes(targetVal)) chapterEl.value = targetVal;
+}
+window.updateBulkChapterOptions = updateBulkChapterOptions;
 
 function updateChapterOptions(presetChapter) {
   var subjectEl = document.getElementById('subject');
@@ -4850,7 +5029,12 @@ function updateChapterOptions(presetChapter) {
     if (!exists) {
       var customOpt = document.createElement('option');
       customOpt.value = targetVal;
-      customOpt.textContent = targetVal;
+      customOpt.textContent = 'Current chapter: ' + targetVal;
+      var visibleName = chapterDisplayName(subject, klass, targetVal);
+      if (visibleName !== targetVal) {
+        customOpt.textContent = visibleName + ' (existing record unchanged)';
+      }
+      customOpt.dataset.existingValue = 'true';
       chapterEl.appendChild(customOpt);
     }
     chapterEl.value = targetVal;
@@ -5424,7 +5608,7 @@ const isAdmin = currentRole === 'admin';
     const top=document.createElement('div');top.className='li-top';
     const main=document.createElement('div');main.style.flex='1';
     const meta=document.createElement('div');meta.className='li-meta';
-    meta.innerHTML=`<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(q.chapter||'')} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
+    meta.innerHTML=`<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(chapterDisplayName(q.subject,q.klass,q.chapter))} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
     main.appendChild(meta);
    const reviewStatus = q.reviewStatus || 'pending';
 
@@ -5534,13 +5718,25 @@ main.appendChild(optsLine);
       ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]||''));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
       main.appendChild(optsLine);
     }else if(q.qType==='match'){
-      const colWrap=document.createElement('div');colWrap.className='li-combo';colWrap.appendChild(document.createTextNode('Column A: '));
-      (q.columnA||[]).forEach((v,i)=>{if(i>0)colWrap.appendChild(document.createTextNode(' | '));colWrap.appendChild(renderStaticPreview(v||''));});
-      colWrap.appendChild(document.createTextNode('   ·   Column B: '));
-      (q.columnB||[]).forEach((v,i)=>{if(i>0)colWrap.appendChild(document.createTextNode(' | '));colWrap.appendChild(renderStaticPreview(v||''));});
-      main.appendChild(colWrap);
-      const mo=q.matchOptions||{};const optsLine=document.createElement('div');optsLine.className='li-combo';
-      ['A','B','C','D'].forEach(l=>{const isCorrect=q.correctOption===l;const span=document.createElement('span');if(isCorrect)span.className='correct';span.appendChild(document.createTextNode(l+': '));span.appendChild(renderStaticPreview(mo[l]||''));if(isCorrect)span.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(span);optsLine.appendChild(document.createTextNode('  '));});
+      const columns=document.createElement('div');columns.className='match-columns-display';
+      [['Column A',q.columnA||[],'left'],['Column B',q.columnB||[],'right']].forEach(([title,rawEntries,labelType])=>{
+        const column=document.createElement('div');column.className='match-display-column';
+        const heading=document.createElement('div');heading.className='match-display-heading';heading.textContent=title;column.appendChild(heading);
+        const reconstructed=window.QPMatchDisplay?window.QPMatchDisplay.reconstructEntries(q,labelType,rawEntries):{entries:rawEntries,labels:[]};
+        const entries=reconstructed.entries;
+        const labels=reconstructed.labels;
+        entries.forEach((value,index)=>{
+          const row=document.createElement('div');row.className='match-display-row';
+          const label=document.createElement('span');label.className='match-display-index';
+          label.textContent='('+(labels[index]||(labelType==='left'?index+1:String.fromCharCode(97+index)))+')';
+          const content=document.createElement('span');content.className='match-display-value';content.appendChild(renderStaticPreview(value||''));
+          row.appendChild(label);row.appendChild(content);column.appendChild(row);
+        });
+        columns.appendChild(column);
+      });
+      main.appendChild(columns);
+      const mo=q.matchOptions||{};const optsLine=document.createElement('div');optsLine.className='li-combo match-options-display';
+      ['A','B','C','D'].forEach(l=>{const isCorrect=q.correctOption===l;const span=document.createElement('span');if(isCorrect)span.className='correct';span.appendChild(document.createTextNode(l+': '));const rawOption=window.QPMatchDisplay?window.QPMatchDisplay.optionFor(q,l):(mo[l]||'');const optionText=window.QPMatchDisplay?window.QPMatchDisplay.formatMapping(rawOption):rawOption;span.appendChild(renderStaticPreview(optionText));if(isCorrect)span.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(span);});
       main.appendChild(optsLine);
     }else if(q.qType==='numerical'){
       const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
@@ -5614,17 +5810,28 @@ if(isEditor || isAdmin){
   btns.appendChild(reviewBtn);
 
 
-  // DIFFICULTY
-  const difficultyBtn=document.createElement('button');
-  difficultyBtn.className='icon-btn';
-  difficultyBtn.title='Change Difficulty';
-  difficultyBtn.textContent='Difficulty';
+  // DIFFICULTY: Editors and Admin choose directly from visible buttons.
+  if(isEditor || isAdmin){
+    const difficultyGroup=document.createElement('div');
+    difficultyGroup.className='difficulty-button-group';
+    difficultyGroup.setAttribute('role','group');
+    difficultyGroup.setAttribute('aria-label','Assign difficulty');
 
-  difficultyBtn.addEventListener('click',()=>{
-    QP.difficulty(q.id);
-  });
+    ['Easy','Medium','Hard'].forEach(level=>{
+      const levelBtn=document.createElement('button');
+      levelBtn.type='button';
+      levelBtn.className='icon-btn difficulty-level-btn difficulty-'+level.toLowerCase();
+      if(String(q.difficulty||'Medium').toLowerCase()===level.toLowerCase()){
+        levelBtn.classList.add('selected');
+      }
+      levelBtn.textContent=level;
+      levelBtn.title='Set difficulty to '+level;
+      levelBtn.addEventListener('click',()=>QP.difficulty(q.id,level));
+      difficultyGroup.appendChild(levelBtn);
+    });
 
-  btns.appendChild(difficultyBtn);
+    btns.appendChild(difficultyGroup);
+  }
 
 
   // ACCEPT
@@ -6092,7 +6299,7 @@ window.QP={
     );
   }
 },
-   difficulty: async function(id){
+   difficulty: async function(id, selectedDifficulty){
 
   const q=allQuestions.find(
     x=>String(x.id)===String(id)
@@ -6100,7 +6307,7 @@ window.QP={
 
   if(!q) return;
 
-  const value=prompt(
+  const value=selectedDifficulty || prompt(
     'Enter Difficulty: Easy, Medium or Hard',
     q.difficulty || 'Medium'
   );
@@ -6130,9 +6337,9 @@ window.QP={
       }
     );
 
+    q.difficulty=difficulty.charAt(0).toUpperCase()+difficulty.slice(1).toLowerCase();
     showToast('Difficulty updated.');
-
-    await loadQuestions(questionPage,false);
+    renderList();
 
   }catch(error){
 
