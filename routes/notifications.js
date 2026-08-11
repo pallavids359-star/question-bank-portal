@@ -108,10 +108,15 @@ function cleanSolutionWithDifficulty(question, difficulty) {
 
 function stateFromNotification(row) {
   const accepted = row?.type === 'question_accepted';
+  const reversed = row?.type === 'question_acceptance_reversed';
   return {
     question_id: row.question_id,
-    status: accepted ? 'accepted' : 'reviewed',
-    last_action: accepted ? 'question_accepted' : 'review_sent',
+    status: accepted ? 'accepted' : reversed ? 'pending' : 'reviewed',
+    last_action: accepted
+      ? 'question_accepted'
+      : reversed
+        ? 'question_acceptance_reversed'
+        : 'review_sent',
     last_editor_id: row.sender_id || null,
     last_editor_name: row.sender_name || 'Editor',
     last_message: row.message || '',
@@ -169,7 +174,7 @@ router.get('/question-states', ...ACTIVE_USER, async (req, res) => {
   const { data, error } = await supabase.from('notifications')
     .select('question_id, type, sender_id, sender_name, message, difficulty, created_at')
     .in('question_id', allowedIds)
-    .in('type', ['question_review', 'question_accepted'])
+    .in('type', ['question_review', 'question_accepted', 'question_acceptance_reversed'])
     .order('created_at', { ascending: false });
   if (error) return isSchemaError(error) ? tableError(res, error) : res.status(500).json({ error: error.message });
 
@@ -225,24 +230,80 @@ router.post('/accept', ...EDITOR_ONLY, async (req, res) => {
   if (!context) return;
   const { questionId, question, user } = context;
   try {
+    const shouldAccept = req.body?.accepted !== false;
     const existing = await supabase.from('notifications')
       .select('question_id, type, sender_id, sender_name, message, difficulty, created_at')
       .eq('question_id', questionId)
-      .eq('type', 'question_accepted')
+      .in('type', ['question_accepted', 'question_acceptance_reversed'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (existing.error) throw existing.error;
-    if (existing.data) {
-      return res.json({ success: true, alreadyAccepted: true, notification: existing.data, state: stateFromNotification(existing.data) });
+    const currentlyAccepted = existing.data?.type === 'question_accepted';
+    if (currentlyAccepted === shouldAccept && existing.data) {
+      if (shouldAccept) {
+        const acceptedNotification = await supabase.from('notifications')
+          .select('question_id, type, sender_id, sender_name, message, difficulty, created_at')
+          .eq('question_id', questionId)
+          .eq('type', 'question_accepted')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (acceptedNotification.error) throw acceptedNotification.error;
+        if (acceptedNotification.data) {
+          return res.json({
+            success: true,
+            accepted: true,
+            alreadyAccepted: true,
+            unchanged: true,
+            notification: acceptedNotification.data,
+            state: stateFromNotification(acceptedNotification.data),
+          });
+        }
+      }
+      return res.json({
+        success: true,
+        accepted: currentlyAccepted,
+        unchanged: true,
+        notification: existing.data,
+        state: stateFromNotification(existing.data),
+      });
     }
-    const message = String(req.body?.message || '').trim() || 'Your question has been accepted.';
+    if (!shouldAccept && !currentlyAccepted) {
+      return res.json({
+        success: true,
+        accepted: false,
+        unchanged: true,
+        state: {
+          question_id: questionId,
+          status: 'pending',
+          last_action: 'question_acceptance_reversed',
+          accepted_at: null,
+          updated_at: null,
+        },
+      });
+    }
+    const type = shouldAccept ? 'question_accepted' : 'question_acceptance_reversed';
+    const message = String(req.body?.message || '').trim() || (shouldAccept
+      ? 'Your question has been accepted.'
+      : 'The acceptance of your question has been reversed.');
     const notification = await notifyOwner({
-      question, questionId, user, type: 'question_accepted',
-      title: `Question accepted · ${question.subject || 'General'}`, message,
+      question,
+      questionId,
+      user,
+      type,
+      title: `${shouldAccept ? 'Question accepted' : 'Acceptance reversed'} · ${question.subject || 'General'}`,
+      message,
     });
-    await writeAuditLog({ userId: user.id || user.userId, userName: user.name || 'Editor', action: 'ACCEPT_QUESTION', resourceType: 'question', resourceId: questionId, details: { recipientId: notification.recipient_id } }).catch(() => {});
-    res.json({ success: true, notification, state: stateFromNotification(notification) });
+    await writeAuditLog({
+      userId: user.id || user.userId,
+      userName: user.name || 'Editor',
+      action: shouldAccept ? 'ACCEPT_QUESTION' : 'REVERSE_QUESTION_ACCEPTANCE',
+      resourceType: 'question',
+      resourceId: questionId,
+      details: { recipientId: notification.recipient_id },
+    }).catch(() => {});
+    res.json({ success: true, accepted: shouldAccept, notification, state: stateFromNotification(notification) });
   } catch (error) {
     return isSchemaError(error) ? tableError(res, error) : res.status(400).json({ error: error.message });
   }
