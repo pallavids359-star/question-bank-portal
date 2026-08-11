@@ -30,9 +30,13 @@ test('direct workflow uses existing questions and notifications tables only', ()
   assert.match(frontend, /api\/notifications\/question-states/);
 });
 
-test('Accept is idempotent using the existing accepted notification', () => {
-  assert.match(notifications, /\.eq\('type', 'question_accepted'\)/);
-  assert.match(notifications, /alreadyAccepted: true/);
+test('Accept button can reverse acceptance without deleting history', () => {
+  assert.match(frontend, /accepted:nextAccepted/);
+  assert.match(frontend, /Reverse acceptance for this question/);
+  assert.match(frontend, /Question acceptance reversed/);
+  assert.doesNotMatch(frontend, /acceptBtn\.disabled = isAccepted/);
+  assert.match(notifications, /question_acceptance_reversed/);
+  assert.doesNotMatch(notifications, /from\('notifications'\)\.delete/);
 });
 
 test('logout closes the exact session and reports storage failure', () => {

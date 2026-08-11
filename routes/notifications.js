@@ -158,6 +158,25 @@ router.get('/', ...ACTIVE_USER, async (req, res) => {
   res.json({ data: rows, unread: rows.filter(row => !row.is_read).length });
 });
 
+// Return only the unread count so the badge can update without reloading the
+// page or downloading the complete notification list.
+router.get('/unread-count', ...ACTIVE_USER, async (req, res) => {
+  const { count, error } = await supabase
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('recipient_id', req.user.userId)
+    .eq('is_read', false);
+
+  if (error) {
+    return isSchemaError(error)
+      ? tableError(res, error)
+      : res.status(500).json({ error: error.message });
+  }
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ unread: Number(count) || 0 });
+});
+
 // Lightweight current status for the questions displayed on the current page.
 router.get('/question-states', ...ACTIVE_USER, async (req, res) => {
   const ids = String(req.query.ids || '').split(',').map(value => value.trim()).filter(Boolean).slice(0, 100);

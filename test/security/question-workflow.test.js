@@ -31,7 +31,8 @@ test('Difficulty, Review, and Accept validate their direct request bodies', () =
   assert.match(notifications, /questionId is required/);
 });
 
-test('repeated Accept returns the existing notification without duplication', () => {
-  assert.match(notifications, /\.eq\('type', 'question_accepted'\)/);
-  assert.match(notifications, /alreadyAccepted: true/);
+test('Accept is a reversible, idempotent workflow event', () => {
+  assert.match(notifications, /question_acceptance_reversed/);
+  assert.match(notifications, /currentlyAccepted === shouldAccept/);
+  assert.match(notifications, /REVERSE_QUESTION_ACCEPTANCE/);
 });

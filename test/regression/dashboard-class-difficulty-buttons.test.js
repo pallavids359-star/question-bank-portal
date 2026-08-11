@@ -25,5 +25,5 @@ test('Editor difficulty is assigned with Easy, Medium and Hard buttons', () => {
 
 test('button assignment updates the visible question locally after success', () => {
   assert.match(frontend, /q\.difficulty=difficulty\.charAt/);
-  assert.match(frontend, /showToast\('Difficulty updated\.'\);\s*renderSavedQuestionsWithoutReload\(\);/);
+  assert.match(frontend, /showToast\('Difficulty updated\.'\);\s*renderList\(\);/);
 });

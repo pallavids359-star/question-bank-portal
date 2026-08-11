@@ -6,23 +6,6 @@ const { toLogicalUser } = require('../lib/user-role');
 
 const router = express.Router();
 const PAGE_SIZE = 1000;
-const DASHBOARD_CACHE_TTL_MS = 30 * 1000;
-const DASHBOARD_STALE_TTL_MS = 5 * 60 * 1000;
-
-let dashboardCache = {
-  data: null,
-  createdAt: 0,
-};
-let dashboardRefreshPromise = null;
-
-function dashboardCacheAge() {
-  return dashboardCache.data ? Date.now() - dashboardCache.createdAt : Infinity;
-}
-
-function isTemporaryUpstreamError(error) {
-  const message = String(error && error.message || error || '');
-  return /(?:\b522\b|origin connection time-?out|cloudflare|upstream|fetch failed|timed?\s*out|econn(?:reset|refused)|enotfound|connection terminated)/i.test(message);
-}
 
 // Read every real row without naming optional columns. Older installations may
 // not yet have ownership/difficulty fields, but the dashboard must still load.
@@ -70,19 +53,14 @@ async function readRecentQuestions(field) {
   return data || [];
 }
 
-function incrementCount(map, key) {
-  const normalized = String(key || '').trim().toLowerCase();
-  if (normalized) map.set(normalized, (map.get(normalized) || 0) + 1);
-}
-
-function countForUser(byId, byLegacyName, user) {
-  let count = user.id ? (byId.get(String(user.id)) || 0) : 0;
-  const keys = new Set([
-    String(user.name || '').trim().toLowerCase(),
-    String(user.email || '').trim().toLowerCase(),
-  ].filter(Boolean));
-  keys.forEach(key => { count += byLegacyName.get(key) || 0; });
-  return count;
+function questionBelongsToUser(question, user) {
+  if (question.created_by && user.id) {
+    return String(question.created_by) === String(user.id);
+  }
+  const ownerName = String(question.created_by_name || '').trim().toLowerCase();
+  const userName = String(user.name || '').trim().toLowerCase();
+  const userEmail = String(user.email || '').trim().toLowerCase();
+  return Boolean(ownerName && (ownerName === userName || ownerName === userEmail));
 }
 
 function legacyValue(solutionText, key) {
@@ -148,19 +126,6 @@ function buildUserTimeStats(
   const sessionsByUser =
     new Map();
 
-  const questionsTodayById = new Map();
-  const questionsTodayByLegacyName = new Map();
-
-  questions.forEach(question => {
-    if (!isOnOrAfter(question.created_at, todayStartDate)) return;
-    if (question.created_by) {
-      const key = String(question.created_by);
-      questionsTodayById.set(key, (questionsTodayById.get(key) || 0) + 1);
-      return;
-    }
-    incrementCount(questionsTodayByLegacyName, question.created_by_name);
-  });
-
 
   sessions.forEach(session => {
 
@@ -195,11 +160,21 @@ function buildUserTimeStats(
 
 
       // Number of questions added TODAY
-      const questionsToday = countForUser(
-        questionsTodayById,
-        questionsTodayByLegacyName,
-        user
-      );
+      const questionsToday =
+        questions.filter(question => {
+
+          return (
+            questionBelongsToUser(
+              question,
+              user
+            ) &&
+            isOnOrAfter(
+              question.created_at,
+              todayStartDate
+            )
+          );
+
+        }).length;
 
 
       let totalSeconds = 0;
@@ -321,7 +296,9 @@ router.get('/recent', requireAuth, requireRole('admin'), async (req, res) => {
   }
 });
 
-async function loadDashboardData() {
+// GET /api/dashboard
+router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
     const [questions, rawUsers, loginSessions] = await Promise.all([
       readAll('questions', 'id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by, created_by_name, updated_by, updated_by_name'),
       readAll('users', 'id, name, email, role, subject, status'),
@@ -336,9 +313,6 @@ async function loadDashboardData() {
 
     const subjects = new Set();
     const chapters = new Set();
-    let questionsToday = 0;
-    let questionsWeek = 0;
-    let questionsMonth = 0;
     questions.forEach(question => {
       const rawSubject = String(question.subject || '').trim();
       const subject = rawSubject === 'Maths' ? 'Mathematics' : rawSubject;
@@ -347,9 +321,6 @@ async function loadDashboardData() {
       if (chapter && chapter !== 'General') {
         chapters.add(`${subject || 'General'}::${chapter}`);
       }
-      if (isOnOrAfter(question.created_at, today)) questionsToday += 1;
-      if (isOnOrAfter(question.created_at, week)) questionsWeek += 1;
-      if (isOnOrAfter(question.created_at, month)) questionsMonth += 1;
     });
 
     const users = rawUsers.map(toLogicalUser);
@@ -365,7 +336,7 @@ async function loadDashboardData() {
     );
     const activityMap = new Map();
     const contributionCountsById = new Map();
-    const contributionCountsByLegacyName = new Map();
+    const contributionCountsByName = new Map();
     questions.forEach(question => {
       const owner = String(
         question.created_by_name ||
@@ -377,8 +348,9 @@ async function loadDashboardData() {
         const key = String(question.created_by);
         contributionCountsById.set(key, (contributionCountsById.get(key) || 0) + 1);
       }
-      if (!question.created_by && question.created_by_name) {
-        incrementCount(contributionCountsByLegacyName, question.created_by_name);
+      if (question.created_by_name) {
+        const key = String(question.created_by_name).trim().toLowerCase();
+        contributionCountsByName.set(key, (contributionCountsByName.get(key) || 0) + 1);
       }
     });
     const mostActiveEntry = [...activityMap.entries()].sort((a, b) => b[1] - a[1])[0];
@@ -391,11 +363,13 @@ async function loadDashboardData() {
   )
   .map(user => {
 
-    const questionCount = countForUser(
-      contributionCountsById,
-      contributionCountsByLegacyName,
-      user
-    );
+    const questionCount =
+      questions.filter(question =>
+        questionBelongsToUser(
+          question,
+          user
+        )
+      ).length;
 
     return {
 
@@ -521,7 +495,7 @@ questions.forEach(question => {
     .chapters[chapter]
     .concepts[concept] += 1;
 });
-    return {
+    res.json({
       totalQuestions: questions.length,
       totalSubjects: subjects.size,
       totalChapters: chapters.size,
@@ -531,9 +505,9 @@ questions.forEach(question => {
       totalEditors: byRole.editor,
       totalViewers: byRole.viewer,
       totalUsers: users.length,
-      questionsToday,
-      questionsWeek,
-      questionsMonth,
+      questionsToday: questions.filter(q => isOnOrAfter(q.created_at, today)).length,
+      questionsWeek: questions.filter(q => isOnOrAfter(q.created_at, week)).length,
+      questionsMonth: questions.filter(q => isOnOrAfter(q.created_at, month)).length,
       mostActiveUser: mostActiveEntry
         ? { name: mostActiveEntry[0], count: mostActiveEntry[1] }
         : null,
@@ -542,48 +516,10 @@ questions.forEach(question => {
       adderStats,
       userTimeStats,
       allUsers: users,
-    };
-}
-
-async function getDashboardData() {
-  if (dashboardCacheAge() <= DASHBOARD_CACHE_TTL_MS) {
-    return dashboardCache.data;
-  }
-
-  if (!dashboardRefreshPromise) {
-    dashboardRefreshPromise = loadDashboardData()
-      .then(data => {
-        dashboardCache = { data, createdAt: Date.now() };
-        return data;
-      })
-      .finally(() => {
-        dashboardRefreshPromise = null;
-      });
-  }
-
-  return dashboardRefreshPromise;
-}
-
-// GET /api/dashboard
-router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
-  try {
-    const data = await getDashboardData();
-    res.set('Cache-Control', 'private, no-store');
-    res.json(data);
-  } catch (err) {
-    const temporaryFailure = isTemporaryUpstreamError(err);
-    if (temporaryFailure && dashboardCacheAge() <= DASHBOARD_STALE_TTL_MS) {
-      res.set('Cache-Control', 'private, no-store');
-      res.set('Warning', '110 - "Response is temporarily stale"');
-      return res.json(dashboardCache.data);
-    }
-
-    console.error('[dashboard]', String(err && err.message || err).slice(0, 500));
-    return res.status(temporaryFailure ? 503 : 500).json({
-      error: temporaryFailure
-        ? 'Database temporarily unavailable. Please try again.'
-        : 'Failed to load dashboard data.',
     });
+  } catch (err) {
+    console.error('[dashboard]', err);
+    res.status(500).json({ error: 'Failed to load dashboard data.', details: err.message });
   }
 });
 
@@ -642,8 +578,8 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
       questions: ownedQuestions,
     });
   } catch (err) {
-    console.error('[dashboard adder questions]', String(err && err.message || err).slice(0, 500));
-    res.status(500).json({ error: 'Failed to load questions added by this user.' });
+    console.error('[dashboard adder questions]', err);
+    res.status(500).json({ error: 'Failed to load questions added by this user.', details: err.message });
   }
 });
 

@@ -786,8 +786,8 @@ router.post('/', ...CREATE_ROLES, async (req, res) => {
 // â”€â”€ POST /api/questions/batch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/batch', ...CREATE_ROLES, async (req, res) => {
   const items = req.body;
-  if (!Array.isArray(items) || items.length === 0 || items.length > 500) {
-    return res.status(400).json({ error: 'Payload must contain between 1 and 500 questions.' });
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Payload must be a non-empty array of questions.' });
   }
 
   const userId = req.user.userId;
@@ -814,56 +814,86 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
     return res.status(400).json({ error: validateSubjectExams(invalidExamRecord) });
   }
 
-  // Send the complete import in one request and do not ask Supabase to return
-  // every inserted question. This keeps both database round-trips and the
-  // response payload small, even when questions contain long solutions.
-  let insertResult = await supabase
-    .from('questions')
-    .insert(recordsToInsert);
+  // Keep normal imports to one database round-trip whenever possible. Supabase
+  // comfortably accepts 500 rows per request, while the old size of 50 made a
+  // 500-question import wait for ten sequential network round-trips.
+  const chunkSize = 500;
+  const insertedData = [];
+  let lastErrorMessage = '';
 
-  const schemaNeedsLegacyFallback = insertResult.error && (
-    insertResult.error.code === 'PGRST204'
-    || /column|schema|statement1|assertion/i.test(insertResult.error.message || '')
-  );
-
-  // Older installations may not contain the extended question columns.
-  // Retry the complete batch once with the already-supported legacy fields.
-  if (schemaNeedsLegacyFallback) {
-    const legacyRecords = recordsToInsert.map(record =>
-      sanitizeRecord(record, BASIC_LEGACY_FIELDS)
-    );
-    insertResult = await supabase
+  for (let i = 0; i < recordsToInsert.length; i += chunkSize) {
+    let chunk = recordsToInsert.slice(i, i + chunkSize);
+    let { data, error } = await supabase
       .from('questions')
-      .insert(legacyRecords);
+      .insert(chunk)
+      .select();
+
+    // Auto-fallback if database schema does not have new extended columns yet (e.g. statement1, column_a)
+    if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
+      console.warn(`Database missing extended columns, auto-stripping to basic legacy schema...`);
+      const basicChunk = chunk.map(r => sanitizeRecord(r, BASIC_LEGACY_FIELDS));
+      const retry = await supabase
+        .from('questions')
+        .insert(basicChunk)
+        .select();
+      data = retry.data;
+      error = retry.error;
+    }
+
+    if (error) {
+      console.warn(`Batch chunk insert failed at offset ${i}:`, error.message);
+      lastErrorMessage = error.message;
+
+      // Sequential retry item by item
+      for (const item of chunk) {
+        let singleRetry = await supabase
+          .from('questions')
+          .insert([item])
+          .select();
+
+        if (singleRetry.error) {
+          // Retry single item with basic legacy schema
+          const basicItem = sanitizeRecord(item, BASIC_LEGACY_FIELDS);
+          singleRetry = await supabase
+            .from('questions')
+            .insert([basicItem])
+            .select();
+        }
+
+        if (singleRetry.error) {
+          console.error(`Single item insert failed:`, singleRetry.error.message);
+          lastErrorMessage = singleRetry.error.message;
+        } else if (singleRetry.data && singleRetry.data.length) {
+          insertedData.push(singleRetry.data[0]);
+        }
+      }
+    } else if (data) {
+      insertedData.push(...data);
+    }
   }
 
-  if (insertResult.error) {
-    const message = insertResult.error.message || 'Please check required fields and database schema.';
+  if (insertedData.length === 0) {
     return res.status(400).json({
-      error: `Failed to insert questions into database: ${message}`,
-      details: message,
+      error: 'Failed to insert questions into database: ' + (lastErrorMessage || 'Please check required fields and database schema.'),
+      details: lastErrorMessage
     });
   }
 
-  rememberDuplicateQuestions(recordsToInsert);
-  if (duplicateQuestionCache.total >= 0) {
-    duplicateQuestionCache.total += recordsToInsert.length;
-    duplicateQuestionCache.loadedAt = Date.now();
-  }
+  rememberDuplicateQuestions(insertedData);
 
-  // Audit logging is intentionally non-blocking. The import is already safely
-  // stored, so a separate audit request must not delay the browser response.
-  writeAuditLog({
+
+  await writeAuditLog({
     userId: isValidUuid(userId) ? userId : null,
     userName: userName || 'User',
     action: 'BULK_CREATE_QUESTIONS', resourceType: 'question',
-    resourceId: `batch_${recordsToInsert.length}`,
-    details: { totalImported: recordsToInsert.length },
+    resourceId: `batch_${insertedData.length}`,
+    details: { totalImported: insertedData.length },
   }).catch(err => console.warn('Audit log failed:', err.message));
 
   res.status(201).json({
     success: true,
-    count: recordsToInsert.length,
+    count: insertedData.length,
+    data: insertedData.map(toApi)
   });
 });
 

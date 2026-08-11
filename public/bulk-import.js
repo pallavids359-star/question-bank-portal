@@ -2341,16 +2341,6 @@ if (duplicateKey) {
 }
 
 
-// Refresh Saved Questions
-if (
-  typeof window.loadQuestions ===
-  'function'
-) {
-
-  window.loadQuestions();
-}
-
-
 // ==========================================
 // IMPORTANT:
 // REFRESH DUPLICATE DATABASE CACHE
