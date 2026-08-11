@@ -5294,18 +5294,14 @@ optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
     const saved=wasEditing?await apiRequest('/'+encodeURIComponent(editingId),{method:'PUT',body:JSON.stringify(updateRecord)}):await apiRequest('',{method:'POST',body:JSON.stringify(record)});
     if(wasEditing){
       const idx=allQuestions.findIndex(q=>String(q.id)===String(editingId));
-      if(idx>-1) allQuestions[idx]={...allQuestions[idx],...saved};
+      if(idx>-1) allQuestions[idx]=saved;
       else allQuestions.unshift(saved);
     }else{
       allQuestions.unshift(saved);
     }
     showToast(wasEditing?'Question updated successfully.':'Question saved successfully.');resetForm();
-    if(wasEditing){
-      renderSavedQuestionsWithoutReload();
-    }else{
-      questionTimeframe='';
-      await loadQuestions(1,true);
-    }
+    questionTimeframe='';
+    await loadQuestions(1,true);
   }catch(e){
     console.error('Save failed:',e);
     showToast('Save failed: '+(e.message || 'Server error'),true);
@@ -5594,43 +5590,6 @@ function renderStaticPreview(raw){
   return span;
 }
 
-function captureSavedQuestionView(){
-  const expandedSolutionIds=[];
-  document.querySelectorAll('#listContainer .list-item[data-id]').forEach(item=>{
-    const solutionBox=item.querySelector('.li-solution-box');
-    if(solutionBox&&solutionBox.style.display!=='none'){
-      expandedSolutionIds.push(String(item.dataset.id||''));
-    }
-  });
-  return {
-    scrollX:window.scrollX,
-    scrollY:window.scrollY,
-    expandedSolutionIds
-  };
-}
-
-function renderSavedQuestionsWithoutReload(){
-  const view=captureSavedQuestionView();
-  renderList();
-  view.expandedSolutionIds.forEach(id=>{
-    const item=document.querySelector('#listContainer .list-item[data-id="'+CSS.escape(id)+'"]');
-    const toggle=item&&item.querySelector('.li-solution-toggle');
-    if(toggle)toggle.click();
-  });
-  requestAnimationFrame(()=>window.scrollTo(view.scrollX,view.scrollY));
-}
-
-function applyQuestionReviewState(question,state){
-  if(!question||!state)return;
-  question.reviewStatus=state.status||question.reviewStatus;
-  question.reviewedByName=state.last_editor_name||question.reviewedByName;
-  question.reviewedAt=state.updated_at||question.reviewedAt;
-  if(state.status==='accepted'){
-    question.acceptedByName=state.last_editor_name||question.acceptedByName;
-    question.acceptedAt=state.accepted_at||state.updated_at||question.acceptedAt;
-  }
-}
-
 function renderList(){
   if(!Array.isArray(allQuestions)) allQuestions = [];
   const listContainer=document.getElementById('listContainer');
@@ -5820,7 +5779,6 @@ main.appendChild(optsLine);
     const solText = q.solutionText || q.solution_text || '';
     const solToggleBtn = document.createElement('button');
     solToggleBtn.type = 'button';
-    solToggleBtn.className = 'li-solution-toggle';
     solToggleBtn.style.cssText = 'background:rgba(0,180,216,0.1);border:1px solid rgba(0,180,216,0.3);color:#00b4d8;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;margin-top:10px;display:inline-flex;align-items:center;gap:6px;font-weight:600;';
     solToggleBtn.innerHTML = '💡 View Detailed Answer';
 
@@ -6364,7 +6322,7 @@ window.QP={
 
   try{
 
-    const result=await apiReq(
+    await apiReq(
       '/api/notifications/review',
       {
         method:'POST',
@@ -6379,8 +6337,7 @@ window.QP={
       'Review sent to the question contributor.'
     );
 
-    applyQuestionReviewState(q,result&&result.state);
-    renderSavedQuestionsWithoutReload();
+    await loadQuestions(questionPage,false);
 
   }catch(error){
 
@@ -6430,7 +6387,7 @@ window.QP={
 
     q.difficulty=difficulty.charAt(0).toUpperCase()+difficulty.slice(1).toLowerCase();
     showToast('Difficulty updated.');
-    renderSavedQuestionsWithoutReload();
+    renderList();
 
   }catch(error){
 
@@ -6465,8 +6422,7 @@ window.QP={
 
     showToast('Question accepted.');
 
-    applyQuestionReviewState(q,result&&result.state);
-    renderSavedQuestionsWithoutReload();
+    await loadQuestions(questionPage,false);
 
   }catch(error){
 
@@ -6915,14 +6871,8 @@ else if(normType==='statement_based'){
     if(!confirm('Delete this question? This cannot be undone.'))return;
     try{
       await apiRequest('/'+encodeURIComponent(id),{method:'DELETE'});
-      allQuestions=allQuestions.filter(q=>String(q.id)!==String(id));
-      questionTotal=Math.max(0,questionTotal-1);
-      if(allQuestions.length>0||questionPage===1){
-        questionTotalPages=Math.max(1,Math.ceil(questionTotal/questionPageSize));
-      }
-      if(String(editingId)===String(id))resetForm();
       showToast('Question deleted.');
-      renderSavedQuestionsWithoutReload();
+      loadQuestions(questionPage,false);
     }catch(e){console.error('Delete failed:',e);showToast('Delete failed: '+e.message,true);}
   }
 };
