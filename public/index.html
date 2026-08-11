@@ -8336,57 +8336,57 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
           );
         }
       },
-      accept: async function (id, currentlyAccepted) {
-        const question = allQuestions.find(
-          item => String(item.id) === String(id)
-        );
+      accept: async function(id, currentlyAccepted) {
+  const question = allQuestions.find(
+    item => String(item.id) === String(id)
+  );
 
-        if (!question) {
-          showToast('Question could not be found. Refresh and try again.', true);
-          return;
-        }
+  if (!question) {
+    showToast('Question could not be found. Refresh and try again.', true);
+    return;
+  }
 
-        if (currentlyAccepted) {
-          showToast('This question is already accepted.');
-          return;
-        }
+  if (currentlyAccepted) {
+    showToast('This question is already accepted.');
+    return;
+  }
 
-        if (!confirm('Accept this question?')) {
-          return;
-        }
+  if (!confirm('Accept this question?')) {
+    return;
+  }
 
-        try {
-          const result = await apiReq(
-            '/api/notifications/accept',
-            {
-              method: 'POST',
-              body: JSON.stringify({ questionId: id })
-            }
-          );
+  try {
+    const result = await apiReq(
+      '/api/notifications/accept',
+      {
+        method: 'POST',
+        body: JSON.stringify({ questionId: id })
+      }
+    );
 
-          const state = result && result.state ? result.state : {};
+    const state = result && result.state ? result.state : {};
 
-          question.reviewStatus = 'accepted';
-          question.acceptedByName =
-            state.last_editor_name ||
-            (Auth.getUser() || {}).name ||
-            'Editor';
+    question.reviewStatus = 'accepted';
+    question.acceptedByName =
+      state.last_editor_name ||
+      (Auth.getUser() || {}).name ||
+      'Editor';
 
-          question.acceptedAt =
-            state.accepted_at ||
-            state.updated_at ||
-            new Date().toISOString();
+    question.acceptedAt =
+      state.accepted_at ||
+      state.updated_at ||
+      new Date().toISOString();
 
-          renderList();
-          showToast('Question accepted.');
+    renderList();
+    showToast('Question accepted.');
 
-        } catch (error) {
-          showToast(
-            error.message || 'Unable to accept the question.',
-            true
-          );
-        }
-      },
+  } catch (error) {
+    showToast(
+      error.message || 'Unable to accept the question.',
+      true
+    );
+  }
+},
       edit: function (id) {
         if (!Auth.can('edit')) { showToast('Only an Adder, Editor, or Admin can edit questions.', true); return; }
         const q = allQuestions.find(x => String(x.id) === String(id)); if (!q) return; editingId = id;
