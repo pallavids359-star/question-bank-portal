@@ -1648,6 +1648,49 @@
       border-color: var(--gold);
     }
 
+    .notification-item {
+      width: 100%;
+      display: block;
+      text-align: left;
+      color: var(--text);
+      border: 1px solid var(--border);
+      background: #111;
+      border-radius: 9px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      cursor: default;
+    }
+
+    .notification-item.has-question {
+      cursor: pointer;
+      transition: border-color .15s, background .15s, transform .15s;
+    }
+
+    .notification-item.has-question:hover,
+    .notification-item.has-question:focus-visible {
+      border-color: var(--gold);
+      background: rgba(212, 175, 55, .08);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    .notification-item.unread {
+      background: rgba(212, 175, 55, .06);
+    }
+
+    .notification-view-hint {
+      display: inline-block;
+      margin-top: 10px;
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .notification-question-highlight {
+      border-color: var(--gold) !important;
+      box-shadow: 0 0 0 2px rgba(212, 175, 55, .2), 0 0 22px rgba(212, 175, 55, .12);
+    }
+
     .icon-btn {
       background: transparent;
       border: 1px solid var(--border);
@@ -4161,25 +4204,6 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
       return 'http://localhost:4000' + url;
     }
 
-    function safeApiErrorMessage(body, status) {
-      const candidate = body && typeof body === 'object'
-        ? (body.error || body.details)
-        : body;
-      const message = String(candidate || '').trim();
-      const isHtml = /^\s*<!doctype|^\s*<html/i.test(message);
-      const isUpstreamTimeout = /\bcloudflare\b|\b522\b|origin connection time-?out/i.test(message);
-
-      if (isUpstreamTimeout || status === 502 || status === 503 || status === 504) {
-        return 'Database temporarily unavailable. Please try again.';
-      }
-
-      if (isHtml) {
-        return 'This action is not available on the deployed server. Deploy the matching backend and refresh the page.';
-      }
-
-      return message || `Request failed (${status})`;
-    }
-
     async function apiReq(url, options = {}) {
       const fullUrl = resolveApiUrl(url);
       const token = Auth.getToken();
@@ -4204,7 +4228,12 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
       const body = ct.includes('application/json') ? await resp.json() : await resp.text();
 
       if (!resp.ok) {
-        throw new Error(safeApiErrorMessage(body, resp.status));
+        const msg = body && typeof body === 'object'
+          ? (body.details || body.error)
+          : (/^\s*<!doctype|^\s*<html/i.test(String(body || ''))
+            ? 'This action is not available on the deployed server. Deploy the matching backend and refresh the page.'
+            : body);
+        throw new Error(msg || `Request failed (${resp.status})`);
       }
       return body;
     }
@@ -4249,7 +4278,6 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
       if (document.visibilityState === 'visible') {
         noteUserInteraction();
         sendActivityHeartbeat();
-        refreshNotificationsIfVisible();
       }
     });
 
@@ -4346,7 +4374,13 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
 
       else if (id === 'pageQuestions') {
         questionTimeframe = '';
-        loadQuestions(1, false);
+        const questionId = notificationQuestionToOpen;
+        notificationQuestionToOpen = '';
+        if (questionId) {
+          loadNotificationQuestion(questionId);
+        } else {
+          loadQuestions(1, false);
+        }
       }
     }
 
@@ -4378,7 +4412,6 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
     });
 
     function showLoginPage() {
-      stopNotificationPolling();
       document.getElementById('loginPage').style.display = 'flex';
       document.getElementById('appPage').style.display = 'none';
     }
@@ -4403,7 +4436,6 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
       try {
         if (typeof loadNotifications === 'function') {
           loadNotifications();
-          startNotificationPolling();
         }
       } catch (err) {
         console.warn('Notification loading failed:', err);
@@ -7526,6 +7558,9 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
       if (state.status === 'accepted') {
         question.acceptedByName = state.last_editor_name || question.acceptedByName;
         question.acceptedAt = state.accepted_at || state.updated_at || question.acceptedAt;
+      } else {
+        question.acceptedByName = '';
+        question.acceptedAt = null;
       }
     }
 
@@ -7802,14 +7837,12 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
               'icon-btn accept-btn' + (isAccepted ? ' accepted' : '');
 
             acceptBtn.title = isAccepted
-              ? 'Question already accepted'
+              ? 'Reverse acceptance'
               : 'Accept Question';
 
             acceptBtn.textContent = isAccepted
-              ? '✓ Accepted'
+              ? '↶ Reverse Accept'
               : 'Accept';
-
-            acceptBtn.disabled = isAccepted;
 
             acceptBtn.addEventListener('click', () => {
               QP.accept(q.id, isAccepted);
@@ -8000,37 +8033,7 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
       return { statement1: first ? first[1].trim() : '', statement2: second ? second[1].trim() : '' };
     }
     let userNotifications = [];
-    let notificationPollingTimer = null;
-    let notificationRefreshInFlight = false;
-    const NOTIFICATION_POLL_INTERVAL_MS = 15 * 1000;
-
-    async function refreshNotificationsIfVisible() {
-      const role = Auth.getRole();
-      if (!Auth.isLoggedIn() || document.visibilityState === 'hidden') return;
-      if (!['admin', 'adder'].includes(role) || notificationRefreshInFlight) return;
-
-      notificationRefreshInFlight = true;
-      try {
-        await loadNotifications();
-      } finally {
-        notificationRefreshInFlight = false;
-      }
-    }
-
-    function startNotificationPolling() {
-      stopNotificationPolling();
-      if (!['admin', 'adder'].includes(Auth.getRole())) return;
-      notificationPollingTimer = setInterval(
-        refreshNotificationsIfVisible,
-        NOTIFICATION_POLL_INTERVAL_MS
-      );
-    }
-
-    function stopNotificationPolling() {
-      if (notificationPollingTimer) clearInterval(notificationPollingTimer);
-      notificationPollingTimer = null;
-      notificationRefreshInFlight = false;
-    }
+    let notificationQuestionToOpen = '';
 
 
     async function loadNotifications() {
@@ -8129,12 +8132,9 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
         userNotifications.map(n => `
 
       <div
+        class="notification-item${n.is_read ? '' : ' unread'}${n.question_id ? ' has-question' : ''}"
+        ${n.question_id ? `role="button" tabindex="0" aria-label="Open related question for review" onclick="openNotificationQuestion('${n.id}','${n.question_id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openNotificationQuestion('${n.id}','${n.question_id}')}"` : ''}
         style="
-          border:1px solid var(--border);
-          background:${n.is_read ? '#111' : 'rgba(212,175,55,.06)'};
-          border-radius:9px;
-          padding:12px 14px;
-          margin-bottom:10px;
         "
       >
 
@@ -8153,7 +8153,7 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
           ${!n.is_read
             ? `<button
                  class="btn btn-ghost btn-sm"
-                 onclick="markNotificationRead('${n.id}')"
+                 onclick="event.stopPropagation();markNotificationRead('${n.id}')"
                >
                  Mark Read
                </button>`
@@ -8188,9 +8188,111 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
           }
         </div>
 
+        ${n.question_id
+            ? '<span class="notification-view-hint">View question for review →</span>'
+            : ''
+          }
+
       </div>
 
     `).join('');
+    }
+
+    function clearQuestionFiltersForNotification() {
+      ['fSubject', 'fClass', 'fChapter', 'fConcept', 'fType'].forEach(id => {
+        const field = document.getElementById(id);
+        if (field && !field.disabled) field.value = '';
+      });
+
+      const search = document.getElementById('fSearch');
+      if (search) search.value = '';
+
+      const searchClear = document.getElementById('fSearchClear');
+      if (searchClear) searchClear.style.display = 'none';
+
+      questionTimeframe = '';
+    }
+
+    async function loadNotificationQuestion(questionId) {
+      const id = String(questionId || '').trim();
+      const listContainer = document.getElementById('listContainer');
+      if (!id) {
+        showToast('This notification is not linked to a question.', true);
+        return;
+      }
+
+      clearQuestionFiltersForNotification();
+      if (listContainer) {
+        listContainer.innerHTML = '<div class="empty-state">Loading question for review…</div>';
+      }
+
+      try {
+        const question = await apiRequest('/' + encodeURIComponent(id));
+
+        try {
+          const stateResult = await apiReq(
+            '/api/notifications/question-states?ids=' + encodeURIComponent(id)
+          );
+          const state = Array.isArray(stateResult?.data) ? stateResult.data[0] : null;
+          if (state) applyQuestionReviewState(question, state);
+        } catch (stateError) {
+          console.warn('[QBP] Could not load notification question status:', stateError.message);
+        }
+
+        allQuestions = [question];
+        questionPage = 1;
+        questionTotal = 1;
+        questionTotalPages = 1;
+        renderList();
+
+        const item = Array.from(document.querySelectorAll('.list-item')).find(
+          element => String(element.dataset.id) === id
+        );
+        if (item) {
+          item.classList.add('notification-question-highlight');
+          item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        showToast('Question opened for review.');
+      } catch (error) {
+        allQuestions = [];
+        questionTotal = 0;
+        questionTotalPages = 1;
+        renderList();
+        showToast(error.message || 'Unable to open the related question.', true);
+      }
+    }
+
+    async function openNotificationQuestion(notificationId, questionId) {
+      if (!questionId) {
+        showToast('This notification is not linked to a question.', true);
+        return;
+      }
+
+      try {
+        const notification = userNotifications.find(
+          item => String(item.id) === String(notificationId)
+        );
+
+        if (notification && !notification.is_read) {
+          await apiReq(
+            '/api/notifications/' + encodeURIComponent(notificationId) + '/read',
+            { method: 'PUT', body: '{}' }
+          );
+          notification.is_read = true;
+          const unread = userNotifications.filter(item => !item.is_read).length;
+          const badge = document.getElementById('notificationBadge');
+          if (badge) {
+            badge.textContent = window.QbpAuthViewState.badgeText(unread);
+            badge.style.display = unread > 0 ? 'flex' : 'none';
+          }
+        }
+      } catch (error) {
+        console.warn('Unable to mark notification as read:', error.message);
+      }
+
+      notificationQuestionToOpen = String(questionId);
+      closeNotifications();
+      showPage('pageQuestions');
     }
 
 
@@ -8336,57 +8438,67 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
           );
         }
       },
-      accept: async function(id, currentlyAccepted) {
-  const question = allQuestions.find(
-    item => String(item.id) === String(id)
-  );
+      accept: async function (id, currentlyAccepted) {
+        const question = allQuestions.find(item => String(item.id) === String(id));
+        if (!question) {
+          showToast('Question could not be found. Refresh and try again.', true);
+          return;
+        }
 
-  if (!question) {
-    showToast('Question could not be found. Refresh and try again.', true);
-    return;
-  }
+        const nextAccepted = !currentlyAccepted;
+        const message = nextAccepted
+          ? 'Accept this question?'
+          : 'Reverse acceptance for this question?';
 
-  if (currentlyAccepted) {
-    showToast('This question is already accepted.');
-    return;
-  }
+        if (!confirm(message)) {
+          return;
+        }
 
-  if (!confirm('Accept this question?')) {
-    return;
-  }
+        try {
 
-  try {
-    const result = await apiReq(
-      '/api/notifications/accept',
-      {
-        method: 'POST',
-        body: JSON.stringify({ questionId: id })
-      }
-    );
+          const result = await apiReq(
+            '/api/notifications/accept',
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                questionId: id,
+                accepted: nextAccepted
+              })
+            }
+          );
 
-    const state = result && result.state ? result.state : {};
+          const state = result && result.state ? result.state : {};
+          const savedAccepted = result && typeof result.accepted === 'boolean'
+            ? result.accepted
+            : state.status === 'accepted';
 
-    question.reviewStatus = 'accepted';
-    question.acceptedByName =
-      state.last_editor_name ||
-      (Auth.getUser() || {}).name ||
-      'Editor';
+          if (savedAccepted !== nextAccepted) {
+            throw new Error(nextAccepted
+              ? 'The server did not save the acceptance. Refresh and try again.'
+              : 'The server did not reverse the acceptance. Replace routes/notifications.js and try again.');
+          }
 
-    question.acceptedAt =
-      state.accepted_at ||
-      state.updated_at ||
-      new Date().toISOString();
+          applyQuestionReviewState(question, {
+            ...state,
+            status: savedAccepted ? 'accepted' : 'pending',
+            accepted_at: savedAccepted ? (state.accepted_at || state.updated_at || new Date().toISOString()) : null
+          });
 
-    renderList();
-    showToast('Question accepted.');
+          if (savedAccepted && !question.acceptedByName) {
+            question.acceptedByName = (Auth.getUser() || {}).name || 'Editor';
+          }
 
-  } catch (error) {
-    showToast(
-      error.message || 'Unable to accept the question.',
-      true
-    );
-  }
-},
+          renderSavedQuestionsWithoutReload();
+          showToast(nextAccepted ? 'Question accepted.' : 'Question acceptance reversed.');
+
+        } catch (error) {
+
+          showToast(
+            error.message || 'Unable to update acceptance.',
+            true
+          );
+        }
+      },
       edit: function (id) {
         if (!Auth.can('edit')) { showToast('Only an Adder, Editor, or Admin can edit questions.', true); return; }
         const q = allQuestions.find(x => String(x.id) === String(id)); if (!q) return; editingId = id;
@@ -8889,14 +9001,7 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..."
             const states = new Map((stateResult.data || []).map(state => [String(state.question_id), state]));
             allQuestions.forEach(question => {
               const state = states.get(String(question.id));
-              if (!state) return;
-              question.reviewStatus = state.status || question.reviewStatus;
-              question.reviewedByName = state.last_editor_name || question.reviewedByName;
-              question.reviewedAt = state.updated_at || question.reviewedAt;
-              if (state.status === 'accepted') {
-                question.acceptedByName = state.last_editor_name || question.acceptedByName;
-                question.acceptedAt = state.accepted_at || state.updated_at || question.acceptedAt;
-              }
+              if (state) applyQuestionReviewState(question, state);
             });
           } catch (stateError) {
             console.warn('[QBP] Could not load review status:', stateError.message);
