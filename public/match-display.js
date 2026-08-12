@@ -157,7 +157,7 @@
     if (!text) return [];
     // A delimiter is mandatory unless the row begins with the word "Row".
     // This prevents ordinary Biology phrases from being split at every word.
-    const marker = /(^|\s)(?:Row\s+([A-Za-z0-9]+)\s*(?:[.:\-–—)]\s*|\s+)|\(\s*([A-Za-z0-9]+)\s*\)\s*|\[\s*([A-Za-z0-9]+)\s*\]\s*|([A-Da-dP-Sp-s1-9]|i{1,4}|v)\s*[.:\-–—)]\s*)/gi;
+    const marker = /(^|\s)(?:Row\s+([A-Za-z0-9]+)\s*(?:[.:\-–—)]\s*|\s+)|\(\s*([A-Za-z0-9]+)\s*\)\s*|\[\s*([A-Za-z0-9]+)\s*\]\s*|((?:[A-Za-z]|\d+|[IVXLCDM]+))\s*[.:\-–—)]\s*)/gi;
     const matches = Array.from(text.matchAll(marker));
     if (!matches.length) return [];
     return matches.map((current, index) => {
