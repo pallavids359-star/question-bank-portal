@@ -336,7 +336,7 @@
 
       if (shouldIgnoreLine(trimmed)) continue;
 
-      if (/\b(Column|List)\s+(I{1,3}|[1234AB])\b/i.test(trimmed)) {
+      if (getFlexibleMatchColumnSide(trimmed)) {
         inColumnSection = true;
       }
       if (isAnsLine(trimmed) || isSolLine(trimmed)) {
@@ -445,16 +445,29 @@
     }
 
     const text = block.lines.map(l => l.text).join('\n');
+     const matchColumnSides = block.lines
+  .map(line => getFlexibleMatchColumnSide(line.text))
+  .filter(Boolean);
+
+const hasFlexibleMatchColumns =
+  matchColumnSides.includes('left') &&
+  matchColumnSides.includes('right');
 
     // 1. Matrix Match
-    if (/\b(column|list)\s+(?:I|A)\b/i.test(text) && /\b(column|list)\s+(?:II|B)\b/i.test(text) && (/\b[A-D]\s*(?:→|->|=>|-|:)\s*[1-4P-S]/i.test(text) || /matrix\s+match/i.test(text))) {
-      return 'matrix';
-    }
+    if (
+  hasFlexibleMatchColumns &&
+  (
+    /\b[A-D]\s*(?:→|->|=>|-|:)\s*[1-4P-S]/i.test(text) ||
+    /matrix\s+match/i.test(text)
+  )
+) {
+  return 'matrix';
+}
 
     // 2. Match the Following
-    if (/\b(column|list)\s+(?:I|A)\b/i.test(text) && /\b(column|list)\s+(?:II|B)\b/i.test(text)) {
-      return 'match';
-    }
+    if (hasFlexibleMatchColumns) {
+  return 'match';
+}
 
     // 3. Assertion & Reason
     if (/\b(assertion|reason)\b.*\b(assertion|reason)\b/is.test(text) || /^A:\s*Assertion/i.test(text) || /\bassertion\s*\([aA]\)/i.test(text)) {
@@ -794,6 +807,37 @@ class StatementBasedParser extends BaseQuestionParser {
     return res;
   }
 }
+   const MATCH_COLUMN_LEFT_LABELS = new Set([
+  'a', '1', 'i', 'one', 'first', 'left'
+]);
+
+const MATCH_COLUMN_RIGHT_LABELS = new Set([
+  'b', '2', 'ii', 'two', 'second', 'right'
+]);
+
+function getFlexibleMatchColumnSide(line) {
+  const text = String(line || '')
+    .replace(/\*\*/g, '')
+    .trim();
+
+  const match = text.match(
+    /^(?:column|list)\s*[-–—:]?\s*[([{]?\s*([A-Za-z]+|\d+)\s*[)\]}]?\s*[:.\-–—]?\s*$/i
+  );
+
+  if (!match) return '';
+
+  const label = match[1].toLowerCase();
+
+  if (MATCH_COLUMN_LEFT_LABELS.has(label)) {
+    return 'left';
+  }
+
+  if (MATCH_COLUMN_RIGHT_LABELS.has(label)) {
+    return 'right';
+  }
+
+  return '';
+}
    function parseFlexibleMatchRow(line) {
 
   const text = String(line || '').trim();
@@ -869,14 +913,17 @@ class StatementBasedParser extends BaseQuestionParser {
           continue;
         }
 
-        if (/^\s*(?:Column|List)\s+(?:I|A)\b/i.test(line)) {
-          mode = 'col1';
-          continue;
-        }
-        if (/^\s*(?:Column|List)\s+(?:II|B)\b/i.test(line)) {
-          mode = 'col2';
-          continue;
-        }
+        const matchColumnSide = getFlexibleMatchColumnSide(line);
+
+if (matchColumnSide === 'left') {
+  mode = 'col1';
+  continue;
+}
+
+if (matchColumnSide === 'right') {
+  mode = 'col2';
+  continue;
+}
 
         // Header-free row format:
         // Row 1 ... Row 4 belong to Column A.
