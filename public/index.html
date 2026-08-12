@@ -5768,14 +5768,52 @@ optsLine.style.marginTop='8px';
 
 main.appendChild(optsLine);
     }else if(q.qType==='statement_based'){
-      const statementFallback=extractStatementPairForForm(q.question||'');
-      const visibleStatement1=q.statement1||statementFallback.statement1||'';
-      const visibleStatement2=q.statement2||statementFallback.statement2||'';
-      if(visibleStatement1){const s1L=document.createElement('div');s1L.style.marginTop='4px';s1L.appendChild(document.createTextNode('Statement I: '));s1L.appendChild(renderStaticPreview(visibleStatement1));main.appendChild(s1L);}
-      if(visibleStatement2){const s2L=document.createElement('div');s2L.style.marginTop='4px';s2L.appendChild(document.createTextNode('Statement II: '));s2L.appendChild(renderStaticPreview(visibleStatement2));main.appendChild(s2L);}
-      const optsLine=document.createElement('div');optsLine.className='li-combo';
-      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]||''));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
-      main.appendChild(optsLine);
+  const statementFallback = extractStatementPairForForm(q.question || '');
+  const visibleStatement1 = q.statement1 || statementFallback.statement1 || '';
+  const visibleStatement2 = q.statement2 || statementFallback.statement2 || '';
+
+  if(visibleStatement1 || visibleStatement2){
+    if(visibleStatement1){
+      const s1L = document.createElement('div');
+      s1L.style.marginTop = '4px';
+      s1L.appendChild(document.createTextNode('Statement I: '));
+      s1L.appendChild(renderStaticPreview(visibleStatement1));
+      main.appendChild(s1L);
+    }
+
+    if(visibleStatement2){
+      const s2L = document.createElement('div');
+      s2L.style.marginTop = '4px';
+      s2L.appendChild(document.createTextNode('Statement II: '));
+      s2L.appendChild(renderStaticPreview(visibleStatement2));
+      main.appendChild(s2L);
+    }
+  }else if(cleanQText){
+    // Display full question for an MCQ wrongly imported as statement-based
+    const questionLine = document.createElement('div');
+    questionLine.style.marginTop = '4px';
+    questionLine.appendChild(renderStaticPreview(cleanQText));
+    main.appendChild(questionLine);
+  }
+
+  const optsLine = document.createElement('div');
+  optsLine.className = 'li-combo';
+
+  ['A','B','C','D'].forEach(l => {
+    const row = document.createElement('span');
+    row.style.display = 'block';
+
+    const isCorrect = q.correctOption === l;
+    if(isCorrect) row.className = 'correct';
+
+    row.appendChild(document.createTextNode(l + ': '));
+    row.appendChild(renderStaticPreview(q['opt' + l] || ''));
+
+    if(isCorrect) row.appendChild(document.createTextNode(' ✓'));
+    optsLine.appendChild(row);
+  });
+
+  main.appendChild(optsLine);
     }else if(q.qType==='match'){
       const columns=document.createElement('div');columns.className='match-columns-display';
       [['Column A',q.columnA||[],'left'],['Column B',q.columnB||[],'right']].forEach(([title,rawEntries,labelType])=>{
