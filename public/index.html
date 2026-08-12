@@ -6880,17 +6880,17 @@ else if(normType==='statement_based'){
 
 
     // Column A / Column I
-    const columnAMatch =
-      storedText.match(
-        /(?:\*\*)?\s*(?:Column|List)\s*(?:I|A)\s*(?:\*\*)?\s*\n([\s\S]*?)(?=\n\s*(?:\*\*)?\s*(?:Column|List)\s*(?:II|B)\b)/i
-      );
+    // Column A / 1 / I / One / First / Left
+const columnAMatch =
+  storedText.match(
+    /(?:\*\*)?\s*(?:Column|List)\s*[-–—:]?\s*[([{]?\s*(?:A|1|I|One|First|Left)\s*[)\]}]?\s*(?:\*\*)?\s*[:.\-–—]?\s*\n([\s\S]*?)(?=\n\s*(?:\*\*)?\s*(?:Column|List)\s*[-–—:]?\s*[([{]?\s*(?:B|2|II|Two|Second|Right)\s*[)\]}]?\b)/i
+  );
 
-
-    // Column B / Column II
-    const columnBMatch =
-      storedText.match(
-        /(?:\*\*)?\s*(?:Column|List)\s*(?:II|B)\s*(?:\*\*)?\s*\n([\s\S]*?)(?=\n\s*(?:Options?|Option\s+Combinations?|Answer|Ans|Solution|Explanation)\b|$)/i
-      );
+// Column B / 2 / II / Two / Second / Right
+const columnBMatch =
+  storedText.match(
+    /(?:\*\*)?\s*(?:Column|List)\s*[-–—:]?\s*[([{]?\s*(?:B|2|II|Two|Second|Right)\s*[)\]}]?\s*(?:\*\*)?\s*[:.\-–—]?\s*\n([\s\S]*?)(?=\n\s*(?:Options?|Option\s+Combinations?|Answer|Ans|Solution|Explanation)\b|$)/i
+  );
 
 
     if(!colA.length && columnAMatch){
