@@ -5266,10 +5266,14 @@ function validate(){
 
 async function saveQuestion(){
   const isUpdating=Boolean(editingId);
-  const difficultyOnly=Auth.getRole()==='editor';
+  
   if(isUpdating&&!Auth.can('edit')){showToast('Only an Adder, Editor, or Admin can update questions.',true);return;}
   if(!isUpdating&&!Auth.can('add')){showToast('Only a Question Adder or Admin can add questions.',true);return;}
-  if(!difficultyOnly){const err=validate();if(err){showToast(err,true);return;}}
+ const err=validate();
+if(err){
+  showToast(err,true);
+  return;
+}
   const saveBtn=document.getElementById('saveBtn');saveBtn.disabled=true;saveBtn.textContent=editingId?'Updating…':'Saving…';
   const qType=document.getElementById('qType').value;
   const isAR=qType==='assertion_reason';
@@ -5325,8 +5329,21 @@ optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
 
   try{
     const wasEditing=Boolean(editingId);
-    const updateRecord=difficultyOnly?{difficulty:val('difficulty')||'Medium'}:record;
-    const saved=wasEditing?await apiRequest('/'+encodeURIComponent(editingId),{method:'PUT',body:JSON.stringify(updateRecord)}):await apiRequest('',{method:'POST',body:JSON.stringify(record)});
+    const saved=wasEditing
+  ? await apiRequest(
+      '/'+encodeURIComponent(editingId),
+      {
+        method:'PUT',
+        body:JSON.stringify(record)
+      }
+    )
+  : await apiRequest(
+      '',
+      {
+        method:'POST',
+        body:JSON.stringify(record)
+      }
+    );
     if(wasEditing){
       const idx=allQuestions.findIndex(q=>String(q.id)===String(editingId));
       if(idx>-1) allQuestions[idx]=saved;
@@ -5960,7 +5977,9 @@ acceptBtn.addEventListener('click',()=>{
 // ======================================
 // ADDER NORMAL EDIT
 // ======================================
-if(canEdit && !isEditor){
+// FULL QUESTION EDIT: Admin, Adder and Editor
+// ======================================
+if(canEdit){
 
   const editBtn=document.createElement('button');
 
@@ -6658,9 +6677,11 @@ window.QP={
     if(!Auth.can('edit')){showToast('Only an Adder, Editor, or Admin can edit questions.',true);return;}
     const q=allQuestions.find(x=>String(x.id)===String(id));if(!q)return;editingId=id;
     const formCard=document.getElementById('questionFormCard');if(formCard)formCard.style.display='';
-    const difficultyOnly=Auth.getRole()==='editor';
-    const ft=document.getElementById('formTitle');if(ft)ft.textContent=difficultyOnly?'Edit Difficulty Level':'Edit Question';
-    const sb=document.getElementById('saveBtn');if(sb)sb.textContent=difficultyOnly?'Update Difficulty':'Update Question';
+   const ft=document.getElementById('formTitle');
+if(ft) ft.textContent='Edit Question';
+
+const sb=document.getElementById('saveBtn');
+if(sb) sb.textContent='Update Question';
 
     const subjectSel=document.getElementById('subject');
     const klassSel=document.getElementById('klass');
@@ -7083,7 +7104,7 @@ const columnBMatch =
     }
     setFieldFromRaw('solutionText',q.solutionText||'');
 
-    setDifficultyOnlyMode(difficultyOnly);
+    setDifficultyOnlyMode(false);
 
     const qFormCard=document.getElementById('questionFormCard');
     if(qFormCard) qFormCard.scrollIntoView({behavior:'smooth'});
