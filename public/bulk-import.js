@@ -54,6 +54,25 @@
       defaultDiff:    val('bqMetaDiff') || 'Medium',
     };
   }
+   // ================================================================
+// CHAPTER SOURCE OF TRUTH
+// ================================================================
+// The chapter assigned to a question must ALWAYS come from
+// the Bulk Import dropdown. Imported @chapter/chapter metadata
+// is allowed and parsed, but it can NEVER override the dropdown.
+// ================================================================
+
+function applySelectedChapter(question, selectedChapter) {
+  if (!question) return question;
+
+  const chapter =
+    String(selectedChapter || '').trim();
+
+  question.chapter =
+    chapter || 'General';
+
+  return question;
+}
 
   function val(id) {
     const el = document.getElementById(id);
@@ -538,7 +557,7 @@ const hasFlexibleMatchColumns =
       // Priority: Inline @tag > Overrides > Meta panel default
       const finalSubject = inline.subject || overrides.subject || meta.subject;
       const finalKlass   = inline.klass || overrides.klass || meta.klass;
-     const finalChapter = meta.chapter;
+      const finalChapter = meta.chapter;
       
       const { concept, confidence } = detectConcept(qText, finalChapter, inline.concept);
       const difficulty = detectDifficulty(qText, opts, solText, inline.difficulty || overrides.difficulty);
@@ -1196,21 +1215,37 @@ if (mode === 'col1') {
   // ================================================================
   // PIPELINE orchestrator
   // ================================================================
-  function parseText(rawText) {
-    const meta = getMeta();
-    
-    // Stage 1: Question Boundary Detection
-    const rawBlocks = splitIntoRawBlocks(rawText);
+ function parseText(rawText) {
+  const meta = getMeta();
 
-    // Stage 2 & 3: Type Detection & Dispatch to Dedicated Parser
-    const questions = rawBlocks.map(block => {
-      const qType = detectBlockType(block);
-      const parser = ParserRegistry.get(qType);
-      return parser.parse(block, meta);
-    });
+  // Stage 1: Question Boundary Detection
+  const rawBlocks = splitIntoRawBlocks(rawText);
 
-    return questions;
-  }
+  // Stage 2 & 3: Type Detection & Dispatch to Dedicated Parser
+  const questions = rawBlocks.map(block => {
+    const qType = detectBlockType(block);
+    const parser = ParserRegistry.get(qType);
+    return parser.parse(block, meta);
+  });
+
+  // ================================================================
+  // CHAPTER SOURCE OF TRUTH
+  // ================================================================
+  // The chapter selected in the Bulk Import dropdown is authoritative.
+  // Any @chapter/chapter metadata inside imported content is ignored
+  // for chapter assignment.
+  //
+  // IMPORTANT:
+  // This does not change question parsing, question type detection,
+  // subject detection, class detection, LaTeX processing, etc.
+  // ================================================================
+
+  questions.forEach(question => {
+    question.chapter = meta.chapter;
+  });
+
+  return questions;
+}
 
   // ── VALIDATION ENGINE ─────────────────────────────────────────────
   function validateAll(questions) {
@@ -1811,28 +1846,41 @@ async function checkPreviousImports(questions, requestId) {
   }
 
   function runParse() {
-    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
-    if (!ta) return;
-    const text = ta.value;
-    if (!text.trim()) {
-      state.duplicateRequestId++;
-      state.duplicateCheckPromise = Promise.resolve();
-      state.parsedQuestions = [];
-      renderCards();
-      return;
-    }
+  const ta =
+    document.getElementById('bqTextarea') ||
+    document.getElementById('bulkEditorTextarea');
 
-    const questions = parseText(text);
-    validateAll(questions);
-    checkDuplicates(
-  questions
-);
-    state.parsedQuestions = questions;
+  if (!ta) return;
+
+  const text = ta.value;
+
+  if (!text.trim()) {
+    state.duplicateRequestId++;
+    state.duplicateCheckPromise = Promise.resolve();
+    state.parsedQuestions = [];
     renderCards();
-
-    const requestId = ++state.duplicateRequestId;
-    state.duplicateCheckPromise = checkPreviousImports(questions, requestId);
+    return;
   }
+
+  const questions = parseText(text);
+
+  validateAll(questions);
+
+  checkDuplicates(questions);
+
+  state.parsedQuestions = questions;
+
+  renderCards();
+
+  const requestId =
+    ++state.duplicateRequestId;
+
+  state.duplicateCheckPromise =
+    checkPreviousImports(
+      questions,
+      requestId
+    );
+}
 
   function scheduleReparse() {
 
@@ -2303,19 +2351,37 @@ if (duplicateKey) {
   }
 
   async function executeBulkImport() {
-    if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('bulk_import')) {
-      if (typeof showToast === 'function') showToast('You do not have permission to import questions.', true);
-      return;
+  if (
+    typeof Auth !== 'undefined' &&
+    Auth.can &&
+    !Auth.can('bulk_import')
+  ) {
+    if (typeof showToast === 'function') {
+      showToast(
+        'You do not have permission to import questions.',
+        true
+      );
     }
-   const meta = getMeta();
-
-if (!meta.chapter || meta.chapter === 'General') {
-  if (typeof showToast === 'function') {
-    showToast('Please select a chapter from the Chapter dropdown before importing.', true);
+    return;
   }
-  return;
-}
-    await state.duplicateCheckPromise;
+
+  const meta = getMeta();
+
+  // Chapter must be selected from the Bulk Import dropdown.
+  if (
+    !meta.chapter ||
+    meta.chapter === 'General'
+  ) {
+    if (typeof showToast === 'function') {
+      showToast(
+        'Please select a chapter from the Chapter dropdown before importing.',
+        true
+      );
+    }
+    return;
+  }
+
+  await state.duplicateCheckPromise;
 
     const importList = state.parsedQuestions.filter(q => {
       if (q.ignored) return false;
