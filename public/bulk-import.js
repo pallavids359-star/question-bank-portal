@@ -62,17 +62,7 @@
 // is allowed and parsed, but it can NEVER override the dropdown.
 // ================================================================
 
-function applySelectedChapter(question, selectedChapter) {
-  if (!question) return question;
 
-  const chapter =
-    String(selectedChapter || '').trim();
-
-  question.chapter =
-    chapter || 'General';
-
-  return question;
-}
 
   function val(id) {
     const el = document.getElementById(id);
@@ -2350,38 +2340,34 @@ if (duplicateKey) {
     return el ? el.value.trim() : '';
   }
 
-  async function executeBulkImport() {
-  if (
-    typeof Auth !== 'undefined' &&
-    Auth.can &&
-    !Auth.can('bulk_import')
-  ) {
-    if (typeof showToast === 'function') {
-      showToast(
-        'You do not have permission to import questions.',
-        true
-      );
+    async function executeBulkImport() {
+    if (
+      typeof Auth !== 'undefined' &&
+      Auth.can &&
+      !Auth.can('bulk_import')
+    ) {
+      if (typeof showToast === 'function') {
+        showToast(
+          'You do not have permission to import questions.',
+          true
+        );
+      }
+      return;
     }
-    return;
-  }
 
-  const meta = getMeta();
+    const meta = getMeta();
 
-  // Chapter must be selected from the Bulk Import dropdown.
-  if (
-    !meta.chapter ||
-    meta.chapter === 'General'
-  ) {
-    if (typeof showToast === 'function') {
-      showToast(
-        'Please select a chapter from the Chapter dropdown before importing.',
-        true
-      );
+    if (!meta.chapter || meta.chapter === 'General') {
+      if (typeof showToast === 'function') {
+        showToast(
+          'Please select a chapter from the Chapter dropdown before importing.',
+          true
+        );
+      }
+      return;
     }
-    return;
-  }
 
-  await state.duplicateCheckPromise;
+    await state.duplicateCheckPromise;
 
     const importList = state.parsedQuestions.filter(q => {
       if (q.ignored) return false;
