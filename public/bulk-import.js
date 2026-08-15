@@ -191,7 +191,7 @@
       { key: 'type',       regex: /^\s*(?:@type|@qtype|type|question\s*type)\s*[:=]\s*(.+)/i },
       { key: 'difficulty', regex: /^\s*(?:@difficulty|@level|difficulty|level)\s*[:=]\s*(.+)/i },
       { key: 'subject',    regex: /^\s*(?:@subject|subject)\s*[:=]\s*(.+)/i },
-     
+      { key: 'chapter', regex: /^\s*(?:@chapter|chapter)\s*[:=]\s*(.+)/i },
       { key: 'klass',      regex: /^\s*(?:@class|@klass|class|grade)\s*[:=]\s*(.+)/i },
     ];
 
