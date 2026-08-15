@@ -54,15 +54,6 @@
       defaultDiff:    val('bqMetaDiff') || 'Medium',
     };
   }
-   // ================================================================
-// CHAPTER SOURCE OF TRUTH
-// ================================================================
-// The chapter assigned to a question must ALWAYS come from
-// the Bulk Import dropdown. Imported @chapter/chapter metadata
-// is allowed and parsed, but it can NEVER override the dropdown.
-// ================================================================
-
-
 
   function val(id) {
     const el = document.getElementById(id);
@@ -200,7 +191,7 @@
       { key: 'type',       regex: /^\s*(?:@type|@qtype|type|question\s*type)\s*[:=]\s*(.+)/i },
       { key: 'difficulty', regex: /^\s*(?:@difficulty|@level|difficulty|level)\s*[:=]\s*(.+)/i },
       { key: 'subject',    regex: /^\s*(?:@subject|subject)\s*[:=]\s*(.+)/i },
-      { key: 'chapter', regex: /^\s*(?:@chapter|chapter)\s*[:=]\s*(.+)/i },
+      { key: 'chapter',    regex: /^\s*(?:@chapter|chapter)\s*[:=]\s*(.+)/i },
       { key: 'klass',      regex: /^\s*(?:@class|@klass|class|grade)\s*[:=]\s*(.+)/i },
     ];
 
@@ -547,7 +538,7 @@ const hasFlexibleMatchColumns =
       // Priority: Inline @tag > Overrides > Meta panel default
       const finalSubject = inline.subject || overrides.subject || meta.subject;
       const finalKlass   = inline.klass || overrides.klass || meta.klass;
-      const finalChapter = meta.chapter;
+      const finalChapter = inline.chapter || overrides.chapter || meta.chapter;
       
       const { concept, confidence } = detectConcept(qText, finalChapter, inline.concept);
       const difficulty = detectDifficulty(qText, opts, solText, inline.difficulty || overrides.difficulty);
@@ -1205,37 +1196,21 @@ if (mode === 'col1') {
   // ================================================================
   // PIPELINE orchestrator
   // ================================================================
- function parseText(rawText) {
-  const meta = getMeta();
+  function parseText(rawText) {
+    const meta = getMeta();
+    
+    // Stage 1: Question Boundary Detection
+    const rawBlocks = splitIntoRawBlocks(rawText);
 
-  // Stage 1: Question Boundary Detection
-  const rawBlocks = splitIntoRawBlocks(rawText);
+    // Stage 2 & 3: Type Detection & Dispatch to Dedicated Parser
+    const questions = rawBlocks.map(block => {
+      const qType = detectBlockType(block);
+      const parser = ParserRegistry.get(qType);
+      return parser.parse(block, meta);
+    });
 
-  // Stage 2 & 3: Type Detection & Dispatch to Dedicated Parser
-  const questions = rawBlocks.map(block => {
-    const qType = detectBlockType(block);
-    const parser = ParserRegistry.get(qType);
-    return parser.parse(block, meta);
-  });
-
-  // ================================================================
-  // CHAPTER SOURCE OF TRUTH
-  // ================================================================
-  // The chapter selected in the Bulk Import dropdown is authoritative.
-  // Any @chapter/chapter metadata inside imported content is ignored
-  // for chapter assignment.
-  //
-  // IMPORTANT:
-  // This does not change question parsing, question type detection,
-  // subject detection, class detection, LaTeX processing, etc.
-  // ================================================================
-
-  questions.forEach(question => {
-    question.chapter = meta.chapter;
-  });
-
-  return questions;
-}
+    return questions;
+  }
 
   // ── VALIDATION ENGINE ─────────────────────────────────────────────
   function validateAll(questions) {
@@ -1836,41 +1811,28 @@ async function checkPreviousImports(questions, requestId) {
   }
 
   function runParse() {
-  const ta =
-    document.getElementById('bqTextarea') ||
-    document.getElementById('bulkEditorTextarea');
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    if (!ta) return;
+    const text = ta.value;
+    if (!text.trim()) {
+      state.duplicateRequestId++;
+      state.duplicateCheckPromise = Promise.resolve();
+      state.parsedQuestions = [];
+      renderCards();
+      return;
+    }
 
-  if (!ta) return;
-
-  const text = ta.value;
-
-  if (!text.trim()) {
-    state.duplicateRequestId++;
-    state.duplicateCheckPromise = Promise.resolve();
-    state.parsedQuestions = [];
+    const questions = parseText(text);
+    validateAll(questions);
+    checkDuplicates(
+  questions
+);
+    state.parsedQuestions = questions;
     renderCards();
-    return;
+
+    const requestId = ++state.duplicateRequestId;
+    state.duplicateCheckPromise = checkPreviousImports(questions, requestId);
   }
-
-  const questions = parseText(text);
-
-  validateAll(questions);
-
-  checkDuplicates(questions);
-
-  state.parsedQuestions = questions;
-
-  renderCards();
-
-  const requestId =
-    ++state.duplicateRequestId;
-
-  state.duplicateCheckPromise =
-    checkPreviousImports(
-      questions,
-      requestId
-    );
-}
 
   function scheduleReparse() {
 
@@ -2265,7 +2227,7 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     const payload = {
       subject: q.subject || meta.subject,
       klass: q.klass || meta.klass,
-      chapter: meta.chapter,
+      chapter: q.chapter || meta.chapter,
       topic: q.concept || q.topic || 'General',
       exams: q.exams && q.exams.length ? q.exams : meta.exams,
       qType: q.qType || 'mcq_single',
@@ -2340,30 +2302,9 @@ if (duplicateKey) {
     return el ? el.value.trim() : '';
   }
 
-    async function executeBulkImport() {
-    if (
-      typeof Auth !== 'undefined' &&
-      Auth.can &&
-      !Auth.can('bulk_import')
-    ) {
-      if (typeof showToast === 'function') {
-        showToast(
-          'You do not have permission to import questions.',
-          true
-        );
-      }
-      return;
-    }
-
-    const meta = getMeta();
-
-    if (!meta.chapter || meta.chapter === 'General') {
-      if (typeof showToast === 'function') {
-        showToast(
-          'Please select a chapter from the Chapter dropdown before importing.',
-          true
-        );
-      }
+  async function executeBulkImport() {
+    if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('bulk_import')) {
+      if (typeof showToast === 'function') showToast('You do not have permission to import questions.', true);
       return;
     }
 
@@ -2389,11 +2330,11 @@ if (duplicateKey) {
       btn.textContent = 'Importing...';
     }
 
-    
+    const meta = getMeta();
     const payload = importList.map(q => ({
       subject: q.subject || meta.subject,
       klass: q.klass || meta.klass,
-      chapter: meta.chapter,
+      chapter: q.chapter || meta.chapter,
       topic: q.concept || q.topic || 'General',
       exams: q.exams && q.exams.length ? q.exams : meta.exams,
       qType: q.qType || 'mcq_single',
