@@ -191,7 +191,7 @@
       { key: 'type',       regex: /^\s*(?:@type|@qtype|type|question\s*type)\s*[:=]\s*(.+)/i },
       { key: 'difficulty', regex: /^\s*(?:@difficulty|@level|difficulty|level)\s*[:=]\s*(.+)/i },
       { key: 'subject',    regex: /^\s*(?:@subject|subject)\s*[:=]\s*(.+)/i },
-      { key: 'chapter',    regex: /^\s*(?:@chapter|chapter)\s*[:=]\s*(.+)/i },
+     
       { key: 'klass',      regex: /^\s*(?:@class|@klass|class|grade)\s*[:=]\s*(.+)/i },
     ];
 
@@ -538,7 +538,7 @@ const hasFlexibleMatchColumns =
       // Priority: Inline @tag > Overrides > Meta panel default
       const finalSubject = inline.subject || overrides.subject || meta.subject;
       const finalKlass   = inline.klass || overrides.klass || meta.klass;
-      const finalChapter = inline.chapter || overrides.chapter || meta.chapter;
+     const finalChapter = meta.chapter;
       
       const { concept, confidence } = detectConcept(qText, finalChapter, inline.concept);
       const difficulty = detectDifficulty(qText, opts, solText, inline.difficulty || overrides.difficulty);
@@ -2227,7 +2227,7 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     const payload = {
       subject: q.subject || meta.subject,
       klass: q.klass || meta.klass,
-      chapter: q.chapter || meta.chapter,
+      chapter: meta.chapter,
       topic: q.concept || q.topic || 'General',
       exams: q.exams && q.exams.length ? q.exams : meta.exams,
       qType: q.qType || 'mcq_single',
@@ -2307,7 +2307,14 @@ if (duplicateKey) {
       if (typeof showToast === 'function') showToast('You do not have permission to import questions.', true);
       return;
     }
+   const meta = getMeta();
 
+if (!meta.chapter || meta.chapter === 'General') {
+  if (typeof showToast === 'function') {
+    showToast('Please select a chapter from the Chapter dropdown before importing.', true);
+  }
+  return;
+}
     await state.duplicateCheckPromise;
 
     const importList = state.parsedQuestions.filter(q => {
@@ -2330,11 +2337,11 @@ if (duplicateKey) {
       btn.textContent = 'Importing...';
     }
 
-    const meta = getMeta();
+    
     const payload = importList.map(q => ({
       subject: q.subject || meta.subject,
       klass: q.klass || meta.klass,
-      chapter: q.chapter || meta.chapter,
+      chapter: meta.chapter,
       topic: q.concept || q.topic || 'General',
       exams: q.exams && q.exams.length ? q.exams : meta.exams,
       qType: q.qType || 'mcq_single',
