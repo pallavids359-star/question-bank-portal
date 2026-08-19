@@ -963,6 +963,54 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
     details: { subject: data.subject, qType: data.q_type },
   }).catch(err => console.warn('Audit log failed:', err.message));
 
+  // Notify original reviewer if an active/pending review is associated with this question
+  try {
+    let reviewerId = null;
+
+    const { data: reviewNotif } = await supabase
+      .from('notifications')
+      .select('sender_id, sender_name, type')
+      .eq('question_id', req.params.id)
+      .in('type', ['question_review', 'question_accepted', 'question_acceptance_reversed'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (reviewNotif && reviewNotif.type === 'question_review' && reviewNotif.sender_id) {
+      reviewerId = reviewNotif.sender_id;
+    } else if (existingQuestion.review_status === 'reviewed' && existingQuestion.reviewed_by) {
+      reviewerId = existingQuestion.reviewed_by;
+    }
+
+    if (reviewerId) {
+      const updaterName = req.user?.name || 'Editor';
+      const questionPreview = String(data.question || existingQuestion.question || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      const notifPayload = {
+        recipient_id: reviewerId,
+        sender_id: isValidUuid(req.user?.userId) ? req.user.userId : null,
+        sender_name: updaterName,
+        question_id: req.params.id,
+        type: 'question_updated',
+        title: 'Question Updated',
+        message: `The question you reviewed has been updated by ${updaterName}. Please review the updated version.`,
+        metadata: {
+          chapter: data.chapter || existingQuestion.chapter || '',
+          concept: data.topic || existingQuestion.topic || '',
+          preview: questionPreview,
+        },
+      };
+
+      let insertRes = await supabase.from('notifications').insert(notifPayload);
+      if (insertRes.error && (insertRes.error.message.includes('recipient_id') || insertRes.error.message.includes('column'))) {
+        delete notifPayload.recipient_id;
+        notifPayload.user_id = reviewerId;
+        await supabase.from('notifications').insert(notifPayload).catch(() => {});
+      }
+    }
+  } catch (notifErr) {
+    console.warn('Review update notification warning:', notifErr.message);
+  }
+
   res.json(toApi(data));
 });
 
