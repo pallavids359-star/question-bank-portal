@@ -16,6 +16,12 @@ test('Admin question distribution groups Subject, Class, Chapter and Concept', (
   assert.match(frontend, /classData\.chapters/);
 });
 
+test('Dashboard uses count-only totals and only required question analytics columns', () => {
+  assert.match(dashboard, /select\('id', \{ count: 'exact', head: true \}\)/);
+  assert.match(dashboard, /readAll\('questions', 'subject, klass, chapter, topic, created_by, created_by_name'\)/);
+  assert.doesNotMatch(dashboard, /readAll\('questions', 'id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by, created_by_name, updated_by, updated_by_name'\)/);
+});
+
 test('Editor difficulty is assigned with Easy, Medium and Hard buttons', () => {
   assert.match(frontend, /\['Easy','Medium','Hard'\]\.forEach/);
   assert.match(frontend, /QP\.difficulty\(q\.id,level\)/);

@@ -25,27 +25,53 @@ async function readAll(table, columns = '*') {
   return rows;
 }
 
+async function readAllSince(table, columns, field, cutoff) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .gte(field, cutoff.toISOString())
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw new Error(`${table}: ${error.message}`);
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+async function countRows(table, applyFilters) {
+  let query = supabase
+    .from(table)
+    .select('id', { count: 'exact', head: true });
+  if (applyFilters) query = applyFilters(query);
+  const { count, error } = await query;
+  if (error) throw new Error(`${table}: ${error.message}`);
+  return Number(count) || 0;
+}
+
 function timeValue(value) {
   const valueAsTime = value ? new Date(value).getTime() : NaN;
   return Number.isFinite(valueAsTime) ? valueAsTime : 0;
-}
-
-function isOnOrAfter(value, cutoff) {
-  const valueAsTime = timeValue(value);
-  return valueAsTime > 0 && valueAsTime >= cutoff.getTime();
-}
-
-function recentRows(rows, field) {
-  return rows
-    .filter(row => timeValue(row[field]) > 0)
-    .sort((a, b) => timeValue(b[field]) - timeValue(a[field]))
-    .slice(0, 5);
 }
 
 async function readRecentQuestions(field) {
   const { data, error } = await supabase
     .from('questions')
     .select('id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by_name, updated_by_name')
+    .not(field, 'is', null)
+    .order(field, { ascending: false })
+    .limit(5);
+  if (error) throw error;
+  return data || [];
+}
+
+async function readRecentDashboardQuestions(field) {
+  const { data, error } = await supabase
+    .from('questions')
+    .select('id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by, created_by_name, updated_by, updated_by_name')
     .not(field, 'is', null)
     .order(field, { ascending: false })
     .limit(5);
@@ -106,7 +132,7 @@ function sessionDurationSeconds(session, nowMs) {
 function buildUserTimeStats(
   users,
   sessions,
-  questions,
+  questionsTodayRows,
   now
 ) {
 
@@ -161,16 +187,12 @@ function buildUserTimeStats(
 
       // Number of questions added TODAY
       const questionsToday =
-        questions.filter(question => {
+        questionsTodayRows.filter(question => {
 
           return (
             questionBelongsToUser(
               question,
               user
-            ) &&
-            isOnOrAfter(
-              question.created_at,
-              todayStartDate
             )
           );
 
@@ -299,17 +321,33 @@ router.get('/recent', requireAuth, requireRole('admin'), async (req, res) => {
 // GET /api/dashboard
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const [questions, rawUsers, loginSessions] = await Promise.all([
-      readAll('questions', 'id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by, created_by_name, updated_by, updated_by_name'),
-      readAll('users', 'id, name, email, role, subject, status'),
-      readAll('login_history', 'user_id, status, login_time, logout_time, last_activity_at, duration_seconds'),
-    ]);
-
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const mondayOffset = (now.getDay() + 6) % 7;
     const week = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
     const month = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [
+      questions,
+      rawUsers,
+      loginSessions,
+      totalQuestions,
+      questionsWeek,
+      questionsMonth,
+      questionsTodayRows,
+      recentAddedRows,
+      recentEditedRows,
+    ] = await Promise.all([
+      readAll('questions', 'subject, klass, chapter, topic, created_by, created_by_name'),
+      readAll('users', 'id, name, email, role, subject, status'),
+      readAll('login_history', 'user_id, status, login_time, logout_time, last_activity_at, duration_seconds'),
+      countRows('questions'),
+      countRows('questions', query => query.gte('created_at', week.toISOString())),
+      countRows('questions', query => query.gte('created_at', month.toISOString())),
+      readAllSince('questions', 'created_by, created_by_name, created_at', 'created_at', today),
+      readRecentDashboardQuestions('created_at'),
+      readRecentDashboardQuestions('updated_at'),
+    ]);
 
     const subjects = new Set();
     const chapters = new Set();
@@ -410,11 +448,16 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
     const userTimeStats = buildUserTimeStats(
   users,
   loginSessions,
-  questions,
+  questionsTodayRows,
   now
 );
     // Supply a name when ownership IDs exist but the denormalized name columns do not.
-    const displayRows = questions.map(question => ({
+    const recentAdded = recentAddedRows.map(question => ({
+      ...question,
+      created_by_name: question.created_by_name || userNamesById.get(String(question.created_by || '')) || '',
+      updated_by_name: question.updated_by_name || userNamesById.get(String(question.updated_by || '')) || '',
+    }));
+    const recentEdited = recentEditedRows.map(question => ({
       ...question,
       created_by_name: question.created_by_name || userNamesById.get(String(question.created_by || '')) || '',
       updated_by_name: question.updated_by_name || userNamesById.get(String(question.updated_by || '')) || '',
@@ -496,7 +539,7 @@ questions.forEach(question => {
     .concepts[concept] += 1;
 });
     res.json({
-      totalQuestions: questions.length,
+      totalQuestions,
       totalSubjects: subjects.size,
       totalChapters: chapters.size,
       questionDistribution,
@@ -505,14 +548,14 @@ questions.forEach(question => {
       totalEditors: byRole.editor,
       totalViewers: byRole.viewer,
       totalUsers: users.length,
-      questionsToday: questions.filter(q => isOnOrAfter(q.created_at, today)).length,
-      questionsWeek: questions.filter(q => isOnOrAfter(q.created_at, week)).length,
-      questionsMonth: questions.filter(q => isOnOrAfter(q.created_at, month)).length,
+      questionsToday: questionsTodayRows.length,
+      questionsWeek,
+      questionsMonth,
       mostActiveUser: mostActiveEntry
         ? { name: mostActiveEntry[0], count: mostActiveEntry[1] }
         : null,
-      recentAdded: recentRows(displayRows, 'created_at'),
-      recentEdited: recentRows(displayRows, 'updated_at'),
+      recentAdded,
+      recentEdited,
       adderStats,
       userTimeStats,
       allUsers: users,

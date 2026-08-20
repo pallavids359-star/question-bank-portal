@@ -6209,7 +6209,7 @@ let userNotifications = [];
 let notificationQuestionToOpen = '';
 let notificationPollingTimer = null;
 let notificationRefreshInFlight = false;
-const NOTIFICATION_BADGE_INTERVAL_MS = 2 * 1000;
+const NOTIFICATION_BADGE_INTERVAL_MS = 60 * 1000;
 
 function setNotificationBadge(unread){
   const badge=document.getElementById('notificationBadge');

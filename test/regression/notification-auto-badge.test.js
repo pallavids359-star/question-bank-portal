@@ -15,7 +15,7 @@ const route = fs.readFileSync(
 );
 
 test('notification badge updates automatically without a page reload', () => {
-  assert.match(html, /NOTIFICATION_BADGE_INTERVAL_MS\s*=\s*2\s*\*\s*1000/);
+  assert.match(html, /NOTIFICATION_BADGE_INTERVAL_MS\s*=\s*60\s*\*\s*1000/);
   assert.match(html, /setInterval\(\s*refreshNotificationsIfVisible/);
   assert.match(html, /\/api\/notifications\/unread-count\?ts=/);
   assert.match(html, /setNotificationBadge\(result && result\.unread\)/);
