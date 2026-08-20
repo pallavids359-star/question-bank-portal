@@ -42,6 +42,13 @@ test('normal question catalogue contains only the requested syllabus changes', (
   ['The s-Block Elements', 'The p-Block Elements', 's-Block Elements']
     .forEach(chapter => assert.ok(!chapters['Chemistry-11'].includes(chapter)));
   assert.ok(!chapters['Chemistry-12'].includes('Surface Chemistry'));
+  ['Mathematics-12', 'Maths-12'].forEach(key => {
+    assert.ok(chapters[key].includes('Application of Derivatives'));
+    assert.ok(chapters[key].includes('Application of Integrals'));
+    assert.ok(chapters[key].includes('Three Dimensional Geometry'));
+    assert.ok(!chapters[key].includes('Applications of Derivatives'));
+    assert.ok(!chapters[key].includes('Applications of Integrals'));
+  });
 });
 
 test('Bulk Import catalogue contains the requested updated chapter set', () => {
@@ -49,6 +56,11 @@ test('Bulk Import catalogue contains the requested updated chapter set', () => {
 
   assert.ok(chapters['Chemistry-11'].includes('Thermodynamics'));
   assert.ok(!chapters['Chemistry-11'].includes('Chemical Thermodynamics'));
+  ['Mathematics-12', 'Maths-12'].forEach(key => {
+    assert.ok(chapters[key].includes('Application of Derivatives'));
+    assert.ok(chapters[key].includes('Application of Integrals'));
+    assert.ok(chapters[key].includes('Three Dimensional Geometry'));
+  });
 
   assert.ok(!chapters['Physics-11'].includes('Physical World'));
   [
