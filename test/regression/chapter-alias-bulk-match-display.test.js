@@ -11,25 +11,58 @@ const bulkCss = fs.readFileSync(path.join(root, 'public/bulk-import.css'), 'utf8
 test('bulk metadata uses a subject and class dependent chapter dropdown', () => {
   assert.match(html, /<select id="bqMetaChapter"/);
   assert.match(html, /function updateBulkChapterOptions\(presetChapter\)/);
+  assert.match(html, /var chapters = BULK_NCERT_CHAPTERS\[key\] \|\| \[\];/);
   assert.match(html, /bulkClassEl\.addEventListener\('change', updateBulkChapterOptions\)/);
   assert.doesNotMatch(html, /<input[^>]+id="bqMetaChapter"/);
 });
 
 test('requested chapter aliases are display-only and canonical dropdown names are present', () => {
   const requiredMappings = [
-    '"geometric optics/ray optics": "Ray Optics and Optical Instruments"',
+    '"geometric optics/ray optics": "Ray Optics And Optical Instruments"',
+    '"units and measurement": "Units and Measurements"',
+    '"current electricity (metre bridge, practical skills)": "Current Electricity"',
+    '"digital electronics": "Semiconductor Electronics: Materials, Devices and Simple Circuits"',
+    '"electrostatic potential & capacitance": "Electrostatic Potential and Capacitance"',
+    '"moving coil galvanometer": "Moving Charges and Magnetism"',
+    '"geometric optics": "Ray Optics And Optical Instruments"',
+    '"ray optics": "Ray Optics And Optical Instruments"',
+    '"magnetism and mater": "Magnetism and Matter"',
+    '"moving charges & magnetism": "Moving Charges and Magnetism"',
     '"magnetic effects of current": "Moving Charges and Magnetism"',
     '"magnetic force and motion of charge": "Moving Charges and Magnetism"',
     '"d and f block elements": "The d- and f- block Elements"',
-    '"3d geometry": "Three-dimensional Geometry"',
-    '"three dimensional geometry": "Three-dimensional Geometry"',
-    '"application of derivatives": "Applications of Derivatives"',
+    '"3d geometry": "Three Dimensional Geometry"',
+    '"three dimensional geometry": "Three Dimensional Geometry"',
+    '"application of derivative": "Application of Derivatives"',
+    '"application of derivatives": "Application of Derivatives"',
     '"exponential and logarithmic functions": "Continuity and Differentiability"',
-    '"thermodynamics and thermochemistry": "Chemical Thermodynamics"'
+    '"trigonometric ratios": "Trigonometric Functions"',
+    '"organic chemistry: some basic principles and techniques": "Organic Chemistry - Some Basic Principles and Techniques"',
+    '"chemical thermodynamics": "Thermodynamics"',
+    '"spontaneity": "Thermodynamics"',
+    '"thermodynamics & thermochemistry": "Thermodynamics"',
+    '"thermodynamics and thermochemistry": "Thermodynamics"',
+    '"bond parameters": "Chemical Bonding and Molecular Structure"',
+    '"common names of organic compounds": "Organic Chemistry - Some Basic Principles and Techniques"',
+    '"de broglie concept principle and heisenberg uncertainty principle": "Structure of Atom"',
+    '"alcohols phenols and ethers": "Alcohols, Phenols and Ethers"',
+    '"human health and diseases": "Human Health and Disease"'
   ];
   requiredMappings.forEach(mapping => assert.ok(html.includes(mapping), mapping));
   assert.match(html, /function chapterDisplayName\(subject, klass, chapter\)/);
   assert.doesNotMatch(html, /fetch\([^)]*chapter.*(?:UPDATE|DELETE)/i);
+});
+
+test('bulk import chapter assignment comes only from the selected dropdown', () => {
+  assert.match(bulkJs, /function selectedBulkChapter\(meta\)/);
+  assert.match(bulkJs, /window\.BULK_NCERT_CHAPTERS/);
+  assert.match(bulkJs, /const finalChapter = selectedBulkChapter\(meta\);/);
+  assert.doesNotMatch(bulkJs, /const finalChapter = inline\.chapter \|\| overrides\.chapter \|\| meta\.chapter;/);
+  assert.equal((bulkJs.match(/chapter: selectedChapter,/g) || []).length, 2);
+  assert.doesNotMatch(bulkJs, /chapter: q\.chapter \|\| meta\.chapter/);
+  assert.match(bulkJs, /Chapter must be selected from the dropdown\./);
+  assert.match(bulkJs, /Select a valid chapter from the dropdown\./);
+  assert.match(bulkJs, /chapterSelect\.addEventListener\('change', runParse\)/);
 });
 
 test('saved questions and bulk previews render match columns vertically', () => {
