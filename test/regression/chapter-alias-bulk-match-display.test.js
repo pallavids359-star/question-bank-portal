@@ -19,6 +19,11 @@ test('bulk metadata uses a subject and class dependent chapter dropdown', () => 
 test('requested chapter aliases are display-only and canonical dropdown names are present', () => {
   const requiredMappings = [
     '"geometric optics/ray optics": "Ray Optics And Optical Instruments"',
+    '"units and measurement": "Units and Measurements"',
+    '"current electricity (metre bridge, practical skills)": "Current Electricity"',
+    '"digital electronics": "Semiconductor Electronics: Materials, Devices and Simple Circuits"',
+    '"electrostatic potential & capacitance": "Electrostatic Potential and Capacitance"',
+    '"moving coil galvanometer": "Moving Charges and Magnetism"',
     '"geometric optics": "Ray Optics And Optical Instruments"',
     '"ray optics": "Ray Optics And Optical Instruments"',
     '"magnetism and mater": "Magnetism and Matter"',
@@ -33,9 +38,14 @@ test('requested chapter aliases are display-only and canonical dropdown names ar
     '"exponential and logarithmic functions": "Continuity and Differentiability"',
     '"trigonometric ratios": "Trigonometric Functions"',
     '"organic chemistry: some basic principles and techniques": "Organic Chemistry - Some Basic Principles and Techniques"',
-    '"thermodynamics": "Chemical Thermodynamics"',
-    '"thermodynamics & thermochemistry": "Chemical Thermodynamics"',
-    '"thermodynamics and thermochemistry": "Chemical Thermodynamics"',
+    '"chemical thermodynamics": "Thermodynamics"',
+    '"spontaneity": "Thermodynamics"',
+    '"thermodynamics & thermochemistry": "Thermodynamics"',
+    '"thermodynamics and thermochemistry": "Thermodynamics"',
+    '"bond parameters": "Chemical Bonding and Molecular Structure"',
+    '"common names of organic compounds": "Organic Chemistry - Some Basic Principles and Techniques"',
+    '"de broglie concept principle and heisenberg uncertainty principle": "Structure of Atom"',
+    '"alcohols phenols and ethers": "Alcohols, Phenols and Ethers"',
     '"human health and diseases": "Human Health and Disease"'
   ];
   requiredMappings.forEach(mapping => assert.ok(html.includes(mapping), mapping));

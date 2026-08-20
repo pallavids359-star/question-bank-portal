@@ -20,7 +20,7 @@ function extractBulkChapterMap() {
   return Function(`"use strict"; return (${match[1]});`)();
 }
 
-test('normal question catalogue remains unchanged', () => {
+test('normal question catalogue contains only the requested syllabus changes', () => {
   const chapters = extractChapterMap();
   const canonicalKeys = [
     'Physics-11', 'Physics-12',
@@ -31,16 +31,24 @@ test('normal question catalogue remains unchanged', () => {
 
   assert.deepEqual(
     canonicalKeys.map(key => chapters[key].length),
-    [15, 14, 13, 15, 14, 13, 19, 13]
+    [15, 14, 11, 14, 14, 13, 19, 13]
   );
   assert.equal(
     canonicalKeys.reduce((total, key) => total + chapters[key].length, 0),
-    116
+    113
   );
+  assert.ok(chapters['Chemistry-11'].includes('Thermodynamics'));
+  assert.ok(!chapters['Chemistry-11'].includes('Chemical Thermodynamics'));
+  ['The s-Block Elements', 'The p-Block Elements', 's-Block Elements']
+    .forEach(chapter => assert.ok(!chapters['Chemistry-11'].includes(chapter)));
+  assert.ok(!chapters['Chemistry-12'].includes('Surface Chemistry'));
 });
 
 test('Bulk Import catalogue contains the requested updated chapter set', () => {
   const chapters = extractBulkChapterMap();
+
+  assert.ok(chapters['Chemistry-11'].includes('Thermodynamics'));
+  assert.ok(!chapters['Chemistry-11'].includes('Chemical Thermodynamics'));
 
   assert.ok(!chapters['Physics-11'].includes('Physical World'));
   [

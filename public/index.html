@@ -4501,8 +4501,8 @@ const CLASSES  = ["11","12"];
 const NCERT_CHAPTERS = {
   "Physics-11": ["Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
   "Physics-12": ["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
-  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Chemical Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry – Some Basic Principles and Techniques","Hydrocarbons","The s-Block Elements","The p-Block Elements","Environmental Chemistry","Hydrogen"],
-  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","Surface Chemistry","General Principles and Processes of Isolation of Elements","The Solid State"],
+  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry - Some Basic Principles and Techniques","Hydrocarbons","Environmental Chemistry","Hydrogen"],
+  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","General Principles and Processes of Isolation of Elements","The Solid State"],
   "Mathematics-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
   "Maths-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
   "Mathematics-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Applications of Derivatives","Integrals","Applications of Integrals","Differential Equations","Vector Algebra","Three-dimensional Geometry","Linear Programming","Probability"],
@@ -4513,7 +4513,7 @@ const NCERT_CHAPTERS = {
 const BULK_NCERT_CHAPTERS = {
   "Physics-11": ["Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
   "Physics-12": ["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics And Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
-  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Chemical Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry - Some Basic Principles and Techniques","Hydrocarbons"],
+  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry - Some Basic Principles and Techniques","Hydrocarbons"],
   "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules"],
   "Mathematics-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
   "Maths-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
@@ -4528,7 +4528,19 @@ const EXAMS_BY_SUBJECT = {
   Biology: ["NEET", "KCET"]
 };
 const CHAPTER_NAME_ALIASES = {
+  "Physics-11": {
+    "units and measurement": "Units and Measurements",
+    "units and measurements": "Units and Measurements"
+  },
   "Physics-12": {
+    "current electricity": "Current Electricity",
+    "current electricity (metre bridge, practical skills)": "Current Electricity",
+    "digital electronics": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
+    "digital electronics (jee main 2024 archive)": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
+    "semiconductor electronics": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
+    "semiconductor electronics (": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
+    "electrostatic potential & capacitance": "Electrostatic Potential and Capacitance",
+    "moving coil galvanometer": "Moving Charges and Magnetism",
     "geometric optics/ray optics": "Ray Optics And Optical Instruments",
     "geometric optics": "Ray Optics And Optical Instruments",
     "ray optics": "Ray Optics And Optical Instruments",
@@ -4541,7 +4553,9 @@ const CHAPTER_NAME_ALIASES = {
   },
   "Chemistry-12": {
     "d and f block elements": "The d- and f- block Elements",
-    "the d- and f-block elements": "The d- and f- block Elements"
+    "the d- and f-block elements": "The d- and f- block Elements",
+    "the d and f-block elements": "The d- and f- block Elements",
+    "alcohols phenols and ethers": "Alcohols, Phenols and Ethers"
   },
   "Mathematics-12": {
     "3d geometry": "Three Dimensional Geometry",
@@ -4570,9 +4584,20 @@ const CHAPTER_NAME_ALIASES = {
   "Chemistry-11": {
     "organic chemistry – some basic principles and techniques": "Organic Chemistry - Some Basic Principles and Techniques",
     "organic chemistry: some basic principles and techniques": "Organic Chemistry - Some Basic Principles and Techniques",
-    "thermodynamics": "Chemical Thermodynamics",
-    "thermodynamics & thermochemistry": "Chemical Thermodynamics",
-    "thermodynamics and thermochemistry": "Chemical Thermodynamics"
+    "common names of organic compounds": "Organic Chemistry - Some Basic Principles and Techniques",
+    "practical chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
+    "practical inorganic chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
+    "practical organic chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
+    "practical physical chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
+    "chemical thermodynamics": "Thermodynamics",
+    "spontaneity": "Thermodynamics",
+    "thermodynamics & thermochemistry": "Thermodynamics",
+    "thermodynamics and thermochemistry": "Thermodynamics",
+    "bond parameters": "Chemical Bonding and Molecular Structure",
+    "lonic or electrovalent bond": "Chemical Bonding and Molecular Structure",
+    "ionic or electrovalent bond": "Chemical Bonding and Molecular Structure",
+    "kossel-lewis approach to chemical bonding": "Chemical Bonding and Molecular Structure",
+    "de broglie concept principle and heisenberg uncertainty principle": "Structure of Atom"
   },
   "Biology-12": {
     "human health and diseases": "Human Health and Disease"
