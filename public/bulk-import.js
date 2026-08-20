@@ -43,7 +43,7 @@
     return {
       subject:        sEl && sEl.value ? sEl.value.trim() : 'Physics',
       klass:          kEl && kEl.value ? kEl.value.trim() : '11',
-      chapter:        cEl && cEl.value ? cEl.value.trim() : 'General',
+      chapter:        cEl && cEl.value ? cEl.value.trim() : '',
       exams:          eEl && eEl.value ? [eEl.value.trim()] : ['NEET'],
       language:       val('bqMetaLanguage') || 'English',
       source:         val('bqMetaSource') || '',
@@ -58,6 +58,12 @@
   function val(id) {
     const el = document.getElementById(id);
     return el ? el.value.trim() : '';
+  }
+
+  function selectedBulkChapter(meta) {
+    const key = `${meta.subject}-${meta.klass}`;
+    const chapters = (window.BULK_NCERT_CHAPTERS && window.BULK_NCERT_CHAPTERS[key]) || [];
+    return chapters.includes(meta.chapter) ? meta.chapter : '';
   }
 
   // ── QUESTION TYPE LABELS ──────────────────────────────────────────
@@ -535,10 +541,10 @@ const hasFlexibleMatchColumns =
       const solText = overrides.solutionText || '';
       const opts = overrides.options || {};
 
-      // Priority: Inline @tag > Overrides > Meta panel default
+      // Chapter assignment is intentionally controlled only by the metadata dropdown.
       const finalSubject = inline.subject || overrides.subject || meta.subject;
       const finalKlass   = inline.klass || overrides.klass || meta.klass;
-      const finalChapter = inline.chapter || overrides.chapter || meta.chapter;
+      const finalChapter = selectedBulkChapter(meta);
       
       const { concept, confidence } = detectConcept(qText, finalChapter, inline.concept);
       const difficulty = detectDifficulty(qText, opts, solText, inline.difficulty || overrides.difficulty);
@@ -1215,12 +1221,13 @@ if (mode === 'col1') {
   // ── VALIDATION ENGINE ─────────────────────────────────────────────
   function validateAll(questions) {
     const meta = getMeta();
+    const selectedChapter = selectedBulkChapter(meta);
     questions.forEach((q, idx) => {
       q.errors = [];
       const num = idx + 1;
       if (!q.subject && !meta.subject) q.errors.push(`Question #${num}: Subject is required.`);
       if (!q.klass && !meta.klass) q.errors.push(`Question #${num}: Class is required.`);
-      if (!q.chapter && !meta.chapter) q.errors.push(`Question #${num}: Chapter is required.`);
+      if (!selectedChapter) q.errors.push(`Question #${num}: Chapter must be selected from the dropdown.`);
       if (!q.question || q.question.length < 5) q.errors.push(`Question #${num}: Question text is missing or too short.`);
 
       // TYPE-SPECIFIC VALIDATION RULES
@@ -2218,16 +2225,22 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     const q = state.parsedQuestions[idx];
     if (!q) return;
 
+    validateAll(state.parsedQuestions);
     if (!q.isValid) {
       if (typeof showToast === 'function') showToast(`Question #${idx + 1} has validation issues: ${(q.errors || []).join(', ')}`, true);
       return;
     }
 
     const meta = getMeta();
+    const selectedChapter = selectedBulkChapter(meta);
+    if (!selectedChapter) {
+      if (typeof showToast === 'function') showToast('Select a valid chapter from the dropdown.', true);
+      return;
+    }
     const payload = {
       subject: q.subject || meta.subject,
       klass: q.klass || meta.klass,
-      chapter: q.chapter || meta.chapter,
+      chapter: selectedChapter,
       topic: q.concept || q.topic || 'General',
       exams: q.exams && q.exams.length ? q.exams : meta.exams,
       qType: q.qType || 'mcq_single',
@@ -2310,6 +2323,14 @@ if (duplicateKey) {
 
     await state.duplicateCheckPromise;
 
+    const meta = getMeta();
+    const selectedChapter = selectedBulkChapter(meta);
+    if (!selectedChapter) {
+      if (typeof showToast === 'function') showToast('Select a valid chapter from the dropdown.', true);
+      return;
+    }
+    validateAll(state.parsedQuestions);
+
     const importList = state.parsedQuestions.filter(q => {
       if (q.ignored) return false;
       if (!q.isValid) return false;
@@ -2330,11 +2351,10 @@ if (duplicateKey) {
       btn.textContent = 'Importing...';
     }
 
-    const meta = getMeta();
     const payload = importList.map(q => ({
       subject: q.subject || meta.subject,
       klass: q.klass || meta.klass,
-      chapter: q.chapter || meta.chapter,
+      chapter: selectedChapter,
       topic: q.concept || q.topic || 'General',
       exams: q.exams && q.exams.length ? q.exams : meta.exams,
       qType: q.qType || 'mcq_single',
@@ -2566,6 +2586,7 @@ if (ta) {
     const statusFilter = document.getElementById('bqFilterStatus') || document.getElementById('bulkFilterStatus');
     const dupFilter = document.getElementById('bqFilterDup') || document.getElementById('bulkFilterDup');
     const conceptFilter = document.getElementById('bqFilterConcept') || document.getElementById('bulkFilterConcept');
+    const chapterSelect = document.getElementById('bqMetaChapter');
 
     if (searchInput) searchInput.addEventListener('input', (e) => { state.filterSearch = e.target.value; renderCards(); });
     if (typeFilter) typeFilter.addEventListener('change', (e) => { state.filterType = e.target.value; renderCards(); });
@@ -2573,6 +2594,7 @@ if (ta) {
     if (statusFilter) statusFilter.addEventListener('change', (e) => { state.filterStatus = e.target.value; renderCards(); });
     if (dupFilter) dupFilter.addEventListener('change', (e) => { state.filterDup = e.target.value; renderCards(); });
     if (conceptFilter) conceptFilter.addEventListener('change', (e) => { state.filterSearch = e.target.value; renderCards(); });
+    if (chapterSelect) chapterSelect.addEventListener('change', runParse);
   }
 
   const _global = typeof window !== 'undefined' ? window : globalThis;

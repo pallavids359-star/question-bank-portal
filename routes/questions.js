@@ -4,6 +4,7 @@ const supabase = require('../lib/supabase');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');
+const { chapterDisplayName, chapterStoredAliases } = require('../lib/chapter-aliases');
 
 const router = express.Router();
 
@@ -556,7 +557,12 @@ function applyQuestionFilters(query, params) {
   const requestedType = String(params.qType || '').toLowerCase();
 
   if (klass) query = query.in('klass', [klass, `Class ${klass}`]);
-  if (chapter) query = query.eq('chapter', chapter);
+  if (chapter) {
+    const storedChapters = chapterStoredAliases(params.subject, klass, chapter);
+    query = storedChapters.length > 1
+      ? query.in('chapter', storedChapters)
+      : query.eq('chapter', storedChapters[0]);
+  }
   if (concept) query = query.eq('topic', concept);
 
   if (requestedType) {
@@ -650,7 +656,7 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       !klass || String(row.klass || '').replace(/^class\s*/i, '').trim() === klass
     );
     const chapterRows = classRows.filter(row =>
-      !chapter || String(row.chapter || '') === chapter
+      !chapter || chapterDisplayName(row.subject, row.klass, row.chapter) === chapter
     );
 
     res.json({
@@ -658,7 +664,9 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
         ? [assigned]
         : unique(accessibleRows.map(row => canonicalSubject(row.subject)).filter(value => value !== 'General')),
       classes: unique(subjectRows.map(row => String(row.klass || '').replace(/^class\s*/i, '').trim())),
-      chapters: unique(classRows.map(row => row.chapter).filter(value => value !== 'General')),
+      chapters: unique(classRows
+        .map(row => chapterDisplayName(row.subject, row.klass, row.chapter))
+        .filter(value => value !== 'General')),
       concepts: unique(chapterRows.map(row => row.topic).filter(value => value !== 'General')),
       types: ['mcq_single', 'assertion_reason', 'match', 'numerical', 'true_false', 'diagram_based', 'statement_based'],
     });
