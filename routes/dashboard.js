@@ -6,6 +6,7 @@ const { toLogicalUser } = require('../lib/user-role');
 
 const router = express.Router();
 const PAGE_SIZE = 1000;
+let dashboardAggregatesSupported = true;
 
 // Read every real row without naming optional columns. Older installations may
 // not yet have ownership/difficulty fields, but the dashboard must still load.
@@ -50,6 +51,103 @@ async function countRows(table, applyFilters) {
   const { count, error } = await query;
   if (error) throw new Error(`${table}: ${error.message}`);
   return Number(count) || 0;
+}
+
+async function readAllGroupedQuestions(columns, orderColumns) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    let query = supabase
+      .from('questions')
+      .select(columns);
+    orderColumns.forEach(column => {
+      query = query.order(column, { ascending: true, nullsFirst: true });
+    });
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+function groupQuestionRows(rows) {
+  const distributionMap = new Map();
+  const contributionMap = new Map();
+
+  rows.forEach(question => {
+    const distributionKey = JSON.stringify([
+      question.subject,
+      question.klass,
+      question.chapter,
+      question.topic,
+    ]);
+    const distribution = distributionMap.get(distributionKey);
+    if (distribution) {
+      distribution.questionCount += 1;
+    } else {
+      distributionMap.set(distributionKey, {
+        subject: question.subject,
+        klass: question.klass,
+        chapter: question.chapter,
+        topic: question.topic,
+        questionCount: 1,
+      });
+    }
+
+    const contributionKey = JSON.stringify([
+      question.created_by,
+      question.created_by_name,
+    ]);
+    const contribution = contributionMap.get(contributionKey);
+    if (contribution) {
+      contribution.questionCount += 1;
+    } else {
+      contributionMap.set(contributionKey, {
+        created_by: question.created_by,
+        created_by_name: question.created_by_name,
+        questionCount: 1,
+      });
+    }
+  });
+
+  return {
+    distributionRows: [...distributionMap.values()],
+    contributionRows: [...contributionMap.values()],
+  };
+}
+
+async function readDashboardQuestionGroups() {
+  if (dashboardAggregatesSupported) {
+    try {
+      const [distributionRows, contributionRows] = await Promise.all([
+        readAllGroupedQuestions(
+          'subject, klass, chapter, topic, question_count:id.count()',
+          ['subject', 'klass', 'chapter', 'topic']
+        ),
+        readAllGroupedQuestions(
+          'created_by, created_by_name, question_count:id.count()',
+          ['created_by', 'created_by_name']
+        ),
+      ]);
+      return {
+        distributionRows: distributionRows.map(row => ({
+          ...row,
+          questionCount: Number(row.question_count) || 0,
+        })),
+        contributionRows: contributionRows.map(row => ({
+          ...row,
+          questionCount: Number(row.question_count) || 0,
+        })),
+      };
+    } catch (error) {
+      dashboardAggregatesSupported = false;
+      console.warn('[dashboard] PostgREST aggregates unavailable; using compatibility reader:', error.message);
+    }
+  }
+
+  const rows = await readAll('questions', 'subject, klass, chapter, topic, created_by, created_by_name');
+  return groupQuestionRows(rows);
 }
 
 function timeValue(value) {
@@ -328,7 +426,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
     const month = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const [
-      questions,
+      questionGroups,
       rawUsers,
       loginSessions,
       totalQuestions,
@@ -338,7 +436,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       recentAddedRows,
       recentEditedRows,
     ] = await Promise.all([
-      readAll('questions', 'subject, klass, chapter, topic, created_by, created_by_name'),
+      readDashboardQuestionGroups(),
       readAll('users', 'id, name, email, role, subject, status'),
       readAll('login_history', 'user_id, status, login_time, logout_time, last_activity_at, duration_seconds'),
       countRows('questions'),
@@ -351,7 +449,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
 
     const subjects = new Set();
     const chapters = new Set();
-    questions.forEach(question => {
+    questionGroups.distributionRows.forEach(question => {
       const rawSubject = String(question.subject || '').trim();
       const subject = rawSubject === 'Maths' ? 'Mathematics' : rawSubject;
       const chapter = String(question.chapter || '').trim();
@@ -375,20 +473,21 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
     const activityMap = new Map();
     const contributionCountsById = new Map();
     const contributionCountsByName = new Map();
-    questions.forEach(question => {
+    questionGroups.contributionRows.forEach(question => {
+      const questionCount = Number(question.questionCount) || 0;
       const owner = String(
         question.created_by_name ||
         userNamesById.get(String(question.created_by || '')) ||
         ''
       ).trim();
-      if (owner) activityMap.set(owner, (activityMap.get(owner) || 0) + 1);
+      if (owner) activityMap.set(owner, (activityMap.get(owner) || 0) + questionCount);
       if (question.created_by) {
         const key = String(question.created_by);
-        contributionCountsById.set(key, (contributionCountsById.get(key) || 0) + 1);
+        contributionCountsById.set(key, (contributionCountsById.get(key) || 0) + questionCount);
       }
       if (question.created_by_name) {
         const key = String(question.created_by_name).trim().toLowerCase();
-        contributionCountsByName.set(key, (contributionCountsByName.get(key) || 0) + 1);
+        contributionCountsByName.set(key, (contributionCountsByName.get(key) || 0) + questionCount);
       }
     });
     const mostActiveEntry = [...activityMap.entries()].sort((a, b) => b[1] - a[1])[0];
@@ -402,12 +501,13 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   .map(user => {
 
     const questionCount =
-      questions.filter(question =>
-        questionBelongsToUser(
-          question,
-          user
-        )
-      ).length;
+      questionGroups.contributionRows.reduce(
+        (total, question) =>
+          questionBelongsToUser(question, user)
+            ? total + (Number(question.questionCount) || 0)
+            : total,
+        0
+      );
 
     return {
 
@@ -468,7 +568,10 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
 
 const questionDistribution = {};
 
-questions.forEach(question => {
+questionGroups.distributionRows.forEach(question => {
+
+  const groupedQuestionCount =
+    Number(question.questionCount) || 0;
 
   const subject = String(
     question.subject || 'General'
@@ -494,7 +597,7 @@ questions.forEach(question => {
   }
 
   // Subject total
-  questionDistribution[subject].questionCount += 1;
+  questionDistribution[subject].questionCount += groupedQuestionCount;
 
   if (!questionDistribution[subject].classes[klass]) {
     questionDistribution[subject].classes[klass] = {
@@ -505,7 +608,7 @@ questions.forEach(question => {
 
   questionDistribution[subject]
     .classes[klass]
-    .questionCount += 1;
+    .questionCount += groupedQuestionCount;
 
   if (!questionDistribution[subject].classes[klass].chapters[chapter]) {
     questionDistribution[subject].classes[klass].chapters[chapter] = {
@@ -518,7 +621,7 @@ questions.forEach(question => {
   questionDistribution[subject]
     .classes[klass]
     .chapters[chapter]
-    .questionCount += 1;
+    .questionCount += groupedQuestionCount;
 
   if (
     !questionDistribution[subject]
@@ -536,7 +639,7 @@ questions.forEach(question => {
   questionDistribution[subject]
     .classes[klass]
     .chapters[chapter]
-    .concepts[concept] += 1;
+    .concepts[concept] += groupedQuestionCount;
 });
     res.json({
       totalQuestions,

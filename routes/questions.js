@@ -534,6 +534,7 @@ const DELETE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 const FACET_PAGE_SIZE = 1000;
 const FACET_CACHE_TTL_MS = 60 * 1000;
 let facetCache = { expiresAt: 0, rows: [] };
+let facetAggregatesSupported = true;
 
 function applySubjectFilter(query, user, requestedSubject) {
   const userRole = String(user?.role || 'viewer').toLowerCase();
@@ -582,6 +583,32 @@ function applyQuestionFilters(query, params) {
 async function readFacetRows() {
   if (facetCache.expiresAt > Date.now()) return facetCache.rows;
   const rows = [];
+
+  if (facetAggregatesSupported) {
+    try {
+      for (let from = 0; ; from += FACET_PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from('questions')
+          .select('subject, klass, chapter, topic, question_count:id.count()')
+          .order('subject', { ascending: true, nullsFirst: true })
+          .order('klass', { ascending: true, nullsFirst: true })
+          .order('chapter', { ascending: true, nullsFirst: true })
+          .order('topic', { ascending: true, nullsFirst: true })
+          .range(from, from + FACET_PAGE_SIZE - 1);
+        if (error) throw error;
+        const page = data || [];
+        rows.push(...page);
+        if (page.length < FACET_PAGE_SIZE) break;
+      }
+      facetCache = { expiresAt: Date.now() + FACET_CACHE_TTL_MS, rows };
+      return rows;
+    } catch (error) {
+      facetAggregatesSupported = false;
+      rows.length = 0;
+      console.warn('[question facets] PostgREST aggregates unavailable; using compatibility reader:', error.message);
+    }
+  }
+
   for (let from = 0; ; from += FACET_PAGE_SIZE) {
     const { data, error } = await supabase
       .from('questions')
