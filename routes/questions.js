@@ -4,7 +4,6 @@ const supabase = require('../lib/supabase');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');
-const { chapterDisplayName, chapterStoredAliases } = require('../lib/chapter-aliases');
 
 const router = express.Router();
 
@@ -288,8 +287,18 @@ const EXAMS_BY_SUBJECT = Object.freeze({
   Biology: ['NEET', 'KCET'],
 });
 
+const COMBINED_EXAM_SUBJECTS = new Set(['Physics', 'Chemistry']);
+
 function allowedExamsForSubject(subject) {
   return EXAMS_BY_SUBJECT[canonicalSubject(subject)] || ['NEET', 'JEE', 'KCET'];
+}
+
+function allowedStoredExamsForSubject(subject) {
+  const canonical = canonicalSubject(subject);
+  const allowed = allowedExamsForSubject(canonical);
+  return COMBINED_EXAM_SUBJECTS.has(canonical)
+    ? [...allowed, 'NEET/JEE']
+    : allowed;
 }
 
 function defaultExamForSubject(subject) {
@@ -301,7 +310,7 @@ function validateSubjectExams(record) {
   const exams = Array.isArray(record?.exams)
     ? record.exams.map(value => String(value || '').trim()).filter(Boolean)
     : [];
-  const allowed = allowedExamsForSubject(subject);
+  const allowed = allowedStoredExamsForSubject(subject);
   const invalid = exams.filter(exam => !allowed.includes(exam));
 
   if (invalid.length) {
@@ -535,7 +544,6 @@ const DELETE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 const FACET_PAGE_SIZE = 1000;
 const FACET_CACHE_TTL_MS = 60 * 1000;
 let facetCache = { expiresAt: 0, rows: [] };
-let facetAggregatesSupported = true;
 
 function applySubjectFilter(query, user, requestedSubject) {
   const userRole = String(user?.role || 'viewer').toLowerCase();
@@ -555,15 +563,16 @@ function applyQuestionFilters(query, params) {
   const chapter = String(params.chapter || '').trim();
   const concept = String(params.concept || params.topic || '').trim();
   const requestedType = String(params.qType || '').toLowerCase();
+  const createdBy = String(params.createdBy || '').trim();
 
   if (klass) query = query.in('klass', [klass, `Class ${klass}`]);
-  if (chapter) {
-    const storedChapters = chapterStoredAliases(params.subject, klass, chapter);
-    query = storedChapters.length > 1
-      ? query.in('chapter', storedChapters)
-      : query.eq('chapter', storedChapters[0]);
-  }
+  if (chapter) query = query.eq('chapter', chapter);
   if (concept) query = query.eq('topic', concept);
+  if (createdBy) {
+    query = isValidUuid(createdBy)
+      ? query.eq('created_by', createdBy)
+      : query.eq('created_by_name', createdBy);
+  }
 
   if (requestedType) {
     const visibleType = requestedType === 'matrix' ? 'match' : requestedType;
@@ -589,32 +598,6 @@ function applyQuestionFilters(query, params) {
 async function readFacetRows() {
   if (facetCache.expiresAt > Date.now()) return facetCache.rows;
   const rows = [];
-
-  if (facetAggregatesSupported) {
-    try {
-      for (let from = 0; ; from += FACET_PAGE_SIZE) {
-        const { data, error } = await supabase
-          .from('questions')
-          .select('subject, klass, chapter, topic, question_count:id.count()')
-          .order('subject', { ascending: true, nullsFirst: true })
-          .order('klass', { ascending: true, nullsFirst: true })
-          .order('chapter', { ascending: true, nullsFirst: true })
-          .order('topic', { ascending: true, nullsFirst: true })
-          .range(from, from + FACET_PAGE_SIZE - 1);
-        if (error) throw error;
-        const page = data || [];
-        rows.push(...page);
-        if (page.length < FACET_PAGE_SIZE) break;
-      }
-      facetCache = { expiresAt: Date.now() + FACET_CACHE_TTL_MS, rows };
-      return rows;
-    } catch (error) {
-      facetAggregatesSupported = false;
-      rows.length = 0;
-      console.warn('[question facets] PostgREST aggregates unavailable; using compatibility reader:', error.message);
-    }
-  }
-
   for (let from = 0; ; from += FACET_PAGE_SIZE) {
     const { data, error } = await supabase
       .from('questions')
@@ -656,19 +639,33 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       !klass || String(row.klass || '').replace(/^class\s*/i, '').trim() === klass
     );
     const chapterRows = classRows.filter(row =>
-      !chapter || chapterDisplayName(row.subject, row.klass, row.chapter) === chapter
+      !chapter || String(row.chapter || '') === chapter
     );
+
+    const { data: contributorUsers, error: contributorError } = await supabase
+      .from('users')
+      .select('id, name, role')
+      .in('role', ['admin', 'adder']);
+    if (contributorError) throw contributorError;
+
+    const contributors = (contributorUsers || [])
+      .map(contributor => ({
+        id: String(contributor.id || ''),
+        name: String(contributor.name || '').trim(),
+        role: String(contributor.role || '').toLowerCase(),
+      }))
+      .filter(contributor => contributor.id && contributor.name)
+      .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
 
     res.json({
       subjects: assigned && assigned !== 'All'
         ? [assigned]
         : unique(accessibleRows.map(row => canonicalSubject(row.subject)).filter(value => value !== 'General')),
       classes: unique(subjectRows.map(row => String(row.klass || '').replace(/^class\s*/i, '').trim())),
-      chapters: unique(classRows
-        .map(row => chapterDisplayName(row.subject, row.klass, row.chapter))
-        .filter(value => value !== 'General')),
+      chapters: unique(classRows.map(row => row.chapter).filter(value => value !== 'General')),
       concepts: unique(chapterRows.map(row => row.topic).filter(value => value !== 'General')),
       types: ['mcq_single', 'assertion_reason', 'match', 'numerical', 'true_false', 'diagram_based', 'statement_based'],
+      contributors,
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to load question filters.', details: error.message });

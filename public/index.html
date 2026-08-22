@@ -1645,6 +1645,10 @@ img,svg,canvas{max-width:100%;}
   <select id="fType">
     <option value="">All Question Types</option>
   </select>
+
+  <select id="fContributor">
+    <option value="">All Adders / Admins</option>
+  </select>
                <div class="saved-question-search">
     <span class="saved-search-icon">⌕</span>
 
@@ -2261,7 +2265,7 @@ var questionPage = 1;
 var questionPageSize = 25;
 var questionTotal = 0;
 var questionTotalPages = 1;
-var questionFacets = { subjects:[], classes:[], chapters:[], concepts:[], types:[] };
+var questionFacets = { subjects:[], classes:[], chapters:[], concepts:[], types:[], contributors:[] };
 var questionTimeframe = '';
 var questionLoadSequence = 0;
 
@@ -2674,7 +2678,7 @@ function neutralizeSubjectControls() {
 function clearUserSpecificState() {
   disableViewerProtection();
   allQuestions = [];
-  questionFacets = { subjects:[], classes:[], chapters:[], concepts:[], types:[] };
+  questionFacets = { subjects:[], classes:[], chapters:[], concepts:[], types:[], contributors:[] };
   dashboardAdderStats = [];
   userNotifications = [];
   selectedExams = new Set();
@@ -3343,6 +3347,7 @@ function navigateToQuestions(focusTarget) {
   const fChapter = document.getElementById('fChapter');
   const fConcept = document.getElementById('fConcept');
   const fType    = document.getElementById('fType');
+  const fContributor = document.getElementById('fContributor');
    const fSearch =
   document.getElementById('fSearch');
   if (fSubject) fSubject.value = '';
@@ -3350,6 +3355,7 @@ function navigateToQuestions(focusTarget) {
   if (fChapter) fChapter.value = '';
   if (fConcept) fConcept.value = '';
   if (fType)    fType.value = '';
+  if (fContributor) fContributor.value = '';
    if(fSearch){
   fSearch.value='';
 }
@@ -3381,11 +3387,13 @@ function filterQuestionsByTimeframe(tf) {
   const fChapter = document.getElementById('fChapter');
   const fConcept = document.getElementById('fConcept');
   const fType    = document.getElementById('fType');
+  const fContributor = document.getElementById('fContributor');
   if (fSubject) fSubject.value = '';
   if (fClass)   fClass.value = '';
   if (fChapter) fChapter.value = '';
   if (fConcept) fConcept.value = '';
   if (fType)    fType.value = '';
+  if (fContributor) fContributor.value = '';
   showPage('pageQuestions');
   questionTimeframe=tf;
   questionPage=1;
@@ -4501,26 +4509,14 @@ const CLASSES  = ["11","12"];
 const NCERT_CHAPTERS = {
   "Physics-11": ["Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
   "Physics-12": ["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
-  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry - Some Basic Principles and Techniques","Hydrocarbons","Environmental Chemistry","Hydrogen"],
-  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","General Principles and Processes of Isolation of Elements","The Solid State"],
+  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Chemical Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry – Some Basic Principles and Techniques","Hydrocarbons","The s-Block Elements","The p-Block Elements","Environmental Chemistry","Hydrogen"],
+  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","Surface Chemistry","General Principles and Processes of Isolation of Elements","The Solid State"],
   "Mathematics-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
   "Maths-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
-  "Mathematics-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"],
-  "Maths-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"],
+  "Mathematics-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Applications of Derivatives","Integrals","Applications of Integrals","Differential Equations","Vector Algebra","Three-dimensional Geometry","Linear Programming","Probability"],
+  "Maths-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Applications of Derivatives","Integrals","Applications of Integrals","Differential Equations","Vector Algebra","Three-dimensional Geometry","Linear Programming","Probability"],
   "Biology-11": ["The Living World","Biological Classification","Plant Kingdom","Animal Kingdom","Morphology of Flowering Plants","Anatomy of Flowering Plants","Structural Organisation in Animals","Cell: The Unit of Life","Biomolecules","Cell Cycle and Cell Division","Photosynthesis in Higher Plants","Respiration in Plants","Plant Growth and Development","Breathing and Exchange of Gases","Body Fluids and Circulation","Excretory Products and their Elimination","Locomotion and Movement","Neural Control and Coordination","Chemical Coordination and Integration"],
   "Biology-12": ["Reproduction in Organisms","Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health","Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution","Human Health and Disease","Strategies for Enhancement in Food Production","Microbes in Human Welfare","Biotechnology: Principles and Processes","Biotechnology and Its Applications","Organisms and Populations"]
-};
-const BULK_NCERT_CHAPTERS = {
-  "Physics-11": ["Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
-  "Physics-12": ["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics And Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
-  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry - Some Basic Principles and Techniques","Hydrocarbons"],
-  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules"],
-  "Mathematics-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
-  "Maths-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
-  "Mathematics-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"],
-  "Maths-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"],
-  "Biology-11": ["The Living World","Biological Classification","Plant Kingdom","Animal Kingdom","Morphology of Flowering Plants","Anatomy of Flowering Plants","Structural Organisation in Animals","Cell: The Unit of Life","Biomolecules","Cell Cycle and Cell Division","Photosynthesis in Higher Plants","Respiration in Plants","Plant Growth and Development","Breathing and Exchange of Gases","Body Fluids and Circulation","Excretory Products and their Elimination","Locomotion and Movement","Neural Control and Coordination","Chemical Coordination and Integration"],
-  "Biology-12": ["Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health","Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution","Human Health and Disease","Microbes in Human Welfare","Biotechnology: Principles and Processes","Biotechnology and Its Applications","Organisms and Populations","Ecosystem","Biodiversity and Conservation"]
 };
 const EXAMS = ["NEET","JEE","KCET"];
 const EXAMS_BY_SUBJECT = {
@@ -4528,99 +4524,29 @@ const EXAMS_BY_SUBJECT = {
   Biology: ["NEET", "KCET"]
 };
 const CHAPTER_NAME_ALIASES = {
-  "Physics-11": {
-    "units and measurement": "Units and Measurements",
-    "units and measurements": "Units and Measurements"
-  },
   "Physics-12": {
-    "current electricity": "Current Electricity",
-    "current electricity (metre bridge, practical skills)": "Current Electricity",
-    "digital electronics": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
-    "digital electronics (jee main 2024 archive)": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
-    "semiconductor electronics": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
-    "semiconductor electronics (": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
-    "electrostatic potential & capacitance": "Electrostatic Potential and Capacitance",
-    "moving coil galvanometer": "Moving Charges and Magnetism",
-    "geometric optics/ray optics": "Ray Optics And Optical Instruments",
-    "geometric optics": "Ray Optics And Optical Instruments",
-    "ray optics": "Ray Optics And Optical Instruments",
-    "ray optics and optical instruments": "Ray Optics And Optical Instruments",
-    "magnetism and mater": "Magnetism and Matter",
-    "magnetism and matter": "Magnetism and Matter",
-    "moving charges & magnetism": "Moving Charges and Magnetism",
+    "geometric optics/ray optics": "Ray Optics and Optical Instruments",
     "magnetic effects of current": "Moving Charges and Magnetism",
     "magnetic force and motion of charge": "Moving Charges and Magnetism"
   },
   "Chemistry-12": {
     "d and f block elements": "The d- and f- block Elements",
-    "the d- and f-block elements": "The d- and f- block Elements",
-    "the d and f-block elements": "The d- and f- block Elements",
-    "alcohols phenols and ethers": "Alcohols, Phenols and Ethers"
+    "the d- and f-block elements": "The d- and f- block Elements"
   },
   "Mathematics-12": {
-    "3d geometry": "Three Dimensional Geometry",
-    "3d geomerty": "Three Dimensional Geometry",
-    "three-dimensional geometry": "Three Dimensional Geometry",
-    "three dimensional geometry": "Three Dimensional Geometry",
-    "application of derivative": "Application of Derivatives",
-    "application of derivatives": "Application of Derivatives",
-    "applications of derivatives": "Application of Derivatives",
-    "algebra of derivatives": "Application of Derivatives",
-    "derivative as rate measure": "Application of Derivatives",
-    "geometrical interpretation of a derivative": "Application of Derivatives",
-    "area": "Application of Integrals",
-    "applications of integrals": "Application of Integrals",
-    "definite integration": "Integrals",
-    "fundamental theorem of definite integration": "Integrals",
-    "definite integration of odd-even and periodic functions": "Integrals",
-    "exponential and logarithmic functions": "Continuity and Differentiability",
-    "vectors": "Vector Algebra"
+    "3d geometry": "Three-dimensional Geometry",
+    "three dimensional geometry": "Three-dimensional Geometry",
+    "application of derivatives": "Applications of Derivatives",
+    "exponential and logarithmic functions": "Continuity and Differentiability"
   },
   "Maths-12": {
-    "3d geometry": "Three Dimensional Geometry",
-    "3d geomerty": "Three Dimensional Geometry",
-    "three-dimensional geometry": "Three Dimensional Geometry",
-    "three dimensional geometry": "Three Dimensional Geometry",
-    "application of derivative": "Application of Derivatives",
-    "application of derivatives": "Application of Derivatives",
-    "applications of derivatives": "Application of Derivatives",
-    "algebra of derivatives": "Application of Derivatives",
-    "derivative as rate measure": "Application of Derivatives",
-    "geometrical interpretation of a derivative": "Application of Derivatives",
-    "area": "Application of Integrals",
-    "applications of integrals": "Application of Integrals",
-    "definite integration": "Integrals",
-    "fundamental theorem of definite integration": "Integrals",
-    "definite integration of odd-even and periodic functions": "Integrals",
-    "exponential and logarithmic functions": "Continuity and Differentiability",
-    "vectors": "Vector Algebra"
-  },
-  "Mathematics-11": {
-    "trigonometric ratios": "Trigonometric Functions"
-  },
-  "Maths-11": {
-    "trigonometric ratios": "Trigonometric Functions"
+    "3d geometry": "Three-dimensional Geometry",
+    "three dimensional geometry": "Three-dimensional Geometry",
+    "application of derivatives": "Applications of Derivatives",
+    "exponential and logarithmic functions": "Continuity and Differentiability"
   },
   "Chemistry-11": {
-    "organic chemistry – some basic principles and techniques": "Organic Chemistry - Some Basic Principles and Techniques",
-    "organic chemistry: some basic principles and techniques": "Organic Chemistry - Some Basic Principles and Techniques",
-    "common names of organic compounds": "Organic Chemistry - Some Basic Principles and Techniques",
-    "practical chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
-    "practical inorganic chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
-    "practical organic chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
-    "practical physical chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
-    "chemical thermodynamics": "Thermodynamics",
-    "spontaneity": "Thermodynamics",
-    "thermodynamics & thermochemistry": "Thermodynamics",
-    "thermodynamics and thermochemistry": "Thermodynamics",
-    "bond parameters": "Chemical Bonding and Molecular Structure",
-    "lonic or electrovalent bond": "Chemical Bonding and Molecular Structure",
-    "ionic or electrovalent bond": "Chemical Bonding and Molecular Structure",
-    "kossel-lewis approach to chemical bonding": "Chemical Bonding and Molecular Structure",
-    "de broglie concept principle and heisenberg uncertainty principle": "Structure of Atom"
-  },
-  "Biology-12": {
-    "human health and diseases": "Human Health and Disease"
+    "thermodynamics and thermochemistry": "Chemical Thermodynamics"
   }
 };
 function chapterDisplayName(subject, klass, chapter) {
@@ -4633,7 +4559,6 @@ function chapterDisplayName(subject, klass, chapter) {
 window.SUBJECTS = SUBJECTS;
 window.CLASSES = CLASSES;
 window.NCERT_CHAPTERS = NCERT_CHAPTERS;
-window.BULK_NCERT_CHAPTERS = BULK_NCERT_CHAPTERS;
 window.CHAPTER_NAME_ALIASES = CHAPTER_NAME_ALIASES;
 window.chapterDisplayName = chapterDisplayName;
 window.EXAMS = EXAMS;
@@ -4673,7 +4598,10 @@ function updateBulkExamOptions() {
   const subject = document.getElementById('bqMetaSubject');
   const exam = document.getElementById('bqMetaExam');
   if (!subject || !exam) return;
-  const allowed = allowedExamsForSubject(subject.value);
+  const allowed = allowedExamsForSubject(subject.value).slice();
+  if (['Physics', 'Chemistry'].includes(canonicalSubject(subject.value))) {
+    allowed.push('NEET/JEE');
+  }
   const current = exam.value;
   exam.innerHTML = '';
   allowed.forEach(function(value) {
@@ -4683,6 +4611,17 @@ function updateBulkExamOptions() {
     exam.appendChild(option);
   });
   exam.value = allowed.includes(current) ? current : allowed[0];
+  updateBulkMarksForExam();
+}
+
+function updateBulkMarksForExam() {
+  const exam = document.getElementById('bqMetaExam');
+  const marks = document.getElementById('bqMetaMarks');
+  const negativeMarks = document.getElementById('bqMetaNegMarks');
+  if (!exam || !marks || !negativeMarks) return;
+  const isKcet = exam.value === 'KCET';
+  marks.value = isKcet ? '1' : '4';
+  negativeMarks.value = isKcet ? '0' : '1';
 }
 window.fillSelect = fillSelect;
 
@@ -5164,11 +5103,13 @@ fillDefaultPredef();
 
   const bulkSubjectEl = document.getElementById('bqMetaSubject');
   const bulkClassEl = document.getElementById('bqMetaClass');
+  const bulkExamEl = document.getElementById('bqMetaExam');
   if (bulkSubjectEl) bulkSubjectEl.addEventListener('change', function() {
     updateBulkExamOptions();
     updateBulkChapterOptions();
   });
   if (bulkClassEl) bulkClassEl.addEventListener('change', updateBulkChapterOptions);
+  if (bulkExamEl) bulkExamEl.addEventListener('change', updateBulkMarksForExam);
   updateBulkExamOptions();
   updateBulkChapterOptions();
 })();
@@ -5180,7 +5121,7 @@ function updateBulkChapterOptions(presetChapter) {
   if (!chapterEl) return;
   var targetVal = presetChapter !== undefined ? presetChapter : chapterEl.value;
   var key = (subjectEl ? subjectEl.value : '') + '-' + (klassEl ? klassEl.value : '');
-  var chapters = BULK_NCERT_CHAPTERS[key] || [];
+  var chapters = NCERT_CHAPTERS[key] || [];
   chapterEl.innerHTML = '<option value="">Select Chapter</option>';
   chapters.forEach(function(chapterName) {
     var option = document.createElement('option');
@@ -5540,7 +5481,8 @@ function renderFilterSubjects(){
   const fChapter=document.getElementById('fChapter');
   const fConcept=document.getElementById('fConcept');
   const fType=document.getElementById('fType');
-  if(!fSubject||!fClass||!fChapter||!fConcept||!fType) return;
+  const fContributor=document.getElementById('fContributor');
+  if(!fSubject||!fClass||!fChapter||!fConcept||!fType||!fContributor) return;
   const user=Auth.getUser()||{};
 
   function uniqueSorted(values){
@@ -5565,6 +5507,7 @@ function renderFilterSubjects(){
   const curChapter=fChapter.value;
   const curConcept=fConcept.value;
   const curType=fType.value;
+  const curContributor=fContributor.value;
   const subs=uniqueSorted(questionFacets.subjects||[]);
   const assignedSubject=assignedSubjectFor(user);
   if(assignedSubject){
@@ -5603,6 +5546,27 @@ function renderFilterSubjects(){
     fType.appendChild(option);
   });
   fType.value=types.includes(curType)?curType:'';
+
+  const contributors=Array.isArray(questionFacets.contributors)?questionFacets.contributors:[];
+  fContributor.innerHTML='';
+  const allContributors=document.createElement('option');
+  allContributors.value='';
+  allContributors.textContent='All Adders / Admins';
+  fContributor.appendChild(allContributors);
+  [['adder','Adders'],['admin','Admins']].forEach(([role,label])=>{
+    const roleContributors=contributors.filter(contributor=>contributor.role===role);
+    if(!roleContributors.length)return;
+    const group=document.createElement('optgroup');
+    group.label=label;
+    roleContributors.forEach(contributor=>{
+      const option=document.createElement('option');
+      option.value=contributor.id;
+      option.textContent=contributor.name;
+      group.appendChild(option);
+    });
+    fContributor.appendChild(group);
+  });
+  fContributor.value=contributors.some(contributor=>contributor.id===curContributor)?curContributor:'';
 }
 
 const savedFilterSubject=document.getElementById('fSubject');
@@ -5610,6 +5574,7 @@ const savedFilterClass=document.getElementById('fClass');
 const savedFilterChapter=document.getElementById('fChapter');
 const savedFilterConcept=document.getElementById('fConcept');
 const savedFilterType=document.getElementById('fType');
+const savedFilterContributor=document.getElementById('fContributor');
    const savedFilterSearch =
   document.getElementById('fSearch');
 
@@ -5622,17 +5587,20 @@ if(savedFilterSubject) savedFilterSubject.addEventListener('change',()=>{
   if(savedFilterChapter) savedFilterChapter.value='';
   if(savedFilterConcept) savedFilterConcept.value='';
   if(savedFilterType) savedFilterType.value='';
+  if(savedFilterContributor) savedFilterContributor.value='';
   questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterClass) savedFilterClass.addEventListener('change',()=>{
   if(savedFilterChapter) savedFilterChapter.value='';
   if(savedFilterConcept) savedFilterConcept.value='';
   if(savedFilterType) savedFilterType.value='';
+  if(savedFilterContributor) savedFilterContributor.value='';
   questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterChapter) savedFilterChapter.addEventListener('change',()=>{
   if(savedFilterConcept) savedFilterConcept.value='';
   if(savedFilterType) savedFilterType.value='';
+  if(savedFilterContributor) savedFilterContributor.value='';
   questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterConcept) savedFilterConcept.addEventListener('change',()=>{
@@ -5640,6 +5608,7 @@ if(savedFilterConcept) savedFilterConcept.addEventListener('change',()=>{
   questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterType) savedFilterType.addEventListener('change',()=>{questionPage=1;loadQuestions(1,false);});
+if(savedFilterContributor) savedFilterContributor.addEventListener('change',()=>{questionPage=1;loadQuestions(1,false);});
    // ------------------------------------------------------------
 // SAVED QUESTION SEARCH
 // ------------------------------------------------------------
@@ -7278,7 +7247,7 @@ async function loadQuestions(page=1,refreshFacets=false,scrollToList=false){
     if(refreshFacets||!questionFacets.subjects.length)await loadQuestionFacets();
     const params=new URLSearchParams({paged:'1',page:String(page),pageSize:String(questionPageSize)});
      
-    const filterMap={subject:'fSubject',klass:'fClass',chapter:'fChapter',concept:'fConcept',qType:'fType'};
+    const filterMap={subject:'fSubject',klass:'fClass',chapter:'fChapter',concept:'fConcept',qType:'fType',createdBy:'fContributor'};
      const searchText =
   document
     .getElementById('fSearch')
