@@ -75,6 +75,7 @@ const isValidUuid = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4
 
 const DUPLICATE_CACHE_TTL_MS = 5 * 60 * 1000;
 let duplicateQuestionCache = { loadedAt: 0, total: -1, entries: new Map() };
+let duplicateQuestionCacheLoad = null;
 
 function normalizeDuplicateQuestion(value) {
   return String(value || '')
@@ -109,34 +110,52 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
     && Date.now() - duplicateQuestionCache.loadedAt < DUPLICATE_CACHE_TTL_MS;
   if (!forceRefresh && cacheIsFresh) return duplicateQuestionCache.entries;
 
-  const entries = new Map();
-  const pageSize = 1000;
+  // Multiple duplicate checks can arrive while the cache is cold. Reuse the
+  // same in-flight load so one server instance never downloads every question
+  // more than once concurrently.
+  if (duplicateQuestionCacheLoad) return duplicateQuestionCacheLoad;
 
-  for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase
-      .from('questions')
-      .select('id, question')
-      .order('id', { ascending: true })
-      .range(offset, offset + pageSize - 1);
+  duplicateQuestionCacheLoad = (async () => {
+    const entries = new Map();
+    const pageSize = 1000;
 
-    if (error) throw error;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from('questions')
+        .select('id, question')
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1);
 
-    for (const row of (data || [])) {
-      const key = normalizeDuplicateQuestion(row.question);
-      if (key && !entries.has(key)) entries.set(key, { id: row.id, key });
+      if (error) throw error;
+
+      for (const row of (data || [])) {
+        const key = normalizeDuplicateQuestion(row.question);
+        if (key && !entries.has(key)) entries.set(key, { id: row.id, key });
+      }
+
+      if (!data || data.length < pageSize) break;
     }
 
-    if (!data || data.length < pageSize) break;
-  }
+    duplicateQuestionCache = { loadedAt: Date.now(), total, entries };
+    return duplicateQuestionCache.entries;
+  })();
 
-  duplicateQuestionCache = { loadedAt: Date.now(), total, entries };
-  return entries;
+  try {
+    return await duplicateQuestionCacheLoad;
+  } finally {
+    duplicateQuestionCacheLoad = null;
+  }
 }
 
 function rememberDuplicateQuestions(rows) {
-  for (const row of (rows || [])) {
+  const insertedRows = (rows || []).filter(row => row && row.id);
+  for (const row of insertedRows) {
     const key = normalizeDuplicateQuestion(row.question);
     if (key) duplicateQuestionCache.entries.set(key, { id: row.id, key });
+  }
+  if (duplicateQuestionCache.loadedAt > 0 && duplicateQuestionCache.total >= 0) {
+    duplicateQuestionCache.total += insertedRows.length;
+    duplicateQuestionCache.loadedAt = Date.now();
   }
 }
 
