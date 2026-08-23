@@ -4509,12 +4509,12 @@ const CLASSES  = ["11","12"];
 const NCERT_CHAPTERS = {
   "Physics-11": ["Physical World","Units and Measurements","Motion in a Straight Line","Motion in a Plane","Laws of Motion","Work, Energy and Power","System of Particles and Rotational Motion","Gravitation","Mechanical Properties of Solids","Mechanical Properties of Fluids","Thermal Properties of Matter","Thermodynamics","Kinetic Theory","Oscillations","Waves"],
   "Physics-12": ["Electric Charges and Fields","Electrostatic Potential and Capacitance","Current Electricity","Moving Charges and Magnetism","Magnetism and Matter","Electromagnetic Induction","Alternating Current","Electromagnetic Waves","Ray Optics and Optical Instruments","Wave Optics","Dual Nature of Radiation and Matter","Atoms","Nuclei","Semiconductor Electronics: Materials, Devices and Simple Circuits"],
-  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Chemical Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry – Some Basic Principles and Techniques","Hydrocarbons","The s-Block Elements","The p-Block Elements","Environmental Chemistry","Hydrogen"],
-  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","Surface Chemistry","General Principles and Processes of Isolation of Elements","The Solid State"],
+  "Chemistry-11": ["Some Basic Concepts of Chemistry","Structure of Atom","Classification of Elements and Periodicity in Properties","Chemical Bonding and Molecular Structure","Thermodynamics","Equilibrium","Redox Reactions","Organic Chemistry - Some Basic Principles and Techniques","Hydrocarbons","Environmental Chemistry","Hydrogen"],
+  "Chemistry-12": ["Solutions","Electrochemistry","Chemical Kinetics","The d- and f- block Elements","Coordination Compounds","Haloalkanes and Haloarenes","Alcohols, Phenols and Ethers","Aldehydes, Ketones and Carboxylic Acids","Amines","Biomolecules","Chemistry in Everyday Life","Polymers","General Principles and Processes of Isolation of Elements","The Solid State"],
   "Mathematics-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
   "Maths-11": ["Sets","Relations and Functions","Trigonometric Functions","Complex Numbers and Quadratic Equations","Linear Inequalities","Permutations and Combinations","Binomial Theorem","Sequences and Series","Straight Lines","Conic Sections","Introduction to Three-dimensional Geometry","Limits and Derivatives","Statistics","Probability"],
-  "Mathematics-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Applications of Derivatives","Integrals","Applications of Integrals","Differential Equations","Vector Algebra","Three-dimensional Geometry","Linear Programming","Probability"],
-  "Maths-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Applications of Derivatives","Integrals","Applications of Integrals","Differential Equations","Vector Algebra","Three-dimensional Geometry","Linear Programming","Probability"],
+  "Mathematics-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"],
+  "Maths-12": ["Relations and Functions","Inverse Trigonometric Functions","Matrices","Determinants","Continuity and Differentiability","Application of Derivatives","Integrals","Application of Integrals","Differential Equations","Vector Algebra","Three Dimensional Geometry","Linear Programming","Probability"],
   "Biology-11": ["The Living World","Biological Classification","Plant Kingdom","Animal Kingdom","Morphology of Flowering Plants","Anatomy of Flowering Plants","Structural Organisation in Animals","Cell: The Unit of Life","Biomolecules","Cell Cycle and Cell Division","Photosynthesis in Higher Plants","Respiration in Plants","Plant Growth and Development","Breathing and Exchange of Gases","Body Fluids and Circulation","Excretory Products and their Elimination","Locomotion and Movement","Neural Control and Coordination","Chemical Coordination and Integration"],
   "Biology-12": ["Reproduction in Organisms","Sexual Reproduction in Flowering Plants","Human Reproduction","Reproductive Health","Principles of Inheritance and Variation","Molecular Basis of Inheritance","Evolution","Human Health and Disease","Strategies for Enhancement in Food Production","Microbes in Human Welfare","Biotechnology: Principles and Processes","Biotechnology and Its Applications","Organisms and Populations"]
 };
@@ -4536,29 +4536,99 @@ const EXAMS_BY_SUBJECT = {
   Biology: ["NEET", "KCET"]
 };
 const CHAPTER_NAME_ALIASES = {
+  "Physics-11": {
+    "units and measurement": "Units and Measurements",
+    "units and measurements": "Units and Measurements"
+  },
   "Physics-12": {
-    "geometric optics/ray optics": "Ray Optics and Optical Instruments",
+    "current electricity": "Current Electricity",
+    "current electricity (metre bridge, practical skills)": "Current Electricity",
+    "digital electronics": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
+    "digital electronics (jee main 2024 archive)": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
+    "semiconductor electronics": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
+    "semiconductor electronics (": "Semiconductor Electronics: Materials, Devices and Simple Circuits",
+    "electrostatic potential & capacitance": "Electrostatic Potential and Capacitance",
+    "moving coil galvanometer": "Moving Charges and Magnetism",
+    "geometric optics/ray optics": "Ray Optics And Optical Instruments",
+    "geometric optics": "Ray Optics And Optical Instruments",
+    "ray optics": "Ray Optics And Optical Instruments",
+    "ray optics and optical instruments": "Ray Optics And Optical Instruments",
+    "magnetism and mater": "Magnetism and Matter",
+    "magnetism and matter": "Magnetism and Matter",
+    "moving charges & magnetism": "Moving Charges and Magnetism",
     "magnetic effects of current": "Moving Charges and Magnetism",
     "magnetic force and motion of charge": "Moving Charges and Magnetism"
   },
   "Chemistry-12": {
     "d and f block elements": "The d- and f- block Elements",
-    "the d- and f-block elements": "The d- and f- block Elements"
+    "the d- and f-block elements": "The d- and f- block Elements",
+    "the d and f-block elements": "The d- and f- block Elements",
+    "alcohols phenols and ethers": "Alcohols, Phenols and Ethers"
   },
   "Mathematics-12": {
-    "3d geometry": "Three-dimensional Geometry",
-    "three dimensional geometry": "Three-dimensional Geometry",
-    "application of derivatives": "Applications of Derivatives",
-    "exponential and logarithmic functions": "Continuity and Differentiability"
+    "3d geometry": "Three Dimensional Geometry",
+    "3d geomerty": "Three Dimensional Geometry",
+    "three-dimensional geometry": "Three Dimensional Geometry",
+    "three dimensional geometry": "Three Dimensional Geometry",
+    "application of derivative": "Application of Derivatives",
+    "application of derivatives": "Application of Derivatives",
+    "applications of derivatives": "Application of Derivatives",
+    "algebra of derivatives": "Application of Derivatives",
+    "derivative as rate measure": "Application of Derivatives",
+    "geometrical interpretation of a derivative": "Application of Derivatives",
+    "area": "Application of Integrals",
+    "applications of integrals": "Application of Integrals",
+    "definite integration": "Integrals",
+    "fundamental theorem of definite integration": "Integrals",
+    "definite integration of odd-even and periodic functions": "Integrals",
+    "exponential and logarithmic functions": "Continuity and Differentiability",
+    "vectors": "Vector Algebra"
   },
   "Maths-12": {
-    "3d geometry": "Three-dimensional Geometry",
-    "three dimensional geometry": "Three-dimensional Geometry",
-    "application of derivatives": "Applications of Derivatives",
-    "exponential and logarithmic functions": "Continuity and Differentiability"
+    "3d geometry": "Three Dimensional Geometry",
+    "3d geomerty": "Three Dimensional Geometry",
+    "three-dimensional geometry": "Three Dimensional Geometry",
+    "three dimensional geometry": "Three Dimensional Geometry",
+    "application of derivative": "Application of Derivatives",
+    "application of derivatives": "Application of Derivatives",
+    "applications of derivatives": "Application of Derivatives",
+    "algebra of derivatives": "Application of Derivatives",
+    "derivative as rate measure": "Application of Derivatives",
+    "geometrical interpretation of a derivative": "Application of Derivatives",
+    "area": "Application of Integrals",
+    "applications of integrals": "Application of Integrals",
+    "definite integration": "Integrals",
+    "fundamental theorem of definite integration": "Integrals",
+    "definite integration of odd-even and periodic functions": "Integrals",
+    "exponential and logarithmic functions": "Continuity and Differentiability",
+    "vectors": "Vector Algebra"
+  },
+  "Mathematics-11": {
+    "trigonometric ratios": "Trigonometric Functions"
+  },
+  "Maths-11": {
+    "trigonometric ratios": "Trigonometric Functions"
   },
   "Chemistry-11": {
-    "thermodynamics and thermochemistry": "Chemical Thermodynamics"
+    "organic chemistry – some basic principles and techniques": "Organic Chemistry - Some Basic Principles and Techniques",
+    "organic chemistry: some basic principles and techniques": "Organic Chemistry - Some Basic Principles and Techniques",
+    "common names of organic compounds": "Organic Chemistry - Some Basic Principles and Techniques",
+    "practical chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
+    "practical inorganic chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
+    "practical organic chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
+    "practical physical chemistry": "Organic Chemistry - Some Basic Principles and Techniques",
+    "chemical thermodynamics": "Thermodynamics",
+    "spontaneity": "Thermodynamics",
+    "thermodynamics & thermochemistry": "Thermodynamics",
+    "thermodynamics and thermochemistry": "Thermodynamics",
+    "bond parameters": "Chemical Bonding and Molecular Structure",
+    "lonic or electrovalent bond": "Chemical Bonding and Molecular Structure",
+    "ionic or electrovalent bond": "Chemical Bonding and Molecular Structure",
+    "kossel-lewis approach to chemical bonding": "Chemical Bonding and Molecular Structure",
+    "de broglie concept principle and heisenberg uncertainty principle": "Structure of Atom"
+  },
+  "Biology-12": {
+    "human health and diseases": "Human Health and Disease"
   }
 };
 function chapterDisplayName(subject, klass, chapter) {
