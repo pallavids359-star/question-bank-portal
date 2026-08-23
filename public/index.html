@@ -1711,6 +1711,13 @@ img,svg,canvas{max-width:100%;}
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:12px;">
             <div class="form-group" style="margin:0;">
+              <label style="font-size:11px;color:#8f9bba;">Import Type</label>
+              <select id="bqImportMode" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
+                <option value="chapter" selected>Chapter-wise</option>
+                <option value="grand_test">Grand Test Paper</option>
+              </select>
+            </div>
+            <div class="form-group" id="bqSubjectGroup" style="margin:0;">
               <label style="font-size:11px;color:#8f9bba;">Subject *</label>
               <select id="bqMetaSubject" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
                 <option value="Physics" selected>Physics</option>
@@ -1719,7 +1726,7 @@ img,svg,canvas{max-width:100%;}
                 <option value="Biology">Biology</option>
               </select>
             </div>
-            <div class="form-group" style="margin:0;">
+            <div class="form-group" id="bqClassGroup" style="margin:0;">
               <label style="font-size:11px;color:#8f9bba;">Class *</label>
               <select id="bqMetaClass" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
                 <option value="11" selected>Class 11</option>
@@ -1728,11 +1735,15 @@ img,svg,canvas{max-width:100%;}
                 <option value="9">Class 9</option>
               </select>
             </div>
-            <div class="form-group" style="margin:0;">
+            <div class="form-group" id="bqChapterGroup" style="margin:0;">
               <label style="font-size:11px;color:#8f9bba;">Chapter *</label>
               <select id="bqMetaChapter" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
                 <option value="">Select Chapter</option>
               </select>
+            </div>
+            <div class="form-group" id="bqCoverageGroup" style="margin:0;display:none;">
+              <label style="font-size:11px;color:#8f9bba;">Full Syllabus Coverage *</label>
+              <select id="bqMetaCoverage" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;"></select>
             </div>
             <div class="form-group" style="margin:0;">
               <label style="font-size:11px;color:#8f9bba;">Exam Category</label>
@@ -1767,6 +1778,9 @@ img,svg,canvas{max-width:100%;}
                 <option value="Hard">Hard</option>
               </select>
             </div>
+          </div>
+          <div id="bqGrandTestHint" style="display:none;margin-top:10px;font-size:11px;color:#8f9bba;">
+            Add <code>@paper: ReNEET</code> and <code>@year: 2026</code> in the pasted text. For PCMB, PCM or PCB papers, add <code>@subject:</code> to every question.
           </div>
         </div>
 
@@ -4681,8 +4695,11 @@ function updateBulkExamOptions() {
   const subject = document.getElementById('bqMetaSubject');
   const exam = document.getElementById('bqMetaExam');
   if (!subject || !exam) return;
-  const allowed = allowedExamsForSubject(subject.value).slice();
-  if (['Physics', 'Chemistry'].includes(canonicalSubject(subject.value))) {
+  const grandTestMode = document.getElementById('bqImportMode')?.value === 'grand_test';
+  const allowed = grandTestMode
+    ? ['NEET', 'JEE', 'KCET']
+    : allowedExamsForSubject(subject.value).slice();
+  if (!grandTestMode && ['Physics', 'Chemistry'].includes(canonicalSubject(subject.value))) {
     allowed.push('NEET/JEE');
   }
   const current = exam.value;
@@ -4695,6 +4712,80 @@ function updateBulkExamOptions() {
   });
   exam.value = allowed.includes(current) ? current : allowed[0];
   updateBulkMarksForExam();
+  updateGrandTestCoverageOptions();
+}
+
+function updateGrandTestCoverageOptions() {
+  const exam = document.getElementById('bqMetaExam');
+  const coverage = document.getElementById('bqMetaCoverage');
+  if (!exam || !coverage) return;
+  const coverageByExam = {
+    NEET: ['PCB', 'Subject-wise'],
+    JEE: ['PCM', 'Subject-wise'],
+    KCET: ['PCMB', 'PCM', 'PCB', 'Subject-wise'],
+  };
+  const allowed = coverageByExam[exam.value] || ['Subject-wise'];
+  const current = coverage.value;
+  coverage.innerHTML = '';
+  allowed.forEach(function(value) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    coverage.appendChild(option);
+  });
+  coverage.value = allowed.includes(current) ? current : allowed[0];
+  updateGrandTestSubjectOptions();
+  updateGrandTestSubjectVisibility();
+}
+
+function updateGrandTestSubjectOptions() {
+  const subject = document.getElementById('bqMetaSubject');
+  const exam = document.getElementById('bqMetaExam');
+  const isGrandTest = document.getElementById('bqImportMode')?.value === 'grand_test';
+  const subjectWise = document.getElementById('bqMetaCoverage')?.value === 'Subject-wise';
+  if (!subject || !exam) return;
+  const allSubjects = ['Physics', 'Chemistry', 'Mathematics', 'Biology'];
+  const subjectsByExam = {
+    NEET: ['Physics', 'Chemistry', 'Biology'],
+    JEE: ['Physics', 'Chemistry', 'Mathematics'],
+    KCET: allSubjects,
+  };
+  const allowed = isGrandTest && subjectWise
+    ? (subjectsByExam[exam.value] || allSubjects)
+    : allSubjects;
+  const current = subject.value;
+  subject.innerHTML = '';
+  allowed.forEach(function(value) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    subject.appendChild(option);
+  });
+  subject.value = allowed.includes(current) ? current : allowed[0];
+}
+
+function updateGrandTestSubjectVisibility() {
+  const isGrandTest = document.getElementById('bqImportMode')?.value === 'grand_test';
+  const subjectWise = document.getElementById('bqMetaCoverage')?.value === 'Subject-wise';
+  const subjectGroup = document.getElementById('bqSubjectGroup');
+  if (subjectGroup) subjectGroup.style.display = isGrandTest && !subjectWise ? 'none' : '';
+}
+
+function updateBulkImportMode() {
+  const mode = document.getElementById('bqImportMode');
+  const chapterGroup = document.getElementById('bqChapterGroup');
+  const classGroup = document.getElementById('bqClassGroup');
+  const coverageGroup = document.getElementById('bqCoverageGroup');
+  const hint = document.getElementById('bqGrandTestHint');
+  const isGrandTest = mode?.value === 'grand_test';
+  if (chapterGroup) chapterGroup.style.display = isGrandTest ? 'none' : '';
+  if (classGroup) classGroup.style.display = isGrandTest ? 'none' : '';
+  if (coverageGroup) coverageGroup.style.display = isGrandTest ? '' : 'none';
+  if (hint) hint.style.display = isGrandTest ? '' : 'none';
+  updateGrandTestSubjectOptions();
+  updateGrandTestSubjectVisibility();
+  updateBulkExamOptions();
+  if (window.BulkModule?.runParse) window.BulkModule.runParse();
 }
 
 function updateBulkMarksForExam() {
@@ -5187,14 +5278,27 @@ fillDefaultPredef();
   const bulkSubjectEl = document.getElementById('bqMetaSubject');
   const bulkClassEl = document.getElementById('bqMetaClass');
   const bulkExamEl = document.getElementById('bqMetaExam');
+  const bulkModeEl = document.getElementById('bqImportMode');
+  const bulkCoverageEl = document.getElementById('bqMetaCoverage');
   if (bulkSubjectEl) bulkSubjectEl.addEventListener('change', function() {
     updateBulkExamOptions();
     updateBulkChapterOptions();
   });
   if (bulkClassEl) bulkClassEl.addEventListener('change', updateBulkChapterOptions);
   if (bulkExamEl) bulkExamEl.addEventListener('change', updateBulkMarksForExam);
+  if (bulkExamEl) bulkExamEl.addEventListener('change', function() {
+    updateGrandTestCoverageOptions();
+    if (window.BulkModule?.runParse) window.BulkModule.runParse();
+  });
+  if (bulkModeEl) bulkModeEl.addEventListener('change', updateBulkImportMode);
+  if (bulkCoverageEl) bulkCoverageEl.addEventListener('change', function() {
+    updateGrandTestSubjectOptions();
+    updateGrandTestSubjectVisibility();
+    if (window.BulkModule?.runParse) window.BulkModule.runParse();
+  });
   updateBulkExamOptions();
   updateBulkChapterOptions();
+  updateBulkImportMode();
 })();
 
 function updateBulkChapterOptions(presetChapter) {

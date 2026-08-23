@@ -15,6 +15,20 @@ for (const value of latexCases) test(`raw LaTeX is delimited once: ${value}`, ()
   assert.equal(renderer.ensureMathDelimiters(rendered), rendered);
 });
 
+test('missing opening display delimiter is restored without changing surrounding text', () => {
+  assert.equal(
+    renderer.ensureMathDelimiters('\\int_0^1 x\\,dx \\] equals'),
+    '\\[\\int_0^1 x\\,dx \\] equals'
+  );
+});
+
+test('missing opening inline delimiter is restored without changing surrounding text', () => {
+  assert.equal(
+    renderer.ensureMathDelimiters('Value is \\frac{1}{2} \\) here'),
+    'Value is \\(\\frac{1}{2} \\) here'
+  );
+});
+
 const markdownCases = ['Pending Review','Correct answer','Solution','Option A','A formula $x^2$'];
 for (const value of markdownCases) test(`Markdown strong token preserves content: ${value}`, () => {
   assert.deepEqual(renderer.tokenizeMarkdown(`before **${value}** after`), [

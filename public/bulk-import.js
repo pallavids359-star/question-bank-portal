@@ -39,8 +39,13 @@
     const kEl = document.getElementById('bqMetaClass') || document.getElementById('klass');
     const cEl = document.getElementById('bqMetaChapter') || document.getElementById('chapter');
     const eEl = document.getElementById('bqMetaExam');
+    const importMode = val('bqImportMode') || 'chapter';
+    const coverage = val('bqMetaCoverage') || 'Subject-wise';
 
     return {
+      importMode,
+      isGrandTest:     importMode === 'grand_test',
+      coverage,
       subject:        sEl && sEl.value ? sEl.value.trim() : 'Physics',
       klass:          kEl && kEl.value ? kEl.value.trim() : '11',
       chapter:        cEl && cEl.value ? cEl.value.trim() : '',
@@ -61,9 +66,38 @@
   }
 
   function selectedBulkChapter(meta) {
+    if (meta.isGrandTest) return 'Full Syllabus';
     const key = `${meta.subject}-${meta.klass}`;
     const chapters = (window.BULK_NCERT_CHAPTERS && window.BULK_NCERT_CHAPTERS[key]) || [];
     return chapters.includes(meta.chapter) ? meta.chapter : '';
+  }
+
+  function extractGrandTestHeader(rawText) {
+    let paper = '';
+    let year = '';
+    const cleanLines = [];
+    String(rawText || '').split('\n').forEach(line => {
+      const paperMatch = line.match(/^\s*@paper\s*[:=]\s*(.+?)\s*$/i);
+      const yearMatch = line.match(/^\s*@year\s*[:=]\s*(\d{4})\s*$/i);
+      if (paperMatch) {
+        if (!paper) paper = paperMatch[1].trim();
+        return;
+      }
+      if (yearMatch) {
+        if (!year) year = yearMatch[1];
+        return;
+      }
+      cleanLines.push(line);
+    });
+    return { paper, year, cleanText: cleanLines.join('\n') };
+  }
+
+  function grandTestSubjects(coverage) {
+    return {
+      PCMB: ['Physics', 'Chemistry', 'Mathematics', 'Biology'],
+      PCM: ['Physics', 'Chemistry', 'Mathematics'],
+      PCB: ['Physics', 'Chemistry', 'Biology'],
+    }[coverage] || [];
   }
 
   // ── QUESTION TYPE LABELS ──────────────────────────────────────────
@@ -542,11 +576,16 @@ const hasFlexibleMatchColumns =
       const opts = overrides.options || {};
 
       // Chapter assignment is intentionally controlled only by the metadata dropdown.
-      const finalSubject = inline.subject || overrides.subject || meta.subject;
-      const finalKlass   = inline.klass || overrides.klass || meta.klass;
+      const finalSubject = meta.isGrandTest && meta.coverage === 'Subject-wise'
+        ? meta.subject
+        : (inline.subject || overrides.subject || meta.subject);
+      const finalKlass   = meta.isGrandTest ? 'Full Syllabus' : (inline.klass || overrides.klass || meta.klass);
       const finalChapter = selectedBulkChapter(meta);
       
-      const { concept, confidence } = detectConcept(qText, finalChapter, inline.concept);
+      const detectedConcept = meta.isGrandTest
+        ? { concept: meta.coverage === 'Subject-wise' ? finalSubject : meta.coverage, confidence: 100 }
+        : detectConcept(qText, finalChapter, inline.concept);
+      const { concept, confidence } = detectedConcept;
       const difficulty = detectDifficulty(qText, opts, solText, inline.difficulty || overrides.difficulty);
 
       return {
@@ -582,6 +621,7 @@ const hasFlexibleMatchColumns =
         solutionText: solText,
         concept: concept,
         confidenceScore: confidence,
+        grandSubjectFromLatex: Boolean(inline.subject),
         startLine: block.startLine,
         errors: [],
         isValid: true,
@@ -1204,15 +1244,28 @@ if (mode === 'col1') {
   // ================================================================
   function parseText(rawText) {
     const meta = getMeta();
+    const grandTestHeader = meta.isGrandTest
+      ? extractGrandTestHeader(rawText)
+      : { paper: '', year: '', cleanText: rawText };
     
     // Stage 1: Question Boundary Detection
-    const rawBlocks = splitIntoRawBlocks(rawText);
+    const rawBlocks = splitIntoRawBlocks(grandTestHeader.cleanText);
 
     // Stage 2 & 3: Type Detection & Dispatch to Dedicated Parser
     const questions = rawBlocks.map(block => {
       const qType = detectBlockType(block);
       const parser = ParserRegistry.get(qType);
-      return parser.parse(block, meta);
+      const question = parser.parse(block, meta);
+      if (meta.isGrandTest) {
+        question.source = grandTestHeader.paper;
+        question.year = grandTestHeader.year;
+        question.grandTest = {
+          paper: grandTestHeader.paper,
+          year: grandTestHeader.year,
+          coverage: meta.coverage,
+        };
+      }
+      return question;
     });
 
     return questions;
@@ -1228,6 +1281,15 @@ if (mode === 'col1') {
       if (!q.subject && !meta.subject) q.errors.push(`Question #${num}: Subject is required.`);
       if (!q.klass && !meta.klass) q.errors.push(`Question #${num}: Class is required.`);
       if (!selectedChapter) q.errors.push(`Question #${num}: Chapter must be selected from the dropdown.`);
+      if (meta.isGrandTest && !q.source) q.errors.push(`Question #${num}: @paper is required once at the top.`);
+      if (meta.isGrandTest && !q.year) q.errors.push(`Question #${num}: @year must be a four-digit year at the top.`);
+      if (meta.isGrandTest && meta.coverage !== 'Subject-wise' && !q.grandSubjectFromLatex) {
+        q.errors.push(`Question #${num}: @subject is required for ${meta.coverage} papers.`);
+      }
+      const allowedGrandSubjects = grandTestSubjects(meta.coverage);
+      if (meta.isGrandTest && allowedGrandSubjects.length && !allowedGrandSubjects.includes(q.subject)) {
+        q.errors.push(`Question #${num}: ${q.subject} is not part of ${meta.coverage}.`);
+      }
       if (!q.question || q.question.length < 5) q.errors.push(`Question #${num}: Question text is missing or too short.`);
 
       // TYPE-SPECIFIC VALIDATION RULES
@@ -2024,7 +2086,52 @@ function scheduleHistorySave() {
   }
 
   function restoreSample() {
-    const sample = `@subject: Physics
+    const sampleMeta = getMeta();
+    const grandTestSample = `@paper: ReNEET
+@year: 2026
+
+@subject: Physics
+@type: Standard MCQ
+@difficulty: Medium
+
+1. A 220 V battery is connected across a 110 ohm resistor. What is the current?
+(A) 0.5 A
+(B) 1 A
+(C) 2 A
+(D) 4 A
+Answer: C
+Solution: Using Ohm's law, I = V/R = 220/110 = 2 A.
+
+---
+
+@subject: Chemistry
+@type: Standard MCQ
+@difficulty: Medium
+
+2. Which of the following has the highest electronegativity?
+(A) F
+(B) Cl
+(C) Br
+(D) I
+Answer: A
+Solution: Fluorine has the highest electronegativity in the periodic table.`;
+
+    const subjectWiseGrandTestSample = `@paper: ReNEET
+@year: 2026
+
+@subject: ${sampleMeta.subject}
+@type: Standard MCQ
+@difficulty: Medium
+
+1. Paste the full-syllabus ${sampleMeta.subject} question here.
+(A) Option A
+(B) Option B
+(C) Option C
+(D) Option D
+Answer: A
+Solution: Paste the detailed solution here.`;
+
+    const chapterSample = `@subject: Physics
 @chapter: Alternating Current
 @concept: LCR Circuit & Phasor Analysis
 @type: Standard MCQ
@@ -2077,6 +2184,9 @@ Reason: Light is an electromagnetic wave and does not require a material medium 
 (D) A is false but R is true.
 Answer: A
 Solution: Electromagnetic waves self-propagate through electric and magnetic field oscillations.`;
+    const sample = sampleMeta.isGrandTest
+      ? (sampleMeta.coverage === 'Subject-wise' ? subjectWiseGrandTestSample : grandTestSample)
+      : chapterSample;
 
     const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
     if (ta) {
@@ -2263,6 +2373,9 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
         : (q.answer || q.correctOption || 'A'),
       solutionText: q.solutionText || '',
       difficulty: q.difficulty || meta.defaultDiff,
+      source: q.source || '',
+      year: q.year || '',
+      grandTest: q.grandTest || null,
     };
 
     try {
@@ -2377,6 +2490,9 @@ if (duplicateKey) {
         : q.answer,
       solutionText: q.solutionText || '',
       difficulty: q.difficulty || meta.defaultDiff,
+      source: q.source || '',
+      year: q.year || '',
+      grandTest: q.grandTest || null,
     }));
 
     try {

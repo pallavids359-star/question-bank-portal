@@ -165,7 +165,7 @@ const CORE_FIELDS = [
   'statement1', 'statement2',
   'predef_options', 'column_a', 'column_b', 'match_options',
   'num_answer', 'correct_option', 'solution_text',
-  'difficulty', 'marks', 'neg_marks', 'language', 'source', 'author', 'reference_book',
+  'difficulty', 'marks', 'neg_marks', 'language', 'source', 'author', 'reference_book', 'year',
   'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
 ];
 
@@ -175,6 +175,17 @@ const BASIC_LEGACY_FIELDS = [
   'correct_option', 'solution_text',
   'created_by', 'created_by_name', 'updated_by', 'updated_by_name'
 ];
+
+const GRAND_TEST_LEGACY_FIELDS = [
+  ...BASIC_LEGACY_FIELDS,
+  'source', 'year'
+];
+
+function legacyFieldsFor(record) {
+  return record?.source || record?.year
+    ? GRAND_TEST_LEGACY_FIELDS
+    : BASIC_LEGACY_FIELDS;
+}
 
 // The original production table has no difficulty column. Keep the value in
 // solution_text using an internal marker, then remove it again in API output.
@@ -210,6 +221,8 @@ function storeLegacyMetadata(solutionText, difficulty, questionType, specialData
   if (['statement_based', 'match', 'true_false'].includes(normalizedType)) {
     markers.push(`[QBP_TYPE:${normalizedType}]`);
     markers.push(`[QBP_DATA:${encodeMarkerText(JSON.stringify(specialData || {}))}]`);
+  } else if (specialData?.grandTest) {
+    markers.push(`[QBP_DATA:${encodeMarkerText(JSON.stringify(specialData))}]`);
   }
   markers.push(`[QBP_DIFFICULTY:${normalized}]`);
   return `${cleanSolution}${cleanSolution ? '\n' : ''}${markers.join('\n')}`;
@@ -460,7 +473,8 @@ function toDatabase(input) {
       statement2: input.statement2 || out.statement2 || '',
       columnA: input.columnA || out.column_a || [],
       columnB: input.columnB || out.column_b || [],
-      matchOptions: input.matchOptions || out.match_options || {}
+      matchOptions: input.matchOptions || out.match_options || {},
+      grandTest: input.grandTest || null
     }
   );
   delete out.difficulty;
@@ -490,6 +504,10 @@ function toApi(row) {
   const legacyDifficulty = readLegacyDifficulty(row.solution_text);
   const legacyQuestionType = readLegacyQuestionType(row.solution_text);
   const legacyData = readLegacyData(row.solution_text);
+  if (legacyData.grandTest) {
+    output.source = output.source || legacyData.grandTest.paper || '';
+    output.year = output.year || legacyData.grandTest.year || '';
+  }
   output.difficulty = row.difficulty || legacyDifficulty || 'Medium';
   output.qType = legacyQuestionType || output.qType;
   if (output.qType === 'statement_based') {
@@ -583,10 +601,12 @@ function applyQuestionFilters(query, params) {
   const concept = String(params.concept || params.topic || '').trim();
   const requestedType = String(params.qType || '').toLowerCase();
   const createdBy = String(params.createdBy || '').trim();
+  const search = String(params.search || '').trim().slice(0, 200);
 
   if (klass) query = query.in('klass', [klass, `Class ${klass}`]);
   if (chapter) query = query.eq('chapter', chapter);
   if (concept) query = query.eq('topic', concept);
+  if (search) query = query.ilike('question', `%${search}%`);
   if (createdBy) {
     query = isValidUuid(createdBy)
       ? query.eq('created_by', createdBy)
@@ -806,12 +826,20 @@ router.post('/', ...CREATE_ROLES, async (req, res) => {
   // Auto-fallback if database missing extended columns (e.g. statement1, assertion)
   if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
     console.warn('Single insert missing extended columns, auto-stripping to basic legacy schema...');
-    const basicPayload = sanitizeRecord(payload, BASIC_LEGACY_FIELDS);
-    const retry = await supabase
+    const legacyFields = legacyFieldsFor(payload);
+    const basicPayload = sanitizeRecord(payload, legacyFields);
+    let retry = await supabase
       .from('questions')
       .insert(basicPayload)
       .select()
       .single();
+    if (retry.error && legacyFields === GRAND_TEST_LEGACY_FIELDS) {
+      retry = await supabase
+        .from('questions')
+        .insert(sanitizeRecord(payload, BASIC_LEGACY_FIELDS))
+        .select()
+        .single();
+    }
     data = retry.data;
     error = retry.error;
   }
@@ -882,11 +910,19 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
     // Auto-fallback if database schema does not have new extended columns yet (e.g. statement1, column_a)
     if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
       console.warn(`Database missing extended columns, auto-stripping to basic legacy schema...`);
-      const basicChunk = chunk.map(r => sanitizeRecord(r, BASIC_LEGACY_FIELDS));
-      const retry = await supabase
+      const includesGrandTest = chunk.some(record => record.source || record.year);
+      const fallbackFields = includesGrandTest ? GRAND_TEST_LEGACY_FIELDS : BASIC_LEGACY_FIELDS;
+      const basicChunk = chunk.map(r => sanitizeRecord(r, fallbackFields));
+      let retry = await supabase
         .from('questions')
         .insert(basicChunk)
         .select();
+      if (retry.error && includesGrandTest) {
+        retry = await supabase
+          .from('questions')
+          .insert(chunk.map(r => sanitizeRecord(r, BASIC_LEGACY_FIELDS)))
+          .select();
+      }
       data = retry.data;
       error = retry.error;
     }
@@ -904,11 +940,18 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
 
         if (singleRetry.error) {
           // Retry single item with basic legacy schema
-          const basicItem = sanitizeRecord(item, BASIC_LEGACY_FIELDS);
+          const legacyFields = legacyFieldsFor(item);
+          const basicItem = sanitizeRecord(item, legacyFields);
           singleRetry = await supabase
             .from('questions')
             .insert([basicItem])
             .select();
+          if (singleRetry.error && legacyFields === GRAND_TEST_LEGACY_FIELDS) {
+            singleRetry = await supabase
+              .from('questions')
+              .insert([sanitizeRecord(item, BASIC_LEGACY_FIELDS)])
+              .select();
+          }
         }
 
         if (singleRetry.error) {

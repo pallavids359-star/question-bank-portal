@@ -23,7 +23,23 @@
   }
 
   function ensureMathDelimiters(text) {
-    const source = String(text || '');
+    let source = String(text || '');
+    if (!source.includes('\\[') && source.includes('\\]')) {
+      const closeIndex = source.indexOf('\\]');
+      const beforeClose = source.slice(0, closeIndex);
+      const commandMatch = beforeClose.match(LATEX_COMMAND);
+      if (commandMatch) {
+        source = `${source.slice(0, commandMatch.index)}\\[${source.slice(commandMatch.index)}`;
+      }
+    }
+    if (!source.includes('\\(') && source.includes('\\)')) {
+      const closeIndex = source.indexOf('\\)');
+      const beforeClose = source.slice(0, closeIndex);
+      const commandMatch = beforeClose.match(LATEX_COMMAND);
+      if (commandMatch) {
+        source = `${source.slice(0, commandMatch.index)}\\(${source.slice(commandMatch.index)}`;
+      }
+    }
     const hasDollarMath = source.includes('$') && source.indexOf('$') !== source.lastIndexOf('$');
     const hasParenthesizedMath = source.includes('\\(') && source.includes('\\)');
     const hasDisplayMath = source.includes('\\[') && source.includes('\\]');
