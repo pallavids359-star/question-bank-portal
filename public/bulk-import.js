@@ -1553,7 +1553,9 @@ async function checkPreviousImports(questions, requestId) {
   function renderCardNode(text) {
     if (!text) return document.createTextNode('');
 
-    const processedText = autoWrapStandaloneLatex(text);
+    const processedText = window.QbpContentRenderer
+      ? window.QbpContentRenderer.ensureMathDelimiters(text)
+      : autoWrapStandaloneLatex(text);
     const container = document.createElement('span');
     const parts = processedText.split(/({{IMG::[^}]+}})/g);
 
@@ -2201,6 +2203,8 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
       if (typeof showToast === 'function') showToast('Only Question Adders or Admins can prepare imports.', true);
       return;
     }
+    clearTimeout(state.debounceTimer);
+    state.debounceTimer = null;
     state.editingIndex = idx;
     const q = state.parsedQuestions[idx];
     if (!q) return;
@@ -2291,6 +2295,8 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
       closeCardEditor();
       return;
     }
+    clearTimeout(state.debounceTimer);
+    state.debounceTimer = null;
     const q = state.parsedQuestions[idx];
     const newType = gVal('bqEditQType');
     q.qType = newType;
@@ -2298,6 +2304,7 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     q.topic = q.concept;
     q.difficulty = gVal('bqEditDifficulty');
     q.solutionText = gVal('bqEditSolution');
+    q.exams = getMeta().exams;
 
     if (newType === 'assertion_reason') {
       q.assertion = gVal('bqEditAssertion');
@@ -2323,6 +2330,9 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     }
 
     validateAll(state.parsedQuestions);
+    checkDuplicates(state.parsedQuestions);
+    const requestId = ++state.duplicateRequestId;
+    state.duplicateCheckPromise = checkPreviousImports(state.parsedQuestions, requestId);
     closeCardEditor();
     renderCards();
   }
@@ -2352,7 +2362,7 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
       klass: q.klass || meta.klass,
       chapter: selectedChapter,
       topic: q.concept || q.topic || 'General',
-      exams: q.exams && q.exams.length ? q.exams : meta.exams,
+      exams: meta.exams,
       qType: q.qType || 'mcq_single',
       question: q.question,
       optA: q.optA || '',
@@ -2469,7 +2479,7 @@ if (duplicateKey) {
       klass: q.klass || meta.klass,
       chapter: selectedChapter,
       topic: q.concept || q.topic || 'General',
-      exams: q.exams && q.exams.length ? q.exams : meta.exams,
+      exams: meta.exams,
       qType: q.qType || 'mcq_single',
       question: q.question,
       optA: q.optA || '',

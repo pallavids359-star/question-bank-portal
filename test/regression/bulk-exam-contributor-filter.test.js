@@ -14,6 +14,23 @@ test('bulk import offers and stores the combined NEET/JEE exam category', () => 
   assert.match(html, /allowed\.push\('NEET\/JEE'\)/);
   assert.match(questionRoutes, /\[\.\.\.allowed, 'NEET\/JEE'\]/);
   assert.match(bulkJs, /exams:\s+eEl && eEl\.value \? \[eEl\.value\.trim\(\)\]/);
+  assert.ok((bulkJs.match(/exams:\s+meta\.exams,/g) || []).length >= 2);
+  assert.doesNotMatch(bulkJs, /exams:\s+q\.exams && q\.exams\.length/);
+});
+
+test('bulk preview edits remain authoritative until import', () => {
+  assert.match(bulkJs, /function openCardEditor\(idx\)[\s\S]*?clearTimeout\(state\.debounceTimer\);[\s\S]*?state\.debounceTimer = null;/);
+  assert.match(bulkJs, /function saveCardEditor\(\)[\s\S]*?q\.solutionText = gVal\('bqEditSolution'\);[\s\S]*?checkPreviousImports\(state\.parsedQuestions, requestId\)/);
+});
+
+test('bulk image upload retains its field target until the asynchronous read completes', () => {
+  assert.match(html, /const targetId = _bqTarget;/);
+  assert.match(html, /document\.getElementById\(targetId\)/);
+  assert.match(html, /const previewId = targetId \+ 'ImgPreview';/);
+});
+
+test('bulk preview and Saved Questions use the same LaTeX delimiter repair', () => {
+  assert.match(bulkJs, /window\.QbpContentRenderer\.ensureMathDelimiters\(text\)/);
 });
 
 test('KCET bulk selection applies one mark and zero negative marks', () => {

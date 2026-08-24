@@ -46,9 +46,23 @@
   }
 
   function wrapLatexEnvironments(text) {
-    return String(text || '').replace(
+    let source = String(text || '');
+    source = source.replace(
+      /(\${1,})\s*(\\begin\{([A-Za-z*]+)\}[\s\S]*?\\end\{\3\})\s*(\${1,})/g,
+      (_, opening, expression, environmentName, closing) => {
+        const delimiter = opening.length >= 2 && closing.length >= 2 ? '$$' : '$';
+        return `${delimiter}${normalizeMathEscapes(expression)}${delimiter}`;
+      }
+    );
+    return source.replace(
       /\\begin\{([A-Za-z*]+)\}[\s\S]*?\\end\{\1\}/g,
-      expression => `$$${normalizeMathEscapes(expression)}$$`
+      (expression, environmentName, offset, fullText) => {
+        const alreadyDelimited = fullText.slice(0, offset).endsWith('$')
+          && fullText.slice(offset + expression.length).startsWith('$');
+        return alreadyDelimited
+          ? normalizeMathEscapes(expression)
+          : `$$${normalizeMathEscapes(expression)}$$`;
+      }
     );
   }
 
@@ -60,8 +74,8 @@
     source = source.replace(/`([^`\r\n]+)`/g, '$1');
     source = source.replace(/\bthenfor\b/gi, 'then for');
     source = source.replace(/\b([xyz]\s*=\s*[+-]?\d+(?:\.\d+)?)\$(?=\s|$)/gi, '$$$1$');
-    source = pairTrailingDisplayDelimiter(source);
     source = wrapLatexEnvironments(source);
+    source = pairTrailingDisplayDelimiter(source);
 
     const hasDollarMath = source.includes('$') && source.indexOf('$') !== source.lastIndexOf('$');
     const hasParenthesizedMath = source.includes('\\(') && source.includes('\\)');

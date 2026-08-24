@@ -29,6 +29,22 @@ test('missing opening inline delimiter is restored without changing surrounding 
   );
 });
 
+test('bare LaTeX matrix environment is wrapped once', () => {
+  const matrix = '\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}';
+  assert.equal(renderer.ensureMathDelimiters(matrix), `$$${matrix}$$`);
+});
+
+test('already delimited LaTeX matrix environment is not double wrapped', () => {
+  const matrix = '\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}';
+  assert.equal(renderer.ensureMathDelimiters(`$ ${matrix} $`), `$${matrix}$`);
+  assert.equal(renderer.ensureMathDelimiters(`$$${matrix}$$`), `$$${matrix}$$`);
+});
+
+test('malformed extra dollars around a LaTeX matrix are normalized for display only', () => {
+  const matrix = '\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}';
+  assert.equal(renderer.ensureMathDelimiters(`$${matrix}$$$`), `$${matrix}$`);
+});
+
 const markdownCases = ['Pending Review','Correct answer','Solution','Option A','A formula $x^2$'];
 for (const value of markdownCases) test(`Markdown strong token preserves content: ${value}`, () => {
   assert.deepEqual(renderer.tokenizeMarkdown(`before **${value}** after`), [
