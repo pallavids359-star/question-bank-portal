@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
-  const LATEX_COMMAND = /\\(?:begin|dfrac|frac|sqrt|int|sum|prod|lim|sin|cos|tan|cot|sec|csc|log|ln|alpha|beta|gamma|theta|lambda|omega|pi|mu|sigma|phi|delta|epsilon|mathrm|mathbf|text|vec|hat|bar|left|right|cdot|times|div|rightarrow|leftarrow|leftrightarrow|geq|leq|neq|infty|partial|nabla)(?![A-Za-z])/;
+  const LATEX_COMMAND = /\\(?:begin|det|operatorname|overrightarrow|overset|underset|dfrac|tfrac|frac|binom|sqrt|int|sum|prod|lim|sin|cos|tan|cot|sec|csc|log|ln|alpha|beta|gamma|theta|lambda|omega|pi|mu|sigma|phi|delta|epsilon|Delta|mathrm|mathbf|text|vec|hat|bar|left|right|cdot|times|div|pm|equiv|rightarrow|leftarrow|leftrightarrow|rightleftharpoons|leftharpoons|geq|leq|neq|infty|partial|nabla)(?![A-Za-z])/;
 
   function tokenizeMarkdown(text) {
     const source = String(text || '');

@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="stylesheet" href="bulk-import.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-<script src="content-renderer.js?v=20260824-2"></script>
+<script src="content-renderer.js?v=20260824-3"></script>
 <script src="match-display.js"></script>
 <script src="dashboard-view.js"></script>
 <script src="auth-view-state.js"></script>
@@ -953,7 +953,7 @@ textarea{resize:vertical;min-height:70px;}
   border:1px solid var(--border);
   border-radius:8px;
   background:#111;
-  overflow:visible;
+  overflow:hidden;
 }
 .match-display-heading{
   padding:7px 10px;
@@ -992,16 +992,16 @@ textarea{resize:vertical;min-height:70px;}
   min-width:0;
   flex:1 1 0%;
   box-sizing:border-box;
-  overflow:visible;
+  overflow-x:auto;
+  overflow-y:hidden;
   white-space:normal;
   word-break:normal;
   overflow-wrap:break-word;
 }
 .match-display-value .li-preview{
-  display:inline;
-  white-space:normal;
-  word-break:normal;
-  overflow-wrap:break-word;
+  display:block;
+  min-width:0;
+  max-width:100%;
 }
 .match-display-value .katex{
   display:inline-block;
@@ -1009,9 +1009,7 @@ textarea{resize:vertical;min-height:70px;}
   box-sizing:border-box;
 }
 .match-display-value .katex-html{
-  white-space:normal!important;
-  word-break:normal!important;
-  overflow-wrap:break-word!important;
+  white-space:nowrap!important;
 }
 .match-display-value .katex .mord,
 .match-display-value .katex .mopen,
@@ -4664,10 +4662,19 @@ function allowedExamsForSubject(subject) {
   return EXAMS_BY_SUBJECT[canonicalSubject(subject)] || EXAMS.slice();
 }
 
+function allowedEntryExamsForSubject(subject) {
+  const canonical = canonicalSubject(subject);
+  const allowed = allowedExamsForSubject(canonical).slice();
+  if (['Physics', 'Chemistry'].includes(canonical) && !allowed.includes('NEET/JEE')) {
+    allowed.push('NEET/JEE');
+  }
+  return allowed;
+}
+
 function updateExamOptionsForSubject(subject, preferredExams) {
   const container = document.getElementById('examToggles');
   if (!container) return;
-  const allowed = allowedExamsForSubject(subject);
+  const allowed = allowedEntryExamsForSubject(subject);
   const preferred = Array.isArray(preferredExams) ? preferredExams : Array.from(selectedExams);
   const validPreferred = preferred.filter(exam => allowed.includes(exam));
   selectedExams = new Set(validPreferred.length ? validPreferred : [allowed[0]]);
@@ -5487,7 +5494,7 @@ function validate(){
   if(!klassSel||!klassSel.value){ if(klassSel) klassSel.focus(); return 'Please select a Class.'; }
   if(!val('chapter')){ if(chapterEl) chapterEl.focus(); return 'Please select or enter a Chapter.'; }
   if(!val('topic')){ if(topicEl) topicEl.focus(); return 'Please enter a Topic.'; }
-  const allowedExams=allowedExamsForSubject(subjectSel.value);
+  const allowedExams=allowedEntryExamsForSubject(subjectSel.value);
   if(selectedExams.size===0) selectedExams.add(allowedExams[0]);
   const invalidExams=Array.from(selectedExams).filter(exam=>!allowedExams.includes(exam));
   if(invalidExams.length) return `${subjectSel.value} questions can use only ${allowedExams.join(' or ')}.`;
@@ -5557,7 +5564,7 @@ else if(isTF && !mainQuestionText){
 }
   else if(isMatch && !mainQuestionText) mainQuestionText = 'Match the Following Question';
 
-  const allowedExams = allowedExamsForSubject(subjectSel.value);
+  const allowedExams = allowedEntryExamsForSubject(subjectSel.value);
   const activeExams = Array.from(selectedExams.size > 0 ? selectedExams : [allowedExams[0]]);
 
   const record={
@@ -5928,7 +5935,7 @@ function ensureMathDelimiters(text) {
 function renderStaticPreview(raw){
   const span=document.createElement('span');
   span.className='li-preview';
-  const normalized=ensureMathDelimiters(raw||'');
+  const normalized=smartConvertRaw(ensureMathDelimiters(raw||''));
   const tokens=window.QbpContentRenderer.tokenizeMarkdown(normalized);
   tokens.forEach(token=>{
     const target=token.type==='strong'?document.createElement('strong'):document.createDocumentFragment();
@@ -6986,7 +6993,7 @@ if(sb) sb.textContent='Update Question';
     if(document.getElementById('topic')) document.getElementById('topic').value=q.topic||'';
     if(document.getElementById('difficulty')) document.getElementById('difficulty').value=q.difficulty||'Medium';
 
-    const allowedForQuestion = allowedExamsForSubject(q.subject);
+    const allowedForQuestion = allowedEntryExamsForSubject(q.subject);
     const examsArr = (Array.isArray(q.exams) && q.exams.length > 0) ? q.exams : [allowedForQuestion[0]];
     updateExamOptionsForSubject(q.subject, examsArr);
 

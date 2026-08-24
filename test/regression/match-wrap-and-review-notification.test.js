@@ -10,12 +10,16 @@ const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8').repla
 const bulkCss = fs.readFileSync(path.join(root, 'public/bulk-import.css'), 'utf8').replace(/\r\n/g, '\n');
 const questionsRoute = fs.readFileSync(path.join(root, 'routes/questions.js'), 'utf8').replace(/\r\n/g, '\n');
 
-test('Match display columns use overflow:visible and inline previews to prevent formula clipping', () => {
-  assert.ok(html.includes('.match-display-column{\n  min-width:0;\n  width:100%;\n  box-sizing:border-box;\n  border:1px solid var(--border);\n  border-radius:8px;\n  background:#111;\n  overflow:visible;\n}'));
-  assert.ok(html.includes('.match-display-value .li-preview{\n  display:inline;'));
+test('Match display columns contain long formulas without overlapping', () => {
+  assert.ok(html.includes('.match-display-value .li-preview{\n  display:block;'));
+  assert.match(html, /\.match-display-column\{[\s\S]*?overflow:hidden;/);
+  assert.match(html, /\.match-display-value\{[\s\S]*?overflow-x:auto;/);
+  assert.match(bulkCss, /\.bq-match-column\{[^\n]*overflow:hidden;/);
+  assert.match(bulkCss, /\.bq-match-value\{[^\n]*overflow-x:auto;/);
+});
 
-  assert.ok(bulkCss.includes('.bq-match-column{min-width:0;width:100%;box-sizing:border-box;background:#111;border:1px solid #252525;border-radius:7px;overflow:visible;}'));
-  assert.ok(bulkCss.includes('.bq-match-value{min-width:0;flex:1 1 0%;box-sizing:border-box;overflow:visible;white-space:normal;word-break:normal;overflow-wrap:break-word;}'));
+test('Saved Questions applies existing smart math conversion after delimiter repair', () => {
+  assert.match(html, /const normalized=smartConvertRaw\(ensureMathDelimiters\(raw\|\|''\)\);/);
 });
 
 test('Question update endpoint notifies original reviewer when question has an active review', () => {

@@ -8,6 +8,7 @@ const latexCases = [
   '\\text{Rate}=k[Cl\\_3C\\cdot CHO][NO]',
   '\\frac{1}{16}', '\\sqrt{x}', '\\alpha+\\beta', '\\sum_{i=1}^{n}i',
   '\\int_0^1 x dx', '\\vec{F}', '\\infty', '\\partial x', '\\nabla f',
+  '\\det(A)', 'K_c\\rightleftharpoons K_p',
 ];
 for (const value of latexCases) test(`raw LaTeX is delimited once: ${value}`, () => {
   const rendered = renderer.ensureMathDelimiters(value);

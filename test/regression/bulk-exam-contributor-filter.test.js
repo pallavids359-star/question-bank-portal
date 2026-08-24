@@ -18,6 +18,14 @@ test('bulk import offers and stores the combined NEET/JEE exam category', () => 
   assert.doesNotMatch(bulkJs, /exams:\s+q\.exams && q\.exams\.length/);
 });
 
+test('normal Add New Question offers NEET/JEE for Physics and Chemistry', () => {
+  assert.match(html, /function allowedEntryExamsForSubject\(subject\)/);
+  assert.match(html, /\['Physics', 'Chemistry'\]\.includes\(canonical\)/);
+  assert.match(html, /allowed\.push\('NEET\/JEE'\)/);
+  assert.match(html, /const allowed = allowedEntryExamsForSubject\(subject\);/);
+  assert.match(html, /const allowedExams=allowedEntryExamsForSubject\(subjectSel\.value\);/);
+});
+
 test('bulk preview edits remain authoritative until import', () => {
   assert.match(bulkJs, /function openCardEditor\(idx\)[\s\S]*?clearTimeout\(state\.debounceTimer\);[\s\S]*?state\.debounceTimer = null;/);
   assert.match(bulkJs, /function saveCardEditor\(\)[\s\S]*?q\.solutionText = gVal\('bqEditSolution'\);[\s\S]*?checkPreviousImports\(state\.parsedQuestions, requestId\)/);

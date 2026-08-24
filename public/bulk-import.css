@@ -77,14 +77,14 @@
 .bq-card-body{padding:8px 10px;}
 .bq-card-qtext{font-size:13px;color:#e0e0e0;line-height:1.55;margin-bottom:6px;}
 .bq-match-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin:8px 0;width:100%;box-sizing:border-box;overflow:visible;}
-.bq-match-column{min-width:0;width:100%;box-sizing:border-box;background:#111;border:1px solid #252525;border-radius:7px;overflow:visible;}
+.bq-match-column{min-width:0;width:100%;box-sizing:border-box;background:#111;border:1px solid #252525;border-radius:7px;overflow:hidden;}
 .bq-match-heading{padding:6px 8px;color:var(--gold);font-size:11px;font-weight:700;background:#171717;border-bottom:1px solid #252525;border-top-left-radius:6px;border-top-right-radius:6px;}
 .bq-match-row{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;font-size:12px;line-height:1.45;color:#ccc;border-bottom:1px solid #222;min-height:auto;height:auto;width:100%;box-sizing:border-box;overflow:visible;}
 .bq-match-row:last-child{border-bottom:0;}
 .bq-match-index{flex:0 0 auto;min-width:24px;color:var(--muted);font-weight:700;white-space:nowrap;}
-.bq-match-value{min-width:0;flex:1 1 0%;box-sizing:border-box;overflow:visible;white-space:normal;word-break:normal;overflow-wrap:break-word;}
+.bq-match-value{min-width:0;flex:1 1 0%;box-sizing:border-box;overflow-x:auto;overflow-y:hidden;white-space:normal;word-break:normal;overflow-wrap:break-word;}
 .bq-match-value .katex{display:inline-block;max-width:100%;box-sizing:border-box;}
-.bq-match-value .katex-html{white-space:normal!important;word-break:normal!important;overflow-wrap:break-word!important;}
+.bq-match-value .katex-html{white-space:nowrap!important;}
 .bq-match-value .katex .mord, .bq-match-value .katex .mopen, .bq-match-value .katex .mclose, .bq-match-value .katex .frac-line, .bq-match-value .katex .vlist-t{white-space:nowrap!important;}
 .bq-match-value .katex-display{display:block;margin:0.5em 0;overflow-x:auto;white-space:nowrap;max-width:100%;}
 .bq-match-value img{max-width:100%;height:auto;}
