@@ -36,13 +36,31 @@ test('bare LaTeX matrix environment is wrapped once', () => {
 
 test('already delimited LaTeX matrix environment is not double wrapped', () => {
   const matrix = '\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}';
-  assert.equal(renderer.ensureMathDelimiters(`$ ${matrix} $`), `$${matrix}$`);
+  assert.equal(renderer.ensureMathDelimiters(`$ ${matrix} $`), `$ ${matrix} $`);
   assert.equal(renderer.ensureMathDelimiters(`$$${matrix}$$`), `$$${matrix}$$`);
 });
 
 test('malformed extra dollars around a LaTeX matrix are normalized for display only', () => {
   const matrix = '\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}';
   assert.equal(renderer.ensureMathDelimiters(`$${matrix}$$$`), `$${matrix}$`);
+});
+
+test('matrix inside a larger inline expression is not nested in display delimiters', () => {
+  const value = '$A=\\begin{bmatrix}0&-i\\\\i&0\\end{bmatrix}$';
+  assert.equal(renderer.ensureMathDelimiters(value), value);
+});
+
+test('extra closing dollars after an inline matrix are reduced to its opening delimiter', () => {
+  const value = 'If $A=\\begin{bmatrix}0&-i\\\\i&0\\end{bmatrix}$$$, then $A^2=I$';
+  assert.equal(
+    renderer.ensureMathDelimiters(value),
+    'If $A=\\begin{bmatrix}0&-i\\\\i&0\\end{bmatrix}$, then $A^2=I$'
+  );
+});
+
+test('raw determinant ratio remains one complete inline expression', () => {
+  const value = '\\dfrac{l}{\\begin{vmatrix}m_1&n_1\\\\m_2&n_2\\end{vmatrix}}=\\dfrac{-m}{\\begin{vmatrix}l_1&n_1\\\\l_2&n_2\\end{vmatrix}}';
+  assert.equal(renderer.ensureMathDelimiters(value), `$${value}$`);
 });
 
 const markdownCases = ['Pending Review','Correct answer','Solution','Option A','A formula $x^2$'];

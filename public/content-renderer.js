@@ -45,21 +45,64 @@
     return `${source.slice(0, commandMatch.index)}$$${expression}${source.slice(closingIndex)}`;
   }
 
-  function wrapLatexEnvironments(text) {
-    let source = String(text || '');
-    source = source.replace(
-      /(\${1,})\s*(\\begin\{([A-Za-z*]+)\}[\s\S]*?\\end\{\3\})\s*(\${1,})/g,
-      (_, opening, expression, environmentName, closing) => {
-        const delimiter = opening.length >= 2 && closing.length >= 2 ? '$$' : '$';
-        return `${delimiter}${normalizeMathEscapes(expression)}${delimiter}`;
+  function normalizeDollarRuns(text) {
+    const source = String(text || '');
+    let result = '';
+    let activeDelimiter = '';
+    let index = 0;
+
+    while (index < source.length) {
+      if (source[index] !== '$') {
+        result += source[index];
+        index += 1;
+        continue;
       }
-    );
+
+      let end = index;
+      while (source[end] === '$') end += 1;
+      const runLength = end - index;
+
+      if (!activeDelimiter) {
+        activeDelimiter = runLength >= 2 ? '$$' : '$';
+        result += activeDelimiter;
+      } else if (activeDelimiter === '$') {
+        result += '$';
+        activeDelimiter = '';
+      } else if (runLength >= 2) {
+        result += '$$';
+        activeDelimiter = '';
+      } else {
+        result += '$';
+      }
+
+      index = end;
+    }
+
+    return result;
+  }
+
+  function isInsideDollarMath(source, offset) {
+    let activeDelimiter = '';
+    let index = 0;
+    while (index < offset) {
+      if (source[index] !== '$') {
+        index += 1;
+        continue;
+      }
+      const delimiter = source[index + 1] === '$' ? '$$' : '$';
+      if (!activeDelimiter) activeDelimiter = delimiter;
+      else if (activeDelimiter === delimiter) activeDelimiter = '';
+      index += delimiter.length;
+    }
+    return Boolean(activeDelimiter);
+  }
+
+  function wrapLatexEnvironments(text) {
+    const source = String(text || '');
     return source.replace(
       /\\begin\{([A-Za-z*]+)\}[\s\S]*?\\end\{\1\}/g,
       (expression, environmentName, offset, fullText) => {
-        const alreadyDelimited = fullText.slice(0, offset).endsWith('$')
-          && fullText.slice(offset + expression.length).startsWith('$');
-        return alreadyDelimited
+        return isInsideDollarMath(fullText, offset)
           ? normalizeMathEscapes(expression)
           : `$$${normalizeMathEscapes(expression)}$$`;
       }
@@ -74,13 +117,8 @@
     source = source.replace(/`([^`\r\n]+)`/g, '$1');
     source = source.replace(/\bthenfor\b/gi, 'then for');
     source = source.replace(/\b([xyz]\s*=\s*[+-]?\d+(?:\.\d+)?)\$(?=\s|$)/gi, '$$$1$');
-    source = wrapLatexEnvironments(source);
+    source = normalizeDollarRuns(source);
     source = pairTrailingDisplayDelimiter(source);
-
-    const hasDollarMath = source.includes('$') && source.indexOf('$') !== source.lastIndexOf('$');
-    const hasParenthesizedMath = source.includes('\\(') && source.includes('\\)');
-    const hasDisplayMath = source.includes('\\[') && source.includes('\\]');
-    if (hasDollarMath || hasParenthesizedMath || hasDisplayMath) return source;
 
     if (!source.includes('\\[') && source.includes('\\]')) {
       const closeIndex = source.indexOf('\\]');
@@ -96,6 +134,22 @@
         source = `${source.slice(0, commandMatch.index)}\\(${source.slice(commandMatch.index)}`;
       }
     }
+
+    let hasDollarMath = source.includes('$') && source.indexOf('$') !== source.lastIndexOf('$');
+    let hasParenthesizedMath = source.includes('\\(') && source.includes('\\)');
+    let hasDisplayMath = source.includes('\\[') && source.includes('\\]');
+    if (!hasDollarMath && !hasParenthesizedMath && !hasDisplayMath && LATEX_COMMAND.test(source)) {
+      if (/^\\begin\{([A-Za-z*]+)\}[\s\S]*\\end\{\1\}$/.test(source.trim())) {
+        return `$$${normalizeMathEscapes(source.trim())}$$`;
+      }
+      return `$${source.trim()}$`;
+    }
+
+    source = wrapLatexEnvironments(source);
+    hasDollarMath = source.includes('$') && source.indexOf('$') !== source.lastIndexOf('$');
+    hasParenthesizedMath = source.includes('\\(') && source.includes('\\)');
+    hasDisplayMath = source.includes('\\[') && source.includes('\\]');
+    if (hasDollarMath || hasParenthesizedMath || hasDisplayMath) return source;
 
     const repairedDisplayMath = source.includes('\\[') && source.includes('\\]');
     const repairedInlineMath = source.includes('\\(') && source.includes('\\)');
