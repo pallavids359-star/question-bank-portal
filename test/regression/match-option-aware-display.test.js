@@ -32,6 +32,14 @@ test('numeric and lowercase mappings retain their own label scheme', () => {
   assert.deepEqual(matchDisplay.labelsFor(q, 'right', 4), ['a', 'b', 'c', 'd']);
 });
 
+test('Roman numeral Column B labels are displayed in numeric order', () => {
+  const fourRows = { matchOptions: { A: 'a-ii, b-iii, c-iv, d-i' } };
+  assert.deepEqual(matchDisplay.labelsFor(fourRows, 'right', 4), ['i', 'ii', 'iii', 'iv']);
+
+  const fiveRows = { matchOptions: { A: 'a-v, b-iv, c-ii, d-i', B: 'a-i, b-ii, c-iii, d-v' } };
+  assert.deepEqual(matchDisplay.labelsFor(fiveRows, 'right', 5), ['i', 'ii', 'iii', 'iv', 'v']);
+});
+
 test('legacy Biology word fragments are reconstructed using each question mapping count', () => {
   const nephron = {
     matchOptions: {

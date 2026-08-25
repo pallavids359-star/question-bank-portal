@@ -151,6 +151,7 @@ router.get('/', ...ACTIVE_USER, async (req, res) => {
     .from('notifications')
     .select('id, recipient_id, sender_id, sender_name, question_id, type, title, message, difficulty, is_read, created_at, read_at')
     .eq('recipient_id', req.user.userId)
+    .eq('type', 'question_review')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) return isSchemaError(error) ? tableError(res, error) : res.status(500).json({ error: error.message });
@@ -165,6 +166,7 @@ router.get('/unread-count', ...ACTIVE_USER, async (req, res) => {
     .from('notifications')
     .select('id', { count: 'exact', head: true })
     .eq('recipient_id', req.user.userId)
+    .eq('type', 'question_review')
     .eq('is_read', false);
 
   if (error) {

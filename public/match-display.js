@@ -48,9 +48,11 @@
 
   function tokenRank(token) {
     if (/^\d+$/.test(token)) return Number(token);
-    if (/^[A-Za-z]$/.test(token)) return token.toUpperCase().charCodeAt(0) - 64;
     const roman = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
-    return roman[token.toLowerCase()] || 999;
+    const normalized = String(token || '').toLowerCase();
+    if (roman[normalized]) return roman[normalized];
+    if (/^[A-Za-z]$/.test(token)) return token.toUpperCase().charCodeAt(0) - 64;
+    return 999;
   }
 
   function uniqueSorted(tokens) {
