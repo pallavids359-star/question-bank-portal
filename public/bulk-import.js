@@ -169,6 +169,7 @@
   const Q_START_PATTERNS = [
     /^\s*(?:Q|Question|Que|Problem|Item)\s*#?\s*(\d{1,4})?\s*[:\.]?\s*/i,
     /^\s*@question\s*[:\.]?\s*/i,
+    /^\s*\d{1,4}\s*[.:)]\s+/,
   ];
 
   function looksLikeQStart(line) {
@@ -441,6 +442,26 @@
   function detectBlockType(block) {
     const rawLines = block.lines.map(l => l.text);
     const inline = extractInlineMetadata(rawLines);
+
+    // Explicit question-body labels are more reliable than a supplied @type.
+    // This prevents Assertion/Reason and Statement I/II questions from being
+    // interpreted as one another when their options or solutions mention the
+    // other question type.
+    const hasExplicitAssertion = rawLines.some(line =>
+      /^\s*(?:Assertion(?:\s*\(A\))?|\(A\))\s*[:.\-–—]/i.test(line)
+    );
+    const hasExplicitReason = rawLines.some(line =>
+      /^\s*(?:Reason(?:\s*\(R\))?|\(R\))\s*[:.\-–—]/i.test(line)
+    );
+    const hasExplicitStatementOne = rawLines.some(line =>
+      /^\s*@?Statement\s*[-–—]?\s*\(?\s*(?:I|1|A)\s*\)?\s*[:.\-)–—]/i.test(line)
+    );
+    const hasExplicitStatementTwo = rawLines.some(line =>
+      /^\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\s*[:.\-)–—]/i.test(line)
+    );
+
+    if (hasExplicitAssertion && hasExplicitReason) return 'assertion_reason';
+    if (hasExplicitStatementOne && hasExplicitStatementTwo) return 'statement_based';
 
     if (inline.type) {
       const rawType = inline.type.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
@@ -1043,14 +1064,18 @@ function extractFlexibleMatchRows(rawLine) {
 
 if (mode === 'col1') {
 
-  const parsedRows =
-    extractFlexibleMatchRows(line);
+  const leadingRow = parseFlexibleMatchRow(line);
+  const parsedRows = leadingRow ? extractFlexibleMatchRows(line) : [];
 
-  if (parsedRows.length) {
+  if (parsedRows.length > 1) {
 
     parsedRows.forEach(value => {
       if (value) col1.push(value);
     });
+
+  } else if (leadingRow) {
+
+    col1.push(leadingRow.value);
 
   } else if (col1.length === 0) {
 
@@ -1071,14 +1096,18 @@ if (mode === 'col1') {
 
 } else if (mode === 'col2') {
 
-  const parsedRows =
-    extractFlexibleMatchRows(line);
+  const leadingRow = parseFlexibleMatchRow(line);
+  const parsedRows = leadingRow ? extractFlexibleMatchRows(line) : [];
 
-  if (parsedRows.length) {
+  if (parsedRows.length > 1) {
 
     parsedRows.forEach(value => {
       if (value) col2.push(value);
     });
+
+  } else if (leadingRow) {
+
+    col2.push(leadingRow.value);
 
   } else if (col2.length === 0) {
 

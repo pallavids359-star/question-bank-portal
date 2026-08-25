@@ -1925,12 +1925,20 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
           <!-- Assertion & Reason Block -->
           <div id="bqEditARBlock" style="display:none;margin-bottom:12px;">
             <div class="form-group" style="margin-bottom:8px;">
-              <label style="font-size:11px;color:#8f9bba;">Assertion (A) (LaTeX supported)</label>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                <label style="font-size:11px;color:#8f9bba;">Assertion (A) (LaTeX supported)</label>
+                <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditAssertion" title="Attach Image to Assertion">📷</button>
+              </div>
               <textarea id="bqEditAssertion" style="min-height:50px;background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:8px 10px;width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+              <div id="bqEditAssertionImgPreview" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;"></div>
             </div>
             <div class="form-group" style="margin-bottom:8px;">
-              <label style="font-size:11px;color:#8f9bba;">Reason (R) (LaTeX supported)</label>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                <label style="font-size:11px;color:#8f9bba;">Reason (R) (LaTeX supported)</label>
+                <button type="button" class="bq-img-attach-btn" data-bq-target="bqEditReason" title="Attach Image to Reason">📷</button>
+              </div>
               <textarea id="bqEditReason" style="min-height:50px;background:#1c2230;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:8px 10px;width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+              <div id="bqEditReasonImgPreview" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;"></div>
             </div>
           </div>
 
@@ -5442,12 +5450,13 @@ if(qTypeSel){ qTypeSel.addEventListener('change',updateTypeVisibility); updateTy
 
 function columnALabel(idx){const num=idx+1;return num<=2?`Row ${num} *`:`Row ${num} (Optional)`;}
 function columnBLabel(idx){const letter=String.fromCharCode(80+idx);return idx<2?`Row ${letter} *`:`Row ${letter} (Optional)`;}
-function relabelRows(containerId,labelFn){const c=document.getElementById(containerId);if(!c)return;Array.from(c.children).forEach((wrap,idx)=>{wrap.querySelector('.eq-field').setAttribute('data-placeholder',labelFn(idx));});}
+function relabelRows(containerId,labelFn){const c=document.getElementById(containerId);if(!c)return;Array.from(c.children).forEach((wrap,idx)=>{const field=wrap.querySelector('.eq-field');field.id=containerId+'Field'+idx;field.setAttribute('data-placeholder',labelFn(idx));const attach=wrap.querySelector('.img-link-btn-flat');if(attach)attach.dataset.target=field.id;});}
 function addColumnRow(containerId,labelFn){
   const container=document.getElementById(containerId);if(!container)return;const idx=container.children.length;
   const wrap=document.createElement('div');wrap.className='row-item';
-  const field=document.createElement('div');field.className='eq-field match-row-input';field.contentEditable='true';field.spellcheck=false;field.setAttribute('data-placeholder',labelFn(idx));
+  const field=document.createElement('div');field.className='eq-field match-row-input';field.id=containerId+'Field'+idx;field.contentEditable='true';field.spellcheck=false;field.setAttribute('data-placeholder',labelFn(idx));
   wrap.appendChild(field);attachEquationField(field);
+  const attach=document.createElement('button');attach.type='button';attach.className='attach-btn img-link-btn-flat';attach.dataset.target=field.id;attach.title='Attach Image';attach.textContent='📎';wrap.appendChild(attach);
   if(idx>=2){const rm=document.createElement('button');rm.type='button';rm.className='row-remove-btn';rm.title='Remove row';rm.textContent='✕';rm.addEventListener('click',()=>{wrap.remove();relabelRows(containerId,labelFn);});wrap.appendChild(rm);}
   container.appendChild(wrap);
 }
@@ -7515,7 +7524,7 @@ window.showPage             = showPage;
 window.Auth                 = Auth;   // useful for console debugging
 window.QP                   = QP;     // already assigned above
 </script>
-<script src="bulk-import.js?v=4.0"></script>
+<script src="bulk-import.js?v=4.1"></script>
 <script>
 /* ================================================================
    IMAGE ATTACH BUTTON HANDLERS
@@ -7737,7 +7746,7 @@ window.QP                   = QP;     // already assigned above
   if (origClose) {
     window.BulkModule.closeCardEditor = function() {
       origClose();
-      ['bqEditQuestionImgPreview','bqEditOptAImgPreview','bqEditOptBImgPreview',
+      ['bqEditAssertionImgPreview','bqEditReasonImgPreview','bqEditQuestionImgPreview','bqEditOptAImgPreview','bqEditOptBImgPreview',
        'bqEditOptCImgPreview','bqEditOptDImgPreview','bqEditSolutionImgPreview']
        .forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
     };
