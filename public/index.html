@@ -947,6 +947,19 @@ textarea{resize:vertical;min-height:70px;}
   box-sizing:border-box;
   overflow:visible;
 }
+.list-item.match-question .li-top{
+  flex-direction:column;
+}
+.list-item.match-question .li-top>div:first-child{
+  width:100%;
+  min-width:0;
+}
+.list-item.match-question .li-btns{
+  order:-1;
+  align-self:flex-end;
+  width:auto;
+  max-width:none;
+}
 .match-display-column{
   min-width:0;
   width:100%;
@@ -6008,6 +6021,7 @@ const isAdmin = currentRole === 'admin';
   filtered.forEach(q=>{
     try {
     const item=document.createElement('div');item.className='list-item';item.dataset.id=q.id;
+    if(q.qType==='match')item.classList.add('match-question');
     const top=document.createElement('div');top.className='li-top';
     const main=document.createElement('div');main.style.flex='1';
     const meta=document.createElement('div');meta.className='li-meta';

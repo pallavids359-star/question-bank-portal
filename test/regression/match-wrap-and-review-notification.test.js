@@ -12,6 +12,10 @@ const questionsRoute = fs.readFileSync(path.join(root, 'routes/questions.js'), '
 
 test('Match display columns show content directly without internal scrollbars', () => {
   assert.ok(html.includes('.match-display-value .li-preview{\n  display:block;'));
+  assert.match(html, /if\(q\.qType==='match'\)item\.classList\.add\('match-question'\);/);
+  assert.match(html, /\.list-item\.match-question \.li-top\{\s*flex-direction:column;/);
+  assert.match(html, /\.list-item\.match-question \.li-top>div:first-child\{\s*width:100%;/);
+  assert.match(html, /\.list-item\.match-question \.li-btns\{[\s\S]*?align-self:flex-end;[\s\S]*?max-width:none;/);
   assert.match(html, /\.match-display-column\{[\s\S]*?overflow:hidden;/);
   assert.match(html, /\.match-display-value\{[^}]*overflow:visible;/);
   assert.doesNotMatch(html, /\.match-display-value\{[^}]*overflow-x:auto;/);
