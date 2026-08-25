@@ -126,6 +126,10 @@ test('Ctrl+V image paste converts clipboard images to persistent image markers',
   assert.match(html, /reader\.readAsDataURL\(blob\)/);
   assert.match(html, /targetEl\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/);
   assert.match(html, /htmlText && \/<img\\b\/i\.test\(htmlText\)/);
+  assert.match(
+    html,
+    /'question', 'optA', 'optB', 'optC', 'optD', 'solutionText',[\s\S]*'assertion', 'reason', 'predefOptions',[\s\S]*'numQuestion', 'numAnswer', 'statement1', 'statement2'[\s\S]*\.forEach\(attachEquationField\)/
+  );
 });
 
 test('plain blank underscores are not converted into red KaTeX errors', () => {

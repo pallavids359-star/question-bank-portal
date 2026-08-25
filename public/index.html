@@ -5243,6 +5243,14 @@ function attachEquationField(idOrEl){
   });
 }
 
+// Static Add/Edit fields use the same paste, drop, LaTeX and image handling
+// as dynamically created Match-the-Following rows.
+[
+  'question', 'optA', 'optB', 'optC', 'optD', 'solutionText',
+  'assertion', 'reason', 'predefOptions',
+  'numQuestion', 'numAnswer', 'statement1', 'statement2'
+].forEach(attachEquationField);
+
 // Global paste listener for question creators (Admin & Question Adder)
 document.addEventListener('paste', async (e) => {
   if (typeof Auth !== 'undefined' && Auth.can && !Auth.can('add') && !Auth.can('edit')) return;
