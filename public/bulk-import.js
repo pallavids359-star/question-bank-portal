@@ -47,7 +47,7 @@
       isGrandTest:     importMode === 'grand_test',
       coverage,
       subject:        sEl && sEl.value ? sEl.value.trim() : 'Physics',
-      klass:          kEl && kEl.value ? kEl.value.trim() : '11',
+      klass:          kEl && kEl.value ? kEl.value.trim() : '',
       chapter:        cEl && cEl.value ? cEl.value.trim() : '',
       exams:          eEl && eEl.value ? [eEl.value.trim()] : ['NEET'],
       language:       val('bqMetaLanguage') || 'English',
@@ -70,6 +70,15 @@
     const key = `${meta.subject}-${meta.klass}`;
     const chapters = (window.BULK_NCERT_CHAPTERS && window.BULK_NCERT_CHAPTERS[key]) || [];
     return chapters.includes(meta.chapter) ? meta.chapter : '';
+  }
+
+  function selectedBulkClass(meta) {
+    if (meta.isGrandTest) return 'Full Syllabus';
+    const classSelect = document.getElementById('bqMetaClass');
+    if (!classSelect || !meta.klass) return '';
+    return Array.from(classSelect.options).some(option => option.value === meta.klass)
+      ? meta.klass
+      : '';
   }
 
   function extractGrandTestHeader(rawText) {
@@ -515,7 +524,7 @@ const hasFlexibleMatchColumns =
     }
 
     // 4. Statement Based
-    if (/\bstatement\s+(i|ii|1|2)\b/i.test(text)) {
+    if (/\bstatement\s*[-–—]?\s*\(?\s*(?:i|ii|1|2|a|b)\s*\)?(?=\s*[:.\-)–—]|\s|$)/i.test(text)) {
       return 'statement_based';
     }
 
@@ -579,7 +588,7 @@ const hasFlexibleMatchColumns =
       const finalSubject = meta.isGrandTest && meta.coverage === 'Subject-wise'
         ? meta.subject
         : (inline.subject || overrides.subject || meta.subject);
-      const finalKlass   = meta.isGrandTest ? 'Full Syllabus' : (inline.klass || overrides.klass || meta.klass);
+      const finalKlass   = selectedBulkClass(meta);
       const finalChapter = selectedBulkChapter(meta);
       
       const detectedConcept = meta.isGrandTest
@@ -1274,12 +1283,13 @@ if (mode === 'col1') {
   // ── VALIDATION ENGINE ─────────────────────────────────────────────
   function validateAll(questions) {
     const meta = getMeta();
+    const selectedClass = selectedBulkClass(meta);
     const selectedChapter = selectedBulkChapter(meta);
     questions.forEach((q, idx) => {
       q.errors = [];
       const num = idx + 1;
       if (!q.subject && !meta.subject) q.errors.push(`Question #${num}: Subject is required.`);
-      if (!q.klass && !meta.klass) q.errors.push(`Question #${num}: Class is required.`);
+      if (!selectedClass) q.errors.push(`Question #${num}: Class must be selected from the dropdown.`);
       if (!selectedChapter) q.errors.push(`Question #${num}: Chapter must be selected from the dropdown.`);
       if (meta.isGrandTest && !q.source) q.errors.push(`Question #${num}: @paper is required once at the top.`);
       if (meta.isGrandTest && !q.year) q.errors.push(`Question #${num}: @year must be a four-digit year at the top.`);
@@ -1390,6 +1400,15 @@ function normalizeForDuplicate(value) {
     .trim();
 }
 
+function duplicateScopeKey(subject, klass, question) {
+  const normalizedQuestion = normalizeForDuplicate(question);
+  if (!normalizedQuestion) return '';
+  return [subject, klass]
+    .map(value => String(value || '').trim().toLowerCase())
+    .concat(normalizedQuestion)
+    .join('\u0000');
+}
+
 function checkDuplicates(
   questions
 ) {
@@ -1411,10 +1430,11 @@ function checkDuplicates(
     const question =
       questions[index];
 
-    const key =
-      normalizeForDuplicate(
-        question.question
-      );
+    const key = duplicateScopeKey(
+      question.subject,
+      question.klass,
+      question.question
+    );
 
 
     question.isDuplicate = false;
@@ -1475,8 +1495,12 @@ function checkDuplicates(
 
 async function checkPreviousImports(questions, requestId) {
   const candidates = questions
-    .map(question => question.question || '')
-    .filter(Boolean);
+    .filter(question => question && question.question)
+    .map(question => ({
+      subject: question.subject || '',
+      klass: question.klass || '',
+      question: question.question
+    }));
 
   if (!candidates.length) {
     return;
@@ -2352,6 +2376,11 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     }
 
     const meta = getMeta();
+    const selectedClass = selectedBulkClass(meta);
+    if (!selectedClass) {
+      if (typeof showToast === 'function') showToast('Select a valid class from the dropdown.', true);
+      return;
+    }
     const selectedChapter = selectedBulkChapter(meta);
     if (!selectedChapter) {
       if (typeof showToast === 'function') showToast('Select a valid chapter from the dropdown.', true);
@@ -2359,7 +2388,7 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
     }
     const payload = {
       subject: q.subject || meta.subject,
-      klass: q.klass || meta.klass,
+      klass: selectedClass,
       chapter: selectedChapter,
       topic: q.concept || q.topic || 'General',
       exams: meta.exams,
@@ -2411,10 +2440,11 @@ if (
 
 
 // Refresh duplicate cache
-const duplicateKey =
-  normalizeForDuplicate(
-    payload.question
-  );
+const duplicateKey = duplicateScopeKey(
+  payload.subject,
+  payload.klass,
+  payload.question
+);
 
 if (duplicateKey) {
 
@@ -2447,6 +2477,11 @@ if (duplicateKey) {
     await state.duplicateCheckPromise;
 
     const meta = getMeta();
+    const selectedClass = selectedBulkClass(meta);
+    if (!selectedClass) {
+      if (typeof showToast === 'function') showToast('Select a valid class from the dropdown.', true);
+      return;
+    }
     const selectedChapter = selectedBulkChapter(meta);
     if (!selectedChapter) {
       if (typeof showToast === 'function') showToast('Select a valid chapter from the dropdown.', true);
@@ -2476,7 +2511,7 @@ if (duplicateKey) {
 
     const payload = importList.map(q => ({
       subject: q.subject || meta.subject,
-      klass: q.klass || meta.klass,
+      klass: selectedClass,
       chapter: selectedChapter,
       topic: q.concept || q.topic || 'General',
       exams: meta.exams,
@@ -2544,10 +2579,11 @@ for (
   of payload
 ) {
 
-  const key =
-    normalizeForDuplicate(
-      item.question
-    );
+  const key = duplicateScopeKey(
+    item.subject,
+    item.klass,
+    item.question
+  );
 
   if (key) {
 
@@ -2713,6 +2749,7 @@ if (ta) {
     const dupFilter = document.getElementById('bqFilterDup') || document.getElementById('bulkFilterDup');
     const conceptFilter = document.getElementById('bqFilterConcept') || document.getElementById('bulkFilterConcept');
     const chapterSelect = document.getElementById('bqMetaChapter');
+    const classSelect = document.getElementById('bqMetaClass');
 
     if (searchInput) searchInput.addEventListener('input', (e) => { state.filterSearch = e.target.value; renderCards(); });
     if (typeFilter) typeFilter.addEventListener('change', (e) => { state.filterType = e.target.value; renderCards(); });
@@ -2721,6 +2758,7 @@ if (ta) {
     if (dupFilter) dupFilter.addEventListener('change', (e) => { state.filterDup = e.target.value; renderCards(); });
     if (conceptFilter) conceptFilter.addEventListener('change', (e) => { state.filterSearch = e.target.value; renderCards(); });
     if (chapterSelect) chapterSelect.addEventListener('change', runParse);
+    if (classSelect) classSelect.addEventListener('change', runParse);
   }
 
   const _global = typeof window !== 'undefined' ? window : globalThis;

@@ -29,8 +29,9 @@ test('successful inserts keep the duplicate-cache row count synchronized', () =>
   assert.match(source, /rememberDuplicateQuestions\(insertedData\);/);
 });
 
-test('duplicate normalization and database selection remain unchanged', () => {
+test('duplicate detection is strictly scoped by subject and class', () => {
   assert.match(source, /function normalizeDuplicateQuestion\(value\)/);
-  assert.match(source, /\.select\('id, question'\)/);
-  assert.match(source, /normalizeDuplicateQuestion\(row\.question\)/);
+  assert.match(source, /function duplicateScopeKey\(subject, klass, question\)/);
+  assert.match(source, /\.select\('id, subject, klass, question'\)/);
+  assert.match(source, /duplicateScopeKey\(row\.subject, row\.klass, row\.question\)/);
 });

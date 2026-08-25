@@ -98,6 +98,15 @@ function normalizeDuplicateQuestion(value) {
     .trim();
 }
 
+function duplicateScopeKey(subject, klass, question) {
+  const normalizedQuestion = normalizeDuplicateQuestion(question);
+  if (!normalizedQuestion) return '';
+  return [subject, klass]
+    .map(value => String(value || '').trim().toLowerCase())
+    .concat(normalizedQuestion)
+    .join('\u0000');
+}
+
 async function loadDuplicateQuestionCache(forceRefresh = false) {
   const countResult = await supabase
     .from('questions')
@@ -122,15 +131,17 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await supabase
         .from('questions')
-        .select('id, question')
+        .select('id, subject, klass, question')
         .order('id', { ascending: true })
         .range(offset, offset + pageSize - 1);
 
       if (error) throw error;
 
       for (const row of (data || [])) {
-        const key = normalizeDuplicateQuestion(row.question);
-        if (key && !entries.has(key)) entries.set(key, { id: row.id, key });
+        const key = duplicateScopeKey(row.subject, row.klass, row.question);
+        if (key && !entries.has(key)) {
+          entries.set(key, { id: row.id, subject: row.subject, klass: row.klass, key });
+        }
       }
 
       if (!data || data.length < pageSize) break;
@@ -150,8 +161,15 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
 function rememberDuplicateQuestions(rows) {
   const insertedRows = (rows || []).filter(row => row && row.id);
   for (const row of insertedRows) {
-    const key = normalizeDuplicateQuestion(row.question);
-    if (key) duplicateQuestionCache.entries.set(key, { id: row.id, key });
+    const key = duplicateScopeKey(row.subject, row.klass, row.question);
+    if (key) {
+      duplicateQuestionCache.entries.set(key, {
+        id: row.id,
+        subject: row.subject,
+        klass: row.klass,
+        key
+      });
+    }
   }
   if (duplicateQuestionCache.loadedAt > 0 && duplicateQuestionCache.total >= 0) {
     duplicateQuestionCache.total += insertedRows.length;
@@ -253,10 +271,10 @@ function extractStatementPair(questionText) {
   const text = String(questionText || '').replace(/\r\n?/g, '\n').trim();
   if (!text) return { statement1: '', statement2: '' };
   const first = text.match(
-    /(?:^|\n)\s*@?Statement\s*(?:I|1|A)\s*[:.\-)â€”]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*(?:II|2|B)\b)/i
+    /(?:^|\n)\s*@?Statement\s*[-–—]?\s*\(?\s*(?:I|1|A)\s*\)?\s*[:.\-)–—]?\s*([\s\S]*?)(?=\n\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?)/i
   );
   const second = text.match(
-    /(?:^|\n)\s*@?Statement\s*(?:II|2|B)\s*[:.\-)â€”]?\s*([\s\S]*?)(?=\n\s*(?:\(?[A-D]\)?\s*[).:\-]|(?:Ans|Answer|Solution|Explanation)\s*[:.\-])|$)/i
+    /(?:^|\n)\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\s*[:.\-)–—]?\s*([\s\S]*?)(?=\n\s*(?:\(?[A-D]\)?\s*[).:\-]|(?:Ans|Answer|Solution|Explanation)\s*[:.\-])|$)/i
   );
   return {
     statement1: first ? first[1].trim() : '',
@@ -762,8 +780,11 @@ router.post('/duplicates', ...READ_ROLES, async (req, res) => {
     const duplicates = [];
     const seen = new Set();
 
-    for (const question of questions) {
-      const key = normalizeDuplicateQuestion(question);
+    for (const candidate of questions) {
+      const input = candidate && typeof candidate === 'object'
+        ? candidate
+        : { subject: '', klass: '', question: candidate };
+      const key = duplicateScopeKey(input.subject, input.klass, input.question);
       const match = key ? index.get(key) : null;
       if (match && !seen.has(key)) {
         duplicates.push(match);
