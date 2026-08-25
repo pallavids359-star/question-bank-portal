@@ -4939,6 +4939,7 @@ function serializeFieldNode(el){
     else if(node.nodeType===Node.ELEMENT_NODE){
       if(node.classList&&node.classList.contains('eq-chip')){const d=node.dataset.display==='1'?'$$':'$';raw+=d+node.dataset.latex+d;}
       else if(node.classList&&node.classList.contains('eq-img-chip')){const img=node.querySelector('img');raw+='{{IMG::'+(img?img.getAttribute('src'):'')+'}}';}
+      else if(node.tagName==='IMG'){const src=node.getAttribute('src')||'';if(src)raw+='{{IMG::'+src+'}}';}
       else if(node.tagName==='BR'){raw+='\n';}
       else if(BLOCK_TAGS.has(node.tagName)){if(raw.length&&!raw.endsWith('\n'))raw+='\n';raw+=serializeFieldNode(node);if(!raw.endsWith('\n'))raw+='\n';}
       else{raw+=serializeFieldNode(node);}
@@ -5098,10 +5099,27 @@ async function processAndInsertImage(imageSource, targetEl) {
       });
     } else if (typeof imageSource === 'string') {
       dataUrl = imageSource;
+      if (!dataUrl.startsWith('data:image') && /^(?:blob:|https?:)/i.test(dataUrl)) {
+        try {
+          const response = await fetch(dataUrl);
+          if (!response.ok) throw new Error('Unable to read pasted image.');
+          const blob = await response.blob();
+          if (!blob.type || !blob.type.startsWith('image/')) throw new Error('Clipboard content is not an image.');
+          dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve(ev.target.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } catch (clipboardImageError) {
+          if (/^blob:/i.test(dataUrl)) throw clipboardImageError;
+        }
+      }
     }
     if (!dataUrl) return false;
     const compressed = await compressImage(dataUrl);
     insertImageChipAtCursor(targetEl, compressed);
+    targetEl.dispatchEvent(new Event('input', { bubbles: true }));
     if (typeof showToast === 'function') {
       showToast('📷 Image pasted successfully!');
     }
@@ -5152,13 +5170,14 @@ async function handleClipboardPaste(e, targetEl) {
 
   // 3. HTML paste containing <img> tag (e.g. right click copy image from web)
   const htmlText = clipboardData.getData('text/html');
-  if (htmlText && htmlText.includes('<img')) {
+  if (htmlText && /<img\b/i.test(htmlText)) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlText, 'text/html');
     const img = doc.querySelector('img');
-    if (img && img.src) {
+    const imageSrc = img && (img.getAttribute('src') || img.getAttribute('data-src') || img.src);
+    if (imageSrc) {
       e.preventDefault();
-      await processAndInsertImage(img.src, targetEl);
+      await processAndInsertImage(imageSrc, targetEl);
       return true;
     }
   }

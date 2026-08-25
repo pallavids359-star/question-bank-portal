@@ -116,7 +116,16 @@ test('question editors retain image attachment controls and serialized image mar
   assert.match(html, /field\.id=containerId\+'Field'\+idx/);
   assert.match(html, /attach\.dataset\.target=field\.id/);
   assert.match(html, /raw\+='\{\{IMG::'\+\(img\?img\.getAttribute\('src'\):''\)\+'\}\}'/);
+  assert.match(html, /node\.tagName==='IMG'.*raw\+='\{\{IMG::'\+src\+'\}\}'/);
   assert.match(html, /await pendingQuestionImageWork;\s*const err=validate\(\)/);
+});
+
+test('Ctrl+V image paste converts clipboard images to persistent image markers', () => {
+  assert.match(html, /if \(!dataUrl\.startsWith\('data:image'\) && \/\^\(\?:blob:\|https\?:\)\/i\.test\(dataUrl\)\)/);
+  assert.match(html, /const blob = await response\.blob\(\)/);
+  assert.match(html, /reader\.readAsDataURL\(blob\)/);
+  assert.match(html, /targetEl\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/);
+  assert.match(html, /htmlText && \/<img\\b\/i\.test\(htmlText\)/);
 });
 
 test('plain blank underscores are not converted into red KaTeX errors', () => {
