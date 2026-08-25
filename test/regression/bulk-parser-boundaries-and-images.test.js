@@ -110,6 +110,28 @@ Answer: A
   assert.deepEqual(Array.from(matchDisplay.labelsFor(question, 'right', 4)), ['p', 'q', 'r', 's']);
 });
 
+test('match parser accepts compact shuffled labels and unequal column lengths', () => {
+  const [question] = loadParser()(`
+@type: Match the Following
+Match the following.
+Column 1
+(B) Second entry (A) First entry (C) Third entry
+Column 2
+(q) Second value (p) First value (s) Fourth value (r) Third value
+Options
+(A) A-p, B-q, C-r
+(B) A-q, B-p, C-s
+(C) A-r, B-s, C-p
+(D) A-s, B-r, C-q
+Answer: A
+  `);
+
+  assert.deepEqual(Array.from(question.columnA), ['First entry', 'Second entry', 'Third entry']);
+  assert.deepEqual(Array.from(question.columnB), ['First value', 'Second value', 'Third value', 'Fourth value']);
+  assert.deepEqual(Array.from(matchDisplay.labelsFor(question, 'left', 3)), ['A', 'B', 'C']);
+  assert.deepEqual(Array.from(matchDisplay.labelsFor(question, 'right', 4)), ['p', 'q', 'r', 's']);
+});
+
 test('explicit Assertion/Reason and Statement labels determine their correct type', () => {
   const [assertionReason] = loadParser()(`
 @type: Statement Based

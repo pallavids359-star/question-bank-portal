@@ -37,6 +37,21 @@ test('mixed formula markers do not split a labeled match row', () => {
   );
 });
 
+test('compact match rows accept shuffled numeric, alphabetic and Roman label sequences', () => {
+  assert.deepEqual(
+    matchDisplay.extractSequentialRows('(2) Second row (1) First row (3) Third row'),
+    ['First row', 'Second row', 'Third row']
+  );
+  assert.deepEqual(
+    matchDisplay.extractSequentialRows('(q) Second value (p) First value (s) Fourth value (r) Third value'),
+    ['First value', 'Second value', 'Third value', 'Fourth value']
+  );
+  assert.deepEqual(
+    matchDisplay.extractSequentialRows('(iii) Third value (i) First value (iv) Fourth value (ii) Second value'),
+    ['First value', 'Second value', 'Third value', 'Fourth value']
+  );
+});
+
 test('numeric and lowercase mappings retain their own label scheme', () => {
   const q = { matchOptions: { A: '1-d, 2-c, 3-b, 4-a' } };
   assert.deepEqual(matchDisplay.labelsFor(q, 'left', 4), ['1', '2', '3', '4']);

@@ -172,27 +172,54 @@
     }).filter(row => row.value);
   }
 
-  function sequentialLabels(rows) {
+  function romanRank(label) {
+    const source = String(label || '').toUpperCase();
+    if (!/^(?=[IVXLCDM]+$)M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$/.test(source)) {
+      return 0;
+    }
+    const values = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+    let total = 0;
+    for (let index = 0; index < source.length; index += 1) {
+      const current = values[source[index]];
+      const next = values[source[index + 1]] || 0;
+      total += current < next ? -current : current;
+    }
+    return total;
+  }
+
+  function orderedSequentialRows(rows) {
     const labels = rows.map(row => String(row.label || ''));
-    if (labels.length < 2) return false;
+    if (labels.length < 2) return [];
+
+    let ranked = [];
     if (labels.every(label => /^\d+$/.test(label))) {
-      return labels.every((label, index) => Number(label) === Number(labels[0]) + index);
+      ranked = rows.map(row => ({ row, rank: Number(row.label) }));
+    } else {
+      const romanRanks = labels.map(romanRank);
+      const isRomanSeries = romanRanks.every(Boolean) &&
+        (labels.some(label => label.length > 1) || Math.min(...romanRanks) <= 5);
+      if (isRomanSeries) {
+        ranked = rows.map((row, index) => ({ row, rank: romanRanks[index] }));
+      } else if (labels.every(label => /^[A-Za-z]$/.test(label))) {
+        ranked = rows.map(row => ({
+          row,
+          rank: String(row.label).toLowerCase().charCodeAt(0) - 96
+        }));
+      } else {
+        return [];
+      }
     }
-    const roman = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
-    if (labels.every(label => roman[label.toLowerCase()])) {
-      const first = roman[labels[0].toLowerCase()];
-      return labels.every((label, index) => roman[label.toLowerCase()] === first + index);
-    }
-    if (labels.every(label => /^[A-Za-z]$/.test(label))) {
-      const first = labels[0].toLowerCase().charCodeAt(0);
-      return labels.every((label, index) => label.toLowerCase().charCodeAt(0) === first + index);
-    }
-    return false;
+
+    const ranks = ranked.map(item => item.rank);
+    if (new Set(ranks).size !== ranks.length) return [];
+    const sorted = ranked.slice().sort((a, b) => a.rank - b.rank);
+    const consecutive = sorted.every((item, index) => index === 0 || item.rank === sorted[index - 1].rank + 1);
+    return consecutive ? sorted.map(item => item.row) : [];
   }
 
   function extractSequentialRows(line) {
     const rows = extractLabeledRows(line);
-    return sequentialLabels(rows) ? rows.map(row => row.value) : [];
+    return orderedSequentialRows(rows).map(row => row.value);
   }
 
   function extractExplicitRows(line) {
