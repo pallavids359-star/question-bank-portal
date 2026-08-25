@@ -454,14 +454,14 @@
       /^\s*(?:Reason(?:\s*\(R\))?|\(R\))\s*[:.\-–—]/i.test(line)
     );
     const hasExplicitStatementOne = rawLines.some(line =>
-      /^\s*@?Statement\s*[-–—]?\s*\(?\s*(?:I|1|A)\s*\)?\s*[:.\-)–—]/i.test(line)
+      /^\s*@?Statement\s*[-–—]?\s*\(?\s*(?:I|1|A)\s*\)?(?=\s*[:.\-)–—]|\s+|$)/i.test(line)
     );
     const hasExplicitStatementTwo = rawLines.some(line =>
-      /^\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?\s*[:.\-)–—]/i.test(line)
+      /^\s*@?Statement\s*[-–—]?\s*\(?\s*(?:II|2|B)\s*\)?(?=\s*[:.\-)–—]|\s+|$)/i.test(line)
     );
 
-    if (hasExplicitAssertion && hasExplicitReason) return 'assertion_reason';
     if (hasExplicitStatementOne && hasExplicitStatementTwo) return 'statement_based';
+    if (hasExplicitAssertion && hasExplicitReason) return 'assertion_reason';
 
     if (inline.type) {
       const rawType = inline.type.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');

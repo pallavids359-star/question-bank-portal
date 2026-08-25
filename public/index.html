@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="stylesheet" href="bulk-import.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-<script src="content-renderer.js?v=20260825-2"></script>
+<script src="content-renderer.js?v=20260825-3"></script>
 <script src="match-display.js?v=20260825-1"></script>
 <script src="dashboard-view.js"></script>
 <script src="auth-view-state.js"></script>
@@ -932,6 +932,7 @@ textarea{resize:vertical;min-height:70px;}
 }
 .count-line{color:var(--muted);font-size:12.5px;margin-bottom:14px;}
 .li-preview{font-size:14px;line-height:1.5;}
+.li-preview .katex-error{color:inherit!important;font-family:inherit;}
 .li-preview .eq-img-remove{display:none;}
 .li-preview .eq-chip{cursor:default;}
 .li-preview img{max-width:160px;max-height:120px;}
@@ -4979,6 +4980,7 @@ function convertToken(tokRaw){
   const m0=tokRaw.match(/^(.*?)([.,;:!?]*)$/s);
   const core=m0[1],trailing=m0[2];
   if(!core)return{converted:false};
+  if(/^_{2,}$/.test(core))return{converted:false};
 
   // Reject multi-word English text sentences (e.g. "from the phasor addition...")
   if(/[a-zA-Z]{2,}\s+[a-zA-Z]{2,}/.test(core)) return {converted:false};
@@ -5028,7 +5030,7 @@ function convertToken(tokRaw){
 function smartConvertZone(text){
   if(!text) return '';
   text = text.replace(/([A-Za-z0-9_{}\)\]\\]+)\s+\^/g, '$1^');
-  text = text.replace(/([A-Za-z0-9_{}\)\\]+)\s+_/g, '$1_');
+  text = text.replace(/([A-Za-z0-9_{}\)\\]+)\s+_(?!_{2,})/g, '$1_');
   text = text.replace(/\^\s*\(([^()]+)\)/g, '^{($1)}');
   text = text.replace(/\^\s*([0-9]+[+-]|[+-][0-9]+)/g, '^{$1}');
   text=text.replace(/\\item\s*\[([^\]]*)\]\s*/g,'$1 ').replace(/\\item\b\s*/g,'\u2022 ').replace(/\\(?:begin|end)\{(?:itemize|enumerate)\*?\}\s*/g,'').replace(/\\(?:textbf|textit|emph|text)\{([^{}]*)\}/g,'$1').replace(/\\section\*?\{([^{}]*)\}/g,'$1\n');text=text.replace(/\u2212/g,'-');text=text.replace(/([\u2070\u00b9\u00b2\u00b3\u2074-\u2079\u207a\u207b]+)/g,m=>'^{'+m.split('').map(c=>UNICODE_SUPERSCRIPTS[c]||c).join('+')+'}');text=text.replace(/([\u2080-\u2089\u208a\u208b]+)/g,m=>'_{'+m.split('').map(c=>UNICODE_SUBSCRIPTS[c]||c).join('')+'}');text=text.replace(/\\begin\{([a-zA-Z*]+)\}[\s\S]*?\\end\{\1\}/g,m=>wrapMath(m));text=text.replace(/\bint\s+(\S.*?)\s+dx\b/g,(m,expr)=>wrapMath('\\int '+expr.trim()+'\\,dx'));text=text.replace(/\bsum\s+i\s*=\s*(\S+)\s+to\s+(\S+)/gi,(m,a,b)=>wrapMath('\\sum_{i='+a+'}^{'+b+'}'));text=text.replace(/\blim\s+([a-zA-Z])\s*->\s*(\S+)/gi,(m,v,to)=>wrapMath('\\lim_{'+v+'\\to '+to+'}'));const parts=text.split(/(\$[^$]*\$)/g);return parts.map(part=>{if(part.startsWith('$')&&part.endsWith('$')&&part.length>1)return part;return groupBalancedTokens(part).map(t=>{if(t.type==='space')return t.value;const r=convertToken(t.value);return r.converted?wrapMath(r.latex)+r.trailing:t.value;}).join('');}).join('');}
@@ -5080,9 +5082,12 @@ function compressImage(dataUrl, maxDimension = 1200, quality = 0.85) {
 }
 
 // Process and insert an image File/Blob/URL into a target contenteditable element
+let pendingQuestionImageWork = Promise.resolve();
+
 async function processAndInsertImage(imageSource, targetEl) {
   if (!targetEl) return false;
-  try {
+  const imageWork = (async () => {
+   try {
     let dataUrl = '';
     if (imageSource instanceof Blob || imageSource instanceof File) {
       dataUrl = await new Promise((resolve, reject) => {
@@ -5107,7 +5112,11 @@ async function processAndInsertImage(imageSource, targetEl) {
       showToast('Failed to paste image', true);
     }
     return false;
-  }
+   }
+  })();
+  const previousImageWork = pendingQuestionImageWork;
+  pendingQuestionImageWork = Promise.allSettled([previousImageWork, imageWork]);
+  return imageWork;
 }
 
 // Extract and insert image from ClipboardEvent if present
@@ -5546,6 +5555,7 @@ async function saveQuestion(){
   
   if(isUpdating&&!Auth.can('edit')){showToast('Only an Adder, Editor, or Admin can update questions.',true);return;}
   if(!isUpdating&&!Auth.can('add')){showToast('Only a Question Adder or Admin can add questions.',true);return;}
+ await pendingQuestionImageWork;
  const err=validate();
 if(err){
   showToast(err,true);

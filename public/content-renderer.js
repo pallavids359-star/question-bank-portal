@@ -25,8 +25,40 @@
   function normalizeFencedMath(text) {
     return String(text || '').replace(
       /```(?:math|latex)\s*\r?\n([\s\S]*?)\r?\n```/gi,
-      (_, expression) => `$$${normalizeMathEscapes(expression.trim())}$$`
+      (_, expression) => {
+        const normalized = normalizeMathEscapes(expression.trim());
+        if (/^[A-Za-z][A-Za-z\s]*$/.test(normalized)) return normalized;
+        return `$$${normalized}$$`;
+      }
     );
+  }
+
+  function normalizeInlineCode(text) {
+    return String(text || '').replace(/`([^`\r\n]+)`/g, (_, expression) => {
+      let normalized = normalizeMathEscapes(expression.trim());
+      if (/^\$[^$]+\$$/.test(normalized)) return normalized;
+      normalized = normalized.replace(/^\$(?!.*\$$)/, '').replace(/(?<!^)\$$/, '');
+      const looksLikeMath = LATEX_COMMAND.test(normalized)
+        || /^[A-Za-z]\s*=/.test(normalized)
+        || /^[+\-]?\d+(?:\.\d+)?$/.test(normalized)
+        || /[=^_∫∑√]/.test(normalized);
+      return looksLikeMath ? `$${normalized}$` : normalized;
+    });
+  }
+
+  function repairJoinedMathProse(text) {
+    return String(text || '')
+      .replace(/\bThesolutionthrough\b/gi, 'The solution through')
+      .replace(/\bdifferentiableat(?=[A-Za-z]\s*=)/gi, 'differentiable at ')
+      .replace(/\bexistson(?=\s*[−-]?\s*(?:\\?pi|π|\$))/gi, 'exists on ')
+      .replace(/\bforall(?=\s*(?:\$|\\|[A-Za-z]))/gi, 'for all ');
+  }
+
+  function removePlainTextFences(text) {
+    return String(text || '')
+      .replace(/[\u200B\uFEFF]/g, '')
+      .replace(/^\s*```(?:text|plain|markdown)?\s*$/gim, '')
+      .replace(/\n{3,}/g, '\n\n');
   }
 
   function normalizeMathEscapes(text) {
@@ -113,10 +145,12 @@
     let source = String(text || '');
     source = source.replace(/\\\\([\[\]()])/g, '\\$1');
     source = normalizeFencedMath(source);
+    source = removePlainTextFences(source);
     source = source.replace(/`thenfor`/gi, ' then for ');
-    source = source.replace(/`([^`\r\n]+)`/g, '$1');
+    source = normalizeInlineCode(source);
     source = source.replace(/\bthenfor\b/gi, 'then for');
-    source = source.replace(/\b([xyz]\s*=\s*[+-]?\d+(?:\.\d+)?)\$(?=\s|$)/gi, '$$$1$');
+    source = repairJoinedMathProse(source);
+    source = source.replace(/(?<!\$)\b([xyz]\s*=\s*[+-]?\d+(?:\.\d+)?)\$(?=\s|$)/gi, '$$$1$');
     source = normalizeDollarRuns(source);
     source = pairTrailingDisplayDelimiter(source);
 

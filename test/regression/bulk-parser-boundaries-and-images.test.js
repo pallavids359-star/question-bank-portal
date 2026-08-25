@@ -97,8 +97,8 @@ Answer: A
 
   const [statement] = loadParser()(`
 @type: Assertion Reason
-Statement-1: The sequence is increasing.
-Statement-2: Every term is positive.
+Statement I The sequence is increasing.
+Statement II Every term is positive.
 (A) Both statements are true
 (B) Only Statement-1 is true
 (C) Only Statement-2 is true
@@ -116,5 +116,10 @@ test('question editors retain image attachment controls and serialized image mar
   assert.match(html, /field\.id=containerId\+'Field'\+idx/);
   assert.match(html, /attach\.dataset\.target=field\.id/);
   assert.match(html, /raw\+='\{\{IMG::'\+\(img\?img\.getAttribute\('src'\):''\)\+'\}\}'/);
+  assert.match(html, /await pendingQuestionImageWork;\s*const err=validate\(\)/);
 });
 
+test('plain blank underscores are not converted into red KaTeX errors', () => {
+  assert.match(html, /if\(\/\^_\{2,\}\$\/\.test\(core\)\)return\{converted:false\}/);
+  assert.match(html, /\\s\+_\(\?!_\{2,\}\)/);
+});
