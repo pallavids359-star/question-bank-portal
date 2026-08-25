@@ -81,6 +81,35 @@ Answer: A
   assert.match(question.columnA[1], /\)\$\$/);
 });
 
+test('match rows use option-aware A-D and p-s labels without splitting formula tokens', () => {
+  const [question] = loadParser()(`
+@type: Match the Following
+Match the following.
+Column A
+(A) If $\\lambda$ denotes the number of terms in $(1+5x+10x^2)^3$
+(B) Second complete entry
+(C) Third complete entry
+(D) Fourth complete entry
+Column B
+(p) First value
+(q) Second value
+(r) Third value
+(s) Fourth value
+Options
+(A) A-r, B-p, C-s, D-q
+(B) A-p, B-r, C-s, D-q
+(C) A-q, B-p, C-r, D-s
+(D) A-s, B-q, C-p, D-r
+Answer: A
+  `);
+
+  assert.equal(question.columnA.length, 4);
+  assert.equal(question.columnB.length, 4);
+  assert.match(question.columnA[0], /\(1\+5x\+10x\^2\)\^3/);
+  assert.deepEqual(Array.from(matchDisplay.labelsFor(question, 'left', 4)), ['A', 'B', 'C', 'D']);
+  assert.deepEqual(Array.from(matchDisplay.labelsFor(question, 'right', 4)), ['p', 'q', 'r', 's']);
+});
+
 test('explicit Assertion/Reason and Statement labels determine their correct type', () => {
   const [assertionReason] = loadParser()(`
 @type: Statement Based
@@ -108,6 +137,45 @@ Answer: A
   assert.equal(statement.qType, 'statement_based');
   assert.equal(statement.statement1, 'The sequence is increasing.');
   assert.equal(statement.statement2, 'Every term is positive.');
+});
+
+test('Assertion and Reason retain multiline displayed mathematics until their next structural label', () => {
+  const [question] = loadParser()(`
+@type: Assertion Reason
+Assertion: If
+$$
+x={}^{n}C_{n-1}+{}^{n+1}C_{n-1}+{}^{2n}C_{n-1},
+$$
+then
+$$
+\\frac{x+1}{2n+1}
+$$
+is an integer.
+Reason:
+$$
+{}^nC_r+{}^nC_{r-1}={}^{n+1}C_r
+$$
+and \${}^nC_r$ is divisible by $n$ if $n$ and $r$ are co-prime.
+(A) Both Assertion and Reason are true and Reason is the correct explanation of Assertion.
+(B) Both Assertion and Reason are true but Reason is not the correct explanation of Assertion.
+(C) Assertion is true but Reason is false.
+(D) Assertion is false but Reason is true.
+Answer: A
+Solution: By the hockey-stick identity,
+$$
+x={}^{2n+1}C_n-1.
+$$
+Therefore, option A is correct.
+  `);
+
+  assert.equal(question.qType, 'assertion_reason');
+  assert.match(question.assertion, /^If\n\$\$/);
+  assert.match(question.assertion, /\\frac\{x\+1\}\{2n\+1\}/);
+  assert.match(question.assertion, /is an integer\.$/);
+  assert.match(question.reason, /\{\}\^nC_r\+\{\}\^nC_\{r-1\}/);
+  assert.match(question.reason, /co-prime\.$/);
+  assert.match(question.solutionText, /hockey-stick identity/);
+  assert.match(question.solutionText, /option A is correct\.$/);
 });
 
 test('question editors retain image attachment controls and serialized image markers', () => {

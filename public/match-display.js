@@ -154,7 +154,7 @@
     ).replace(/,\s*/g, ', ');
   }
 
-  function extractExplicitRows(line) {
+  function extractLabeledRows(line) {
     const text = String(line || '').trim();
     if (!text) return [];
     // A delimiter is mandatory unless the row begins with the word "Row".
@@ -165,8 +165,38 @@
     return matches.map((current, index) => {
       const start = current.index + current[0].length;
       const end = index + 1 < matches.length ? matches[index + 1].index : text.length;
-      return text.slice(start, end).trim();
-    }).filter(Boolean);
+      return {
+        label: current[2] || current[3] || current[4] || current[5] || '',
+        value: text.slice(start, end).trim()
+      };
+    }).filter(row => row.value);
+  }
+
+  function sequentialLabels(rows) {
+    const labels = rows.map(row => String(row.label || ''));
+    if (labels.length < 2) return false;
+    if (labels.every(label => /^\d+$/.test(label))) {
+      return labels.every((label, index) => Number(label) === Number(labels[0]) + index);
+    }
+    const roman = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
+    if (labels.every(label => roman[label.toLowerCase()])) {
+      const first = roman[labels[0].toLowerCase()];
+      return labels.every((label, index) => roman[label.toLowerCase()] === first + index);
+    }
+    if (labels.every(label => /^[A-Za-z]$/.test(label))) {
+      const first = labels[0].toLowerCase().charCodeAt(0);
+      return labels.every((label, index) => label.toLowerCase().charCodeAt(0) === first + index);
+    }
+    return false;
+  }
+
+  function extractSequentialRows(line) {
+    const rows = extractLabeledRows(line);
+    return sequentialLabels(rows) ? rows.map(row => row.value) : [];
+  }
+
+  function extractExplicitRows(line) {
+    return extractLabeledRows(line).map(row => row.value);
   }
 
   return {
@@ -177,6 +207,7 @@
     inferredLabels,
     reconstructEntries,
     formatMapping,
-    extractExplicitRows
+    extractExplicitRows,
+    extractSequentialRows
   };
 });

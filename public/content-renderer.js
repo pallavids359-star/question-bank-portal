@@ -54,6 +54,16 @@
       .replace(/\bforall(?=\s*(?:\$|\\|[A-Za-z]))/gi, 'for all ');
   }
 
+  function repairCommonOrphanInlineMath(text) {
+    let source = String(text || '');
+    const expression = '[A-Za-z][A-Za-z0-9_{}\\\\^]*\\s*=\\s*[^$\\s,;:.!?]+';
+    const missingOpening = new RegExp(`(^|[\\s([:;,])(${expression})\\$(?=$|[\\s,;:.!?)}\\]])`, 'g');
+    const missingClosing = new RegExp(`\\$(${expression})(?=(?:\\s+(?:and|or|then|where|gives|at)\\b)|[,;:.!?)]|$)`, 'gi');
+    source = source.replace(missingOpening, (_, prefix, value) => `${prefix}$${value}$`);
+    source = source.replace(missingClosing, (_, value) => `$${value}$`);
+    return source;
+  }
+
   function removePlainTextFences(text) {
     return String(text || '')
       .replace(/[\u200B\uFEFF]/g, '')
@@ -150,6 +160,7 @@
     source = normalizeInlineCode(source);
     source = source.replace(/\bthenfor\b/gi, 'then for');
     source = repairJoinedMathProse(source);
+    source = repairCommonOrphanInlineMath(source);
     source = source.replace(/(?<!\$)\b([xyz]\s*=\s*[+-]?\d+(?:\.\d+)?)\$(?=\s|$)/gi, '$$$1$');
     source = normalizeDollarRuns(source);
     source = pairTrailingDisplayDelimiter(source);

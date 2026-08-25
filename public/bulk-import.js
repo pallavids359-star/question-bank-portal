@@ -764,33 +764,40 @@ const hasFlexibleMatchColumns =
     parse(block, meta) {
       const inline = extractInlineMetadata(block.lines);
       const lines = inline.cleanLines;
-      let assertion = '';
-      let reason = '';
+      const assertionLines = [];
+      const reasonLines = [];
       let answer = '';
       let options = {};
       let solLines = [];
-      let fullRawText = [];
+      let unclassifiedLines = [];
+      let section = 'question';
+      let assertionStarted = false;
+      let reasonStarted = false;
+      let lastOption = '';
 
       for (let i = 0; i < lines.length; i++) {
         let line = (typeof lines[i] === 'string' ? lines[i] : lines[i].text).trim();
         if (!line) continue;
         if (i === 0) line = stripQNumber(line);
 
-        // Check if line is Assertion
-        const aMatch = line.match(/^(?:Assertion|\(A\)|A)\s*[:\.-]\s*(.+)/i);
-        if (aMatch && !assertion) {
-          assertion = aMatch[1].trim();
+        const aMatch = line.match(/^(?:Assertion(?:\s*\(A\))?|\(A\)|A)\s*[:.\-–—]\s*(.*)$/i);
+        if (aMatch && !assertionStarted) {
+          assertionStarted = true;
+          section = 'assertion';
+          if (aMatch[1].trim()) assertionLines.push(aMatch[1].trim());
           continue;
         }
 
-        // Check if line is Reason
-        const rMatch = line.match(/^(?:Reason|\(R\)|R)\s*[:\.-]\s*(.+)/i);
-        if (rMatch && !reason) {
-          reason = rMatch[1].trim();
+        const rMatch = line.match(/^(?:Reason(?:\s*\(R\))?|\(R\)|R)\s*[:.\-–—]\s*(.*)$/i);
+        if (rMatch && assertionStarted && !reasonStarted) {
+          reasonStarted = true;
+          section = 'reason';
+          if (rMatch[1].trim()) reasonLines.push(rMatch[1].trim());
           continue;
         }
 
         if (isAnsLine(line)) {
+          section = 'answer';
           let rawAns = stripAnsPrefix(line).toUpperCase();
           const m = rawAns.match(/([A-D])/i);
           if (m) answer = m[1].toUpperCase();
@@ -798,32 +805,44 @@ const hasFlexibleMatchColumns =
         }
 
         if (isSolLine(line)) {
-          solLines.push(stripSolPrefix(line));
+          section = 'solution';
+          const rest = stripSolPrefix(line);
+          if (rest) solLines.push(rest);
           continue;
         }
 
         const optKey = detectOptionKey(line, false);
-        if (optKey) {
+        if (optKey && reasonStarted) {
+          section = 'options';
+          lastOption = optKey;
           options[optKey] = stripOptionPrefix(line);
           continue;
         }
 
-        fullRawText.push(line);
+        if (section === 'assertion') assertionLines.push(line);
+        else if (section === 'reason') reasonLines.push(line);
+        else if (section === 'solution') solLines.push(line);
+        else if (section === 'options' && lastOption) options[lastOption] += '\n' + line;
+        else unclassifiedLines.push(line);
       }
 
-      // Fallback extraction if A/R tags were inside full block text
-      const joined = fullRawText.join('\n');
+      let assertion = assertionLines.join('\n').trim();
+      let reason = reasonLines.join('\n').trim();
+      const joined = unclassifiedLines.join('\n');
+
+      // Preserve the legacy fallback for older imports without standalone
+      // Assertion/Reason labels.
       if (!assertion) {
-        const m = joined.match(/(?:Assertion|\(A\))\s*[:\.-]\s*([^\n]+(?:\n(?!Reason|\(R\)|A:|R:)[^\n]+)*)/i);
+        const m = joined.match(/(?:Assertion|\(A\))\s*[:.\-–—]\s*([\s\S]*?)(?=\n\s*(?:Reason|\(R\))\s*[:.\-–—]|$)/i);
         if (m) assertion = m[1].trim();
       }
       if (!reason) {
-        const m = joined.match(/(?:Reason|\(R\))\s*[:\.-]\s*([^\n]+)+/i);
+        const m = joined.match(/(?:Reason|\(R\))\s*[:.\-–—]\s*([\s\S]*?)$/i);
         if (m) reason = m[1].trim();
       }
-      if (!assertion && fullRawText.length > 0) {
-        assertion = fullRawText[0];
-        if (fullRawText.length > 1 && !reason) reason = fullRawText.slice(1).join('\n');
+      if (!assertion && unclassifiedLines.length > 0) {
+        assertion = unclassifiedLines[0];
+        if (unclassifiedLines.length > 1 && !reason) reason = unclassifiedLines.slice(1).join('\n');
       }
 
       const qText = assertion ? `Assertion: ${assertion}\nReason: ${reason}` : joined;
@@ -1053,7 +1072,7 @@ if (matchColumnSide === 'right') {
 // ------------------------------------------------------------
 
 function extractFlexibleMatchRows(rawLine) {
-  if (window.QPMatchDisplay) return window.QPMatchDisplay.extractExplicitRows(rawLine);
+  if (window.QPMatchDisplay) return window.QPMatchDisplay.extractSequentialRows(rawLine);
   return [];
 }
 

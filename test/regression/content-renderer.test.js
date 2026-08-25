@@ -64,6 +64,26 @@ test('raw determinant ratio remains one complete inline expression', () => {
   assert.equal(renderer.ensureMathDelimiters(value), `$${value}$`);
 });
 
+test('plain prose accidentally fenced as math remains prose', () => {
+  assert.equal(renderer.ensureMathDelimiters('```math\nso\n```'), 'so');
+  assert.equal(renderer.ensureMathDelimiters('```math\nThe solution through\n```'), 'The solution through');
+});
+
+test('inline-code LaTeX and variables render as math without joining prose', () => {
+  const value = 'not differentiable at `x=1` and `\\cos|x|` is differentiable for all `x`.';
+  assert.equal(
+    renderer.ensureMathDelimiters(value),
+    'not differentiable at $x=1$ and $\\cos|x|$ is differentiable for all x.'
+  );
+});
+
+test('common orphan inline dollar signs are paired for solution display', () => {
+  assert.equal(
+    renderer.ensureMathDelimiters('At x=1$ and $x=-1 gives the result.'),
+    'At $x=1$ and $x=-1$ gives the result.'
+  );
+});
+
 const markdownCases = ['Pending Review','Correct answer','Solution','Option A','A formula $x^2$'];
 for (const value of markdownCases) test(`Markdown strong token preserves content: ${value}`, () => {
   assert.deepEqual(renderer.tokenizeMarkdown(`before **${value}** after`), [

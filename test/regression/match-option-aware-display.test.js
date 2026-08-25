@@ -26,6 +26,17 @@ test('ordinary Biology phrases remain one row', () => {
   ]);
 });
 
+test('mixed formula markers do not split a labeled match row', () => {
+  assert.deepEqual(
+    matchDisplay.extractSequentialRows('(A) If n is defined by (1) and evaluated at (2)'),
+    []
+  );
+  assert.deepEqual(
+    matchDisplay.extractSequentialRows('(a) Prawn (b) Cockroach (c) Earthworm (d) Flatworms'),
+    ['Prawn', 'Cockroach', 'Earthworm', 'Flatworms']
+  );
+});
+
 test('numeric and lowercase mappings retain their own label scheme', () => {
   const q = { matchOptions: { A: '1-d, 2-c, 3-b, 4-a' } };
   assert.deepEqual(matchDisplay.labelsFor(q, 'left', 4), ['1', '2', '3', '4']);
