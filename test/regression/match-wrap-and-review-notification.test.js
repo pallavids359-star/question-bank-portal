@@ -10,12 +10,14 @@ const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8').repla
 const bulkCss = fs.readFileSync(path.join(root, 'public/bulk-import.css'), 'utf8').replace(/\r\n/g, '\n');
 const questionsRoute = fs.readFileSync(path.join(root, 'routes/questions.js'), 'utf8').replace(/\r\n/g, '\n');
 
-test('Match display columns contain long formulas without overlapping', () => {
+test('Match display columns show content directly without internal scrollbars', () => {
   assert.ok(html.includes('.match-display-value .li-preview{\n  display:block;'));
   assert.match(html, /\.match-display-column\{[\s\S]*?overflow:hidden;/);
-  assert.match(html, /\.match-display-value\{[\s\S]*?overflow-x:auto;/);
+  assert.match(html, /\.match-display-value\{[^}]*overflow:visible;/);
+  assert.doesNotMatch(html, /\.match-display-value\{[^}]*overflow-x:auto;/);
   assert.match(bulkCss, /\.bq-match-column\{[^\n]*overflow:hidden;/);
-  assert.match(bulkCss, /\.bq-match-value\{[^\n]*overflow-x:auto;/);
+  assert.match(bulkCss, /\.bq-match-value\{[^\n]*overflow:visible;/);
+  assert.doesNotMatch(bulkCss, /\.bq-match-value\{[^\n]*overflow-x:auto;/);
 });
 
 test('Saved Questions applies existing smart math conversion after delimiter repair', () => {
