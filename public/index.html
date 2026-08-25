@@ -11,8 +11,8 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="stylesheet" href="bulk-import.css?v=20260825-2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-<script src="content-renderer.js?v=20260825-4"></script>
-<script src="match-display.js?v=20260825-2"></script>
+<script src="content-renderer.js?v=20260825-5"></script>
+<script src="match-display.js?v=20260825-3"></script>
 <script src="dashboard-view.js"></script>
 <script src="auth-view-state.js"></script>
 <style>
@@ -5675,6 +5675,11 @@ optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
       const idx=allQuestions.findIndex(q=>String(q.id)===String(editingId));
       if(idx>-1) allQuestions[idx]=saved;
       else allQuestions.unshift(saved);
+      const updatedQuestionId=String(saved.id||editingId);
+      userNotifications=userNotifications.filter(notification=>
+        String(notification.question_id||'')!==updatedQuestionId
+      );
+      setNotificationBadge(userNotifications.filter(notification=>!notification.is_read).length);
     }else{
       allQuestions.unshift(saved);
     }
@@ -6584,6 +6589,9 @@ async function loadNotifications(){
     userNotifications = Array.isArray(notificationResult)
       ? notificationResult
       : (notificationResult.data || []);
+    userNotifications.sort((first,second)=>
+      new Date(first.created_at||0).getTime()-new Date(second.created_at||0).getTime()
+    );
 
     const unread =
       userNotifications.filter(
@@ -6643,7 +6651,7 @@ async function openNotifications(){
   }
 
   list.innerHTML =
-    userNotifications.map(n=>`
+    userNotifications.map((n,index)=>`
 
       <div
         class="notification-item${n.is_read ? '' : ' unread'}${n.question_id ? ' has-question' : ''}"
@@ -6661,7 +6669,7 @@ async function openNotifications(){
         >
 
           <strong style="color:var(--gold)">
-            ${escapeHtml(n.title || 'Question Review')}
+            ${index+1}. ${escapeHtml(n.title || 'Question Review')}
           </strong>
 
           ${
@@ -7575,7 +7583,7 @@ window.showPage             = showPage;
 window.Auth                 = Auth;   // useful for console debugging
 window.QP                   = QP;     // already assigned above
 </script>
-<script src="bulk-import.js?v=4.2"></script>
+<script src="bulk-import.js?v=4.3"></script>
 <script>
 /* ================================================================
    IMAGE ATTACH BUTTON HANDLERS

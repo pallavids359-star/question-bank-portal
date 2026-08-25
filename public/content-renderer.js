@@ -59,8 +59,8 @@
     const expression = '[A-Za-z][A-Za-z0-9_{}\\\\^]*\\s*=\\s*[^$\\s,;:.!?]+';
     const missingOpening = new RegExp(`(^|[\\s([:;,])(${expression})\\$(?=$|[\\s,;:.!?)}\\]])`, 'g');
     const missingClosing = new RegExp(`\\$(${expression})(?=(?:\\s+(?:and|or|then|where|gives|at)\\b)|[,;:.!?)]|$)`, 'gi');
-    source = source.replace(missingOpening, (_, prefix, value) => `${prefix}$${value}$`);
     source = source.replace(missingClosing, (_, value) => `$${value}$`);
+    source = source.replace(missingOpening, (_, prefix, value) => `${prefix}$${value}$`);
     return source;
   }
 

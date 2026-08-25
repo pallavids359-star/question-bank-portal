@@ -1097,6 +1097,15 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
       reviewerId = existingQuestion.reviewed_by;
     }
 
+    const { error: removeReviewNotificationError } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('question_id', req.params.id)
+      .eq('type', 'question_review');
+    if (removeReviewNotificationError) {
+      console.warn('Review notification cleanup warning:', removeReviewNotificationError.message);
+    }
+
     if (reviewerId) {
       const updaterName = req.user?.name || 'Editor';
       const questionPreview = String(data.question || existingQuestion.question || '').replace(/\s+/g, ' ').trim().slice(0, 120);

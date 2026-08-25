@@ -1072,7 +1072,15 @@ if (matchColumnSide === 'right') {
 // ------------------------------------------------------------
 
 function extractFlexibleMatchRows(rawLine) {
-  if (window.QPMatchDisplay) return window.QPMatchDisplay.extractSequentialRows(rawLine);
+  if (window.QPMatchDisplay) {
+    const rows = window.QPMatchDisplay.extractSequentialRows(rawLine);
+    if (rows.length > 1) return rows;
+    const outerRow = parseFlexibleMatchRow(rawLine);
+    if (outerRow) {
+      const nestedRows = window.QPMatchDisplay.extractSequentialRows(outerRow.value);
+      if (nestedRows.length > 1) return nestedRows;
+    }
+  }
   return [];
 }
 

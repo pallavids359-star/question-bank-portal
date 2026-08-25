@@ -120,6 +120,40 @@
       : [];
     const labels = inferredLabels(question, side);
     const expectedCount = labels.length;
+    if (expectedCount && entries.length < expectedCount) {
+      const expectedLabels = new Set(labels.map(label => String(label).toLowerCase()));
+      const valuesByLabel = new Map();
+      const unlabeledEntries = [];
+      let expandedNestedRows = false;
+
+      entries.forEach(entry => {
+        const nestedRows = extractLabeledRows(entry);
+        const allExpected = nestedRows.length > 1 && nestedRows.every(row =>
+          expectedLabels.has(String(row.label).toLowerCase())
+        );
+        if (!allExpected) {
+          unlabeledEntries.push(entry);
+          return;
+        }
+        expandedNestedRows = true;
+        nestedRows.forEach(row => {
+          valuesByLabel.set(String(row.label).toLowerCase(), row.value);
+        });
+      });
+
+      if (expandedNestedRows) {
+        const missingLabels = labels.filter(label => !valuesByLabel.has(String(label).toLowerCase()));
+        if (missingLabels.length === unlabeledEntries.length) {
+          missingLabels.forEach((label, index) => {
+            valuesByLabel.set(String(label).toLowerCase(), unlabeledEntries[index]);
+          });
+          return {
+            entries: labels.map(label => valuesByLabel.get(String(label).toLowerCase())),
+            labels
+          };
+        }
+      }
+    }
     if (!expectedCount || entries.length <= expectedCount) {
       return { entries, labels: labels.length === entries.length ? labels : labelsFor(question, side, entries.length) };
     }
