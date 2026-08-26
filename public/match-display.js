@@ -272,3 +272,104 @@
     extractSequentialRows
   };
 });
+
+
+/*
+ * Match-question UI-only enhancement.
+ * This block intentionally does not change data, validation, APIs, or answer logic.
+ */
+(function installMatchQuestionUiEnhancement() {
+  'use strict';
+
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  function addQuestionOnlyDisplayStyle() {
+    if (document.getElementById('qp-match-question-only-style')) return;
+
+    const style = document.createElement('style');
+    style.id = 'qp-match-question-only-style';
+    style.textContent = [
+      '#listContainer .match-columns-display { display:none !important; }',
+      '#listContainer .match-options-display { display:none !important; }'
+    ].join('\n');
+    document.head.appendChild(style);
+  }
+
+  function exposeOptionalMatchQuestionField() {
+    const qType = document.getElementById('qType');
+    const mcqBlock = document.getElementById('mcqBlock');
+    const matchBlock = document.getElementById('matchBlock');
+    const questionField = document.getElementById('mcqQuestionField');
+
+    if (!qType || !mcqBlock || !matchBlock || !questionField) return;
+
+    const originalNextSibling = questionField.nextSibling;
+    const label = questionField.querySelector('.field-label');
+    const requiredMark = label ? label.querySelector('.req') : null;
+
+    let optionalNote = label ? label.querySelector('.match-question-optional-note') : null;
+    if (label && !optionalNote) {
+      optionalNote = document.createElement('span');
+      optionalNote.className = 'match-question-optional-note';
+      optionalNote.textContent = ' (optional)';
+      optionalNote.style.color = 'var(--muted)';
+      optionalNote.style.fontWeight = '500';
+      optionalNote.style.textTransform = 'none';
+      optionalNote.style.letterSpacing = '0';
+      optionalNote.style.display = 'none';
+      label.appendChild(optionalNote);
+    }
+
+    function restoreQuestionFieldToMcqBlock() {
+      if (questionField.parentNode === mcqBlock) return;
+
+      if (originalNextSibling && originalNextSibling.parentNode === mcqBlock) {
+        mcqBlock.insertBefore(questionField, originalNextSibling);
+      } else {
+        mcqBlock.insertBefore(questionField, mcqBlock.firstChild);
+      }
+    }
+
+    function syncMatchQuestionField() {
+      const isMatch = qType.value === 'match';
+
+      if (isMatch) {
+        if (questionField.parentNode !== matchBlock) {
+          matchBlock.insertBefore(questionField, matchBlock.firstChild);
+        }
+        if (requiredMark) requiredMark.style.display = 'none';
+        if (optionalNote) optionalNote.style.display = '';
+      } else {
+        restoreQuestionFieldToMcqBlock();
+        if (requiredMark) requiredMark.style.display = '';
+        if (optionalNote) optionalNote.style.display = 'none';
+      }
+    }
+
+    // Existing page logic runs first; this only adjusts presentation afterwards.
+    qType.addEventListener('change', function () {
+      window.setTimeout(syncMatchQuestionField, 0);
+    });
+
+    // Edit mode changes the type programmatically and calls the existing visibility
+    // function. Watching the match block style keeps this UI-only enhancement in sync
+    // without modifying that existing function.
+    if (typeof MutationObserver !== 'undefined') {
+      const observer = new MutationObserver(syncMatchQuestionField);
+      observer.observe(matchBlock, { attributes: true, attributeFilter: ['style'] });
+    }
+
+    syncMatchQuestionField();
+  }
+
+  function install() {
+    addQuestionOnlyDisplayStyle();
+    exposeOptionalMatchQuestionField();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true });
+  } else {
+    install();
+  }
+})();
