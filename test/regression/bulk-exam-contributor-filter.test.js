@@ -55,12 +55,19 @@ test('Saved Questions supports name-wise Adder and Admin filtering', () => {
   assert.match(html, /createdBy:'fContributor'/);
   assert.match(questionRoutes, /query\.eq\('created_by', createdBy\)/);
   assert.match(questionRoutes, /contributors,/);
+  assert.match(html, /if\(concept\)params\.set\('concept',concept\)/);
+  assert.match(html, /if\(qType\)params\.set\('qType',qType\)/);
+  assert.match(questionRoutes, /contributorIds\.has\(contributor\.id\)/);
 });
 
 test('contributor facets do not retrieve question content or embedded images', () => {
-  assert.match(
-    questionRoutes,
-    /\.select\('subject, klass, chapter, topic'\)/
+  const facetRead = questionRoutes.slice(
+    questionRoutes.indexOf('async function readFacetRows()'),
+    questionRoutes.indexOf("router.get('/facets'")
   );
-  assert.doesNotMatch(questionRoutes, /\.select\('subject, klass, chapter, topic, created_by/);
+  assert.match(
+    facetRead,
+    /\.select\('subject, klass, chapter, topic, q_type, created_by, created_by_name'\)/
+  );
+  assert.doesNotMatch(facetRead, /(?:solution_text|opt_a|opt_b|opt_c|opt_d)/);
 });

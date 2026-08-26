@@ -36,7 +36,15 @@ test('Accept button can reverse acceptance without deleting history', () => {
   assert.match(frontend, /Question acceptance reversed/);
   assert.doesNotMatch(frontend, /acceptBtn\.disabled = isAccepted/);
   assert.match(notifications, /question_acceptance_reversed/);
-  assert.doesNotMatch(notifications, /from\('notifications'\)\.delete/);
+  const acceptRoute = notifications.slice(notifications.indexOf("router.post('/accept'"), notifications.indexOf("router.put('/read-all/current'"));
+  assert.doesNotMatch(acceptRoute, /from\('notifications'\)\.delete/);
+});
+
+test('a recipient can delete only their own review notification', () => {
+  assert.match(notifications, /router\.delete\('\/:id'/);
+  assert.match(notifications, /\.eq\('recipient_id', req\.user\.userId\)/);
+  assert.match(notifications, /\.eq\('type', 'question_review'\)/);
+  assert.match(frontend, /deleteNotification\('\$\{n\.id\}'\)/);
 });
 
 test('logout closes the exact session and reports storage failure', () => {

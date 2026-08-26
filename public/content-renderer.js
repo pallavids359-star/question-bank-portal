@@ -75,6 +75,18 @@
     return String(text || '').replace(/\\_/g, '_').replace(/\\=/g, '=');
   }
 
+  function normalizeLegacyCombinatorics(text) {
+    const withoutDuplicateThinSpace = String(text || '').replace(/\\\\,/g, '\\,');
+    return withoutDuplicateThinSpace.replace(
+      /(^|\\,|[\s,(=+\-*/])\^(\{[^{}\r\n]+\}|[A-Za-z0-9]+)([CP])\\?_(\{[^{}\r\n]+\}|[A-Za-z0-9+\-]+)/g,
+      (_, prefix, upper, operator, lower) => {
+        const upperValue = upper.startsWith('{') ? upper.slice(1, -1) : upper;
+        const lowerValue = lower.startsWith('{') ? lower.slice(1, -1) : lower;
+        return `${prefix}{}^{${upperValue}}${operator}_{${lowerValue}}`;
+      }
+    );
+  }
+
   function pairTrailingDisplayDelimiter(text) {
     const source = String(text || '');
     const delimiters = [...source.matchAll(/\$\$/g)];
@@ -158,7 +170,9 @@
     source = removePlainTextFences(source);
     source = source.replace(/`thenfor`/gi, ' then for ');
     source = normalizeInlineCode(source);
+    source = source.replace(/`+/g, '');
     source = source.replace(/\bthenfor\b/gi, 'then for');
+    source = normalizeLegacyCombinatorics(source);
     source = repairJoinedMathProse(source);
     source = repairCommonOrphanInlineMath(source);
     source = source.replace(/(?<!\$)\b([xyz]\s*=\s*[+-]?\d+(?:\.\d+)?)\$(?=\s|$)/gi, '$$$1$');

@@ -11,8 +11,8 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="stylesheet" href="bulk-import.css?v=20260825-2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-<script src="content-renderer.js?v=20260825-5"></script>
-<script src="match-display.js?v=20260825-3"></script>
+<script src="content-renderer.js?v=20260826-6"></script>
+<script src="match-display.js?v=20260826-4"></script>
 <script src="dashboard-view.js"></script>
 <script src="auth-view-state.js"></script>
 <style>
@@ -967,7 +967,9 @@ textarea{resize:vertical;min-height:70px;}
   border:1px solid var(--border);
   border-radius:8px;
   background:#111;
-  overflow:hidden;
+  overflow:visible;
+  height:auto;
+  max-height:none;
 }
 .match-display-heading{
   padding:7px 10px;
@@ -5866,7 +5868,7 @@ if(savedFilterConcept) savedFilterConcept.addEventListener('change',()=>{
   if(savedFilterType) savedFilterType.value='';
   questionPage=1;loadQuestions(1,true);
 });
-if(savedFilterType) savedFilterType.addEventListener('change',()=>{questionPage=1;loadQuestions(1,false);});
+if(savedFilterType) savedFilterType.addEventListener('change',()=>{questionPage=1;loadQuestions(1,true);});
 if(savedFilterContributor) savedFilterContributor.addEventListener('change',()=>{questionPage=1;loadQuestions(1,false);});
    // ------------------------------------------------------------
 // SAVED QUESTION SEARCH
@@ -6686,16 +6688,25 @@ async function openNotifications(){
             ${index+1}. ${escapeHtml(n.title || 'Question Review')}
           </strong>
 
-          ${
-            !n.is_read
-            ? `<button
-                 class="btn btn-ghost btn-sm"
-                 onclick="event.stopPropagation();markNotificationRead('${n.id}')"
-               >
-                 Mark Read
-               </button>`
-            : ''
-          }
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${
+              !n.is_read
+              ? `<button
+                   class="btn btn-ghost btn-sm"
+                   onclick="event.stopPropagation();markNotificationRead('${n.id}')"
+                 >
+                   Mark Read
+                 </button>`
+              : ''
+            }
+            <button
+              class="btn btn-ghost btn-sm"
+              title="Delete notification"
+              onclick="event.stopPropagation();deleteNotification('${n.id}')"
+            >
+              Delete
+            </button>
+          </div>
 
         </div>
 
@@ -6877,6 +6888,19 @@ async function markNotificationRead(id){
       'Unable to mark notification as read.',
       true
     );
+  }
+}
+
+async function deleteNotification(id){
+  if(!confirm('Delete this notification?')) return;
+  try{
+    await apiReq('/api/notifications/'+encodeURIComponent(id),{method:'DELETE'});
+    userNotifications=userNotifications.filter(item=>String(item.id)!==String(id));
+    setNotificationBadge(userNotifications.filter(item=>!item.is_read).length);
+    await openNotifications();
+    showToast('Notification deleted.');
+  }catch(error){
+    showToast(error.message||'Unable to delete notification.',true);
   }
 }
 window.QP={
@@ -7494,9 +7518,13 @@ async function loadQuestionFacets(){
   const subject=document.getElementById('fSubject')?.value||'';
   const klass=document.getElementById('fClass')?.value||'';
   const chapter=document.getElementById('fChapter')?.value||'';
+  const concept=document.getElementById('fConcept')?.value||'';
+  const qType=document.getElementById('fType')?.value||'';
   if(subject)params.set('subject',subject);
   if(klass)params.set('klass',klass);
   if(chapter)params.set('chapter',chapter);
+  if(concept)params.set('concept',concept);
+  if(qType)params.set('qType',qType);
   questionFacets=await apiRequest('/facets?'+params.toString());
   renderFilterSubjects();
 }

@@ -66,6 +66,19 @@ test('Roman numeral Column B labels are displayed in numeric order', () => {
   assert.deepEqual(matchDisplay.labelsFor(fiveRows, 'right', 5), ['i', 'ii', 'iii', 'iv', 'v']);
 });
 
+test('saved match display preserves and orders all ten rows', () => {
+  const romanLabels = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'];
+  const mappings = romanLabels.map((label, index) => `${index + 1}-${label}`).join(', ');
+  const question = { matchOptions: { A: mappings } };
+  const rows = romanLabels.map(label => `Value ${label}`);
+
+  assert.deepEqual(matchDisplay.labelsFor(question, 'left', 10), [
+    '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'
+  ]);
+  assert.deepEqual(matchDisplay.labelsFor(question, 'right', 10), romanLabels);
+  assert.deepEqual(matchDisplay.reconstructEntries(question, 'right', rows).entries, rows);
+});
+
 test('legacy Biology word fragments are reconstructed using each question mapping count', () => {
   const nephron = {
     matchOptions: {
@@ -137,4 +150,23 @@ test('valid rows are never rewritten', () => {
   const q = { matchOptions: { A: 'A-Q, B-S, C-P, D-R' } };
   const rows = ['Water containing NaCl, urea', 'Removes CO2', 'Eliminates sterols', 'Secretes bile pigments'];
   assert.deepEqual(matchDisplay.reconstructEntries(q, 'right', rows).entries, rows);
+});
+
+test('nested p q r rows plus an outer numbered continuation reconstruct as p q r s', () => {
+  const question = {
+    matchOptions: {
+      A: 'p-iii, q-iv, r-i, s-ii',
+      B: 'p-ii, q-iii, r-iv, s-i'
+    }
+  };
+  assert.deepEqual(
+    matchDisplay.reconstructEntries(question, 'left', [
+      '(p) First limit (q) Second limit (r) Third limit',
+      'Fourth limit'
+    ]),
+    {
+      labels: ['p', 'q', 'r', 's'],
+      entries: ['First limit', 'Second limit', 'Third limit', 'Fourth limit']
+    }
+  );
 });

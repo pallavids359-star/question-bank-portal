@@ -287,7 +287,7 @@ function extractStatementPair(questionText) {
 // Expand that legacy value into separate rows whenever it is read or saved.
 function normalizeColumnBRows(values) {
   const source = Array.isArray(values) ? values : (values ? [values] : []);
-  const markerSource = '(?:iv|iii|ii|i|[P-S]|[1-4])';
+  const markerSource = '(?:x|ix|viii|vii|vi|v|iv|iii|ii|i|[P-Y]|10|[1-9])';
   const markerGlobal = new RegExp(`(?:\\(${markerSource}\\)|${markerSource}[.:\\-])\\s+`, 'gi');
   const splitBeforeMarker = new RegExp(`(?=\\s*(?:\\(${markerSource}\\)|${markerSource}[.:\\-])\\s+)`, 'gi');
   const removeMarker = new RegExp(`^\\s*(?:\\(${markerSource}\\)|${markerSource}[.:\\-])\\s*`, 'i');
@@ -658,7 +658,7 @@ async function readFacetRows() {
   for (let from = 0; ; from += FACET_PAGE_SIZE) {
     const { data, error } = await supabase
       .from('questions')
-      .select('subject, klass, chapter, topic')
+      .select('subject, klass, chapter, topic, q_type, created_by, created_by_name')
       .range(from, from + FACET_PAGE_SIZE - 1);
     if (error) throw error;
     const page = data || [];
@@ -681,6 +681,8 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     const subject = assigned && assigned !== 'All' ? assigned : requestedSubject;
     const klass = String(req.query.klass || '').replace(/^class\s*/i, '').trim();
     const chapter = String(req.query.chapter || '').trim();
+    const concept = String(req.query.concept || '').trim();
+    const requestedType = String(req.query.qType || '').trim();
 
     const allRows = await readFacetRows();
     const unique = values => [...new Set(values.filter(Boolean))]
@@ -698,6 +700,12 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     const chapterRows = classRows.filter(row =>
       !chapter || String(row.chapter || '') === chapter
     );
+    const conceptRows = chapterRows.filter(row =>
+      !concept || String(row.topic || '') === concept
+    );
+    const contributorRows = conceptRows.filter(row =>
+      !requestedType || normalizeQType(row.q_type) === normalizeQType(requestedType)
+    );
 
     const { data: contributorUsers, error: contributorError } = await supabase
       .from('users')
@@ -705,6 +713,8 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       .in('role', ['admin', 'adder']);
     if (contributorError) throw contributorError;
 
+    const contributorIds = new Set(contributorRows.map(row => String(row.created_by || '')).filter(Boolean));
+    const contributorNames = new Set(contributorRows.map(row => String(row.created_by_name || '').trim().toLowerCase()).filter(Boolean));
     const contributors = (contributorUsers || [])
       .map(contributor => ({
         id: String(contributor.id || ''),
@@ -712,6 +722,7 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
         role: String(contributor.role || '').toLowerCase(),
       }))
       .filter(contributor => contributor.id && contributor.name)
+      .filter(contributor => contributorIds.has(contributor.id) || contributorNames.has(contributor.name.toLowerCase()))
       .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
 
     res.json({

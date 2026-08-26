@@ -48,7 +48,7 @@
 
   function tokenRank(token) {
     if (/^\d+$/.test(token)) return Number(token);
-    const roman = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
+    const roman = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
     const normalized = String(token || '').toLowerCase();
     if (roman[normalized]) return roman[normalized];
     if (/^[A-Za-z]$/.test(token)) return token.toUpperCase().charCodeAt(0) - 64;

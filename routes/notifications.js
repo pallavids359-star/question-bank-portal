@@ -343,4 +343,19 @@ router.put('/:id/read', ...ACTIVE_USER, async (req, res) => {
   res.json(data);
 });
 
+router.delete('/:id', ...ACTIVE_USER, async (req, res) => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('recipient_id', req.user.userId)
+    .eq('type', 'question_review')
+    .select('id')
+    .maybeSingle();
+
+  if (error) return isSchemaError(error) ? tableError(res, error) : res.status(500).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: 'Notification not found.' });
+  res.json({ success: true, deletedId: data.id });
+});
+
 module.exports = router;

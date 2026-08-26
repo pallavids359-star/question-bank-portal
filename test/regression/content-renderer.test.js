@@ -84,6 +84,28 @@ test('common orphan inline dollar signs are paired for solution display', () => 
   );
 });
 
+test('a trailing orphan dollar wraps a complete numerical answer containing brackets', () => {
+  assert.equal(
+    renderer.ensureMathDelimiters('y=(1+x^2)\\left[F(x)-F(1)\\right]$, where'),
+    '$y=(1+x^2)\\left[F(x)-F(1)\\right]$, where'
+  );
+});
+
+test('legacy permutation and combination notation is normalized for KaTeX display', () => {
+  assert.equal(
+    renderer.ensureMathDelimiters('^6C\\_3\\times\\\\,^4C\\_2'),
+    '${}^{6}C_{3}\\times\\,{}^{4}C_{2}$'
+  );
+  assert.equal(
+    renderer.ensureMathDelimiters('If ^nP\\_r=\\,^nP\\_{r+1} then'),
+    'If {}^{n}P_{r}=\\,{}^{n}P_{r+1} then'
+  );
+});
+
+test('stray Markdown backticks are removed from displayed solution text', () => {
+  assert.equal(renderer.ensureMathDelimiters('Therefore, `option A` is correct. ```'), 'Therefore, option A is correct. ');
+});
+
 const markdownCases = ['Pending Review','Correct answer','Solution','Option A','A formula $x^2$'];
 for (const value of markdownCases) test(`Markdown strong token preserves content: ${value}`, () => {
   assert.deepEqual(renderer.tokenizeMarkdown(`before **${value}** after`), [

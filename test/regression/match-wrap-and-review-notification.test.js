@@ -16,7 +16,7 @@ test('Match display columns show content directly without internal scrollbars', 
   assert.match(html, /\.list-item\.match-question \.li-top\{\s*flex-direction:column;/);
   assert.match(html, /\.list-item\.match-question \.li-top>div:first-child\{\s*width:100%;/);
   assert.match(html, /\.list-item\.match-question \.li-btns\{[\s\S]*?align-self:flex-end;[\s\S]*?max-width:none;/);
-  assert.match(html, /\.match-display-column\{[\s\S]*?overflow:hidden;/);
+  assert.match(html, /\.match-display-column\{[\s\S]*?overflow:visible;[\s\S]*?max-height:none;/);
   assert.match(html, /\.match-display-value\{[^}]*overflow:visible;/);
   assert.doesNotMatch(html, /\.match-display-value\{[^}]*overflow-x:auto;/);
   assert.match(bulkCss, /\.bq-match-column\{[^\n]*overflow:hidden;/);
@@ -36,4 +36,5 @@ test('Question update endpoint notifies original reviewer when question has an a
   assert.match(questionsRoute, /title: 'Question Updated'/);
   assert.match(questionsRoute, /The question you reviewed has been updated by/);
   assert.match(questionsRoute, /recipient_id: reviewerId/);
+  assert.match(questionsRoute, /\.delete\(\)\s*\.eq\('question_id', req\.params\.id\)\s*\.eq\('type', 'question_review'\)/);
 });
