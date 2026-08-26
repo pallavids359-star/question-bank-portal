@@ -28,6 +28,11 @@ test('Saved Questions applies existing smart math conversion after delimiter rep
   assert.match(html, /const normalized=smartConvertRaw\(ensureMathDelimiters\(raw\|\|''\)\);/);
 });
 
+test('Saved Match the Following cards display the question stem above both columns', () => {
+  assert.match(html, /if\(cleanQText\)\{[\s\S]*?questionBlock\.className='match-question-block';[\s\S]*?main\.appendChild\(questionBlock\);[\s\S]*?const columns=/);
+  assert.match(html, /\.match-question-block\{[^}]*margin-bottom:10px;/);
+});
+
 test('Question update endpoint notifies original reviewer when question has an active review', () => {
   assert.match(questionsRoute, /router\.put\('\/:id'/);
   assert.match(questionsRoute, /in\('type', \['question_review', 'question_accepted', 'question_acceptance_reversed'\]\)/);

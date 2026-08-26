@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="stylesheet" href="bulk-import.css?v=20260825-2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-<script src="content-renderer.js?v=20260826-6"></script>
+<script src="content-renderer.js?v=20260826-7"></script>
 <script src="match-display.js?v=20260826-4"></script>
 <script src="dashboard-view.js"></script>
 <script src="auth-view-state.js"></script>
@@ -1044,6 +1044,7 @@ textarea{resize:vertical;min-height:70px;}
 .match-display-value img{max-width:100%;height:auto;}
 .match-options-display{margin-top:9px;display:grid;gap:4px;}
 .match-options-display>span{display:block;}
+.match-question-block{margin-top:8px;margin-bottom:10px;line-height:1.55;white-space:normal;}
 @media(max-width:560px){
   .match-columns-display{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
 }
@@ -6194,6 +6195,12 @@ main.appendChild(optsLine);
 
   main.appendChild(optsLine);
     }else if(q.qType==='match'){
+      if(cleanQText){
+        const questionBlock=document.createElement('div');
+        questionBlock.className='match-question-block';
+        questionBlock.appendChild(renderStaticPreview(cleanQText));
+        main.appendChild(questionBlock);
+      }
       const columns=document.createElement('div');columns.className='match-columns-display';
       [['Column A',q.columnA||[],'left'],['Column B',q.columnB||[],'right']].forEach(([title,rawEntries,labelType])=>{
         const column=document.createElement('div');column.className='match-display-column';
