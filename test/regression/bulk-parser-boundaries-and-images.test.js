@@ -53,6 +53,43 @@ Answer: A
   assert.match(question.question, /^The value of/);
 });
 
+test('MCQ answers map positional A-D, 1-4 and I-IV labels consistently', () => {
+  const parse = loadParser();
+  const [letterOptions] = parse(`
+Question with letter options
+(A) First
+(B) Second
+(C) Third
+(D) Fourth
+Answer: 2
+  `);
+  assert.equal(letterOptions.answer, 'B');
+
+  const [numberOptions] = parse(`
+Question with numbered options
+(1) First
+(2) Second
+(3) Third
+(4) Fourth
+Answer: C
+  `);
+  assert.deepEqual(
+    [numberOptions.optA, numberOptions.optB, numberOptions.optC, numberOptions.optD],
+    ['First', 'Second', 'Third', 'Fourth']
+  );
+  assert.equal(numberOptions.answer, 'C');
+
+  const [romanOptions] = parse(`
+Question with Roman-numbered options
+(i) First
+(ii) Second
+(iii) Third
+(iv) Fourth
+Answer: iii
+  `);
+  assert.equal(romanOptions.answer, 'C');
+});
+
 test('match parser keeps multiline wording together and allows more Column B rows', () => {
   const [question] = loadParser()(`
 @type: Match the Following
@@ -130,6 +167,31 @@ Answer: A
   assert.deepEqual(Array.from(question.columnB), ['First value', 'Second value', 'Third value', 'Fourth value']);
   assert.deepEqual(Array.from(matchDisplay.labelsFor(question, 'left', 3)), ['A', 'B', 'C']);
   assert.deepEqual(Array.from(matchDisplay.labelsFor(question, 'right', 4)), ['p', 'q', 'r', 's']);
+});
+
+test('match parser promotes nested p q r labels inside an outer numbered row', () => {
+  const [question] = loadParser()(`
+@type: Match the Following
+Column A
+(1) (p) First limit (q) Second limit (r) Third limit
+(2) Fourth limit
+Column B
+(i) First value
+(ii) Second value
+(iii) Third value
+(iv) Fourth value
+Options
+(A) p-iii, q-iv, r-i, s-ii
+(B) p-ii, q-iii, r-iv, s-i
+(C) p-i, q-ii, r-iii, s-iv
+(D) p-iv, q-i, r-ii, s-iii
+Answer: A
+  `);
+
+  assert.deepEqual(Array.from(question.columnA), [
+    'First limit', 'Second limit', 'Third limit', 'Fourth limit'
+  ]);
+  assert.deepEqual(Array.from(matchDisplay.labelsFor(question, 'left', 4)), ['p', 'q', 'r', 's']);
 });
 
 test('explicit Assertion/Reason and Statement labels determine their correct type', () => {

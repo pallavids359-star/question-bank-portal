@@ -135,25 +135,38 @@
   };
 
   // ── OPTION & BOUNDARY PATTERNS ────────────────────────────────────
+  const OPTION_LABEL_PATTERN = '(IV|III|II|I|[A-Da-d1-4])';
   const OPT_PATTERNS = [
-    /^\s*\(([A-Da-d1-4])\)\s+/,      // (A) (1)
-    /^\s*([A-Da-d])[.\):]\s+/,      // A. A) A: (Letters only for standalone)
-    /^\s*([a-d])\s*[\)\.]\s+/,      // a) b.
-    /^\s*\[([A-Da-d1-4])\]\s+/,     // [A]
-    /^\s*Option\s+([A-Da-d1-4])\s*[:\.]\s*/i,
+    new RegExp(`^\\s*\\(${OPTION_LABEL_PATTERN}\\)\\s+`, 'i'),
+    new RegExp(`^\\s*${OPTION_LABEL_PATTERN}[.\\):]\\s+`, 'i'),
+    new RegExp(`^\\s*\\[${OPTION_LABEL_PATTERN}\\]\\s+`, 'i'),
+    new RegExp(`^\\s*Option\\s+${OPTION_LABEL_PATTERN}\\s*[:\\.]\\s*`, 'i'),
   ];
+
+  function canonicalOptionKey(value) {
+    const key = String(value || '').trim().toUpperCase();
+    return ({
+      A: 'A', B: 'B', C: 'C', D: 'D',
+      1: 'A', 2: 'B', 3: 'C', 4: 'D',
+      I: 'A', II: 'B', III: 'C', IV: 'D',
+    })[key] || null;
+  }
+
+  function canonicalOptionAnswers(value) {
+    const raw = String(value || '').trim();
+    const compactLetters = raw.match(/^\(?([A-D]{1,4})\)?$/i);
+    const labels = compactLetters
+      ? compactLetters[1].split('')
+      : Array.from(raw.matchAll(/\b(IV|III|II|I|[A-D]|[1-4])\b/gi), match => match[1]);
+    return Array.from(new Set(labels.map(canonicalOptionKey).filter(Boolean)));
+  }
 
   function detectOptionKey(line, isFirstLine = false) {
     if (isFirstLine) return null; // First line of question is never an option!
     for (const pat of OPT_PATTERNS) {
       const m = line.match(pat);
       if (m) {
-        let key = m[1].toUpperCase();
-        if (key === '1') key = 'A';
-        else if (key === '2') key = 'B';
-        else if (key === '3') key = 'C';
-        else if (key === '4') key = 'D';
-        return key;
+        return canonicalOptionKey(m[1]);
       }
     }
     return null;
@@ -691,9 +704,11 @@ const hasFlexibleMatchColumns =
 
         if (isAnsLine(line)) {
           mode = 'ans';
-          let rawAns = stripAnsPrefix(line).toUpperCase();
-          const m = rawAns.match(/([A-D]|TRUE|FALSE|[-+]?\d+(?:\.\d+)?)/i);
-          if (m) answer = m[1].toUpperCase();
+          const rawAns = stripAnsPrefix(line);
+          const optionAnswers = canonicalOptionAnswers(rawAns);
+          const booleanAnswer = rawAns.match(/\b(TRUE|FALSE)\b/i);
+          if (optionAnswers.length) answer = optionAnswers[0];
+          else if (booleanAnswer) answer = booleanAnswer[1].toUpperCase();
           continue;
         }
 
@@ -747,9 +762,11 @@ const hasFlexibleMatchColumns =
       const res = this.parseStandard(block, meta);
       res.qType = 'mcq_multiple';
       
-      const rawAns = res.answer || block.lines.map(l => l.text).join('\n');
-      const matches = rawAns.match(/[A-D]/gi) || [];
-      const uniqueAnswers = Array.from(new Set(matches.map(m => m.toUpperCase())));
+      const answerLine = block.lines.find(line => isAnsLine(typeof line === 'string' ? line : line.text));
+      const rawAns = answerLine
+        ? stripAnsPrefix(typeof answerLine === 'string' ? answerLine : answerLine.text)
+        : res.answer;
+      const uniqueAnswers = canonicalOptionAnswers(rawAns);
       
       if (uniqueAnswers.length > 0) {
         res.answers = uniqueAnswers;
@@ -798,9 +815,8 @@ const hasFlexibleMatchColumns =
 
         if (isAnsLine(line)) {
           section = 'answer';
-          let rawAns = stripAnsPrefix(line).toUpperCase();
-          const m = rawAns.match(/([A-D])/i);
-          if (m) answer = m[1].toUpperCase();
+          const optionAnswers = canonicalOptionAnswers(stripAnsPrefix(line));
+          if (optionAnswers.length) answer = optionAnswers[0];
           continue;
         }
 

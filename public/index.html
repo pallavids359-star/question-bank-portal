@@ -5957,6 +5957,20 @@ function filterByConcept(conceptName){
   }
 }
 
+function savedCorrectOptionKeys(q){
+  const raw=String(q.correctOption||q.correct_option||q.answer||'').trim();
+  const map={A:'A',B:'B',C:'C',D:'D','1':'A','2':'B','3':'C','4':'D',I:'A',II:'B',III:'C',IV:'D'};
+  const withoutPrefix=raw.replace(/^Option\s+/i,'').trim();
+  const exact=withoutPrefix.replace(/^[\s([\]]+|[\s)\]]+$/g,'').toUpperCase();
+  if(map[exact])return[map[exact]];
+  if(/^[A-D]{2,4}$/i.test(exact))return Array.from(new Set(exact.split('').map(value=>map[value])));
+  if(/^[1-4]{2,4}$/.test(exact))return Array.from(new Set(exact.split('').map(value=>map[value])));
+  return Array.from(new Set(
+    Array.from(withoutPrefix.matchAll(/\b(IV|III|II|I|[A-D]|[1-4])\b/gi),match=>map[match[1].toUpperCase()]).filter(Boolean)
+  ));
+}
+function isSavedCorrectOption(q,label){return savedCorrectOptionKeys(q).includes(label);}
+
 function getCleanQuestionText(q){
   if(!q || !q.question) return '';
   let raw = q.question.trim();
@@ -6115,7 +6129,7 @@ optsLine.style.marginTop='8px';
   const row=document.createElement('span');
   row.style.display='block';
 
-  const isCorrect=q.correctOption===l;
+  const isCorrect=isSavedCorrectOption(q,l);
 
   if(isCorrect) row.className='correct';
 
@@ -6166,7 +6180,7 @@ main.appendChild(optsLine);
     const row = document.createElement('span');
     row.style.display = 'block';
 
-    const isCorrect = q.correctOption === l;
+    const isCorrect = isSavedCorrectOption(q,l);
     if(isCorrect) row.className = 'correct';
 
     row.appendChild(document.createTextNode(l + ': '));
@@ -6196,7 +6210,7 @@ main.appendChild(optsLine);
       });
       main.appendChild(columns);
       const mo=q.matchOptions||{};const optsLine=document.createElement('div');optsLine.className='li-combo match-options-display';
-      ['A','B','C','D'].forEach(l=>{const isCorrect=q.correctOption===l;const span=document.createElement('span');if(isCorrect)span.className='correct';span.appendChild(document.createTextNode(l+': '));const rawOption=window.QPMatchDisplay?window.QPMatchDisplay.optionFor(q,l):(mo[l]||'');const optionText=window.QPMatchDisplay?window.QPMatchDisplay.formatMapping(rawOption):rawOption;span.appendChild(renderStaticPreview(optionText));if(isCorrect)span.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(span);});
+      ['A','B','C','D'].forEach(l=>{const isCorrect=isSavedCorrectOption(q,l);const span=document.createElement('span');if(isCorrect)span.className='correct';span.appendChild(document.createTextNode(l+': '));const rawOption=window.QPMatchDisplay?window.QPMatchDisplay.optionFor(q,l):(mo[l]||'');const optionText=window.QPMatchDisplay?window.QPMatchDisplay.formatMapping(rawOption):rawOption;span.appendChild(renderStaticPreview(optionText));if(isCorrect)span.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(span);});
       main.appendChild(optsLine);
     }else if(q.qType==='numerical'){
       const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
@@ -6210,7 +6224,7 @@ main.appendChild(optsLine);
     }else{
       const qLine=document.createElement('div');qLine.appendChild(renderStaticPreview(cleanQText||''));main.appendChild(qLine);
       const optsLine=document.createElement('div');optsLine.className='li-combo';
-      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=q.correctOption===l;if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]||''));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
+      ['A','B','C','D'].forEach(l=>{const row=document.createElement('span');row.style.display='block';const isCorrect=isSavedCorrectOption(q,l);if(isCorrect)row.className='correct';row.appendChild(document.createTextNode(l+': '));row.appendChild(renderStaticPreview(q['opt'+l]||''));if(isCorrect)row.appendChild(document.createTextNode(' ✓'));optsLine.appendChild(row);});
       main.appendChild(optsLine);
     }
     const examsLine=document.createElement('div');examsLine.style.marginTop='8px';examsLine.style.display='flex';examsLine.style.flexWrap='wrap';examsLine.style.gap='6px';
@@ -7445,7 +7459,7 @@ const columnBMatch =
       setFieldFromRaw('optD',q.optD||'');
     }
 
-    const corr = q.correctOption || q.correct_option || q.answer || 'A';
+    const corr = savedCorrectOptionKeys(q)[0] || q.correctOption || q.correct_option || q.answer || 'A';
     const co = document.getElementById('correctOption');
     if(co){
       updateCorrectOptionChoices();
@@ -7583,7 +7597,7 @@ window.showPage             = showPage;
 window.Auth                 = Auth;   // useful for console debugging
 window.QP                   = QP;     // already assigned above
 </script>
-<script src="bulk-import.js?v=4.3"></script>
+<script src="bulk-import.js?v=4.4"></script>
 <script>
 /* ================================================================
    IMAGE ATTACH BUTTON HANDLERS
