@@ -56,14 +56,6 @@
 
   function repairCommonOrphanInlineMath(text) {
     let source = String(text || '');
-    const inlineDollars = source.match(/(?<!\$)\$(?!\$)/g) || [];
-    if (inlineDollars.length > 0 && inlineDollars.length % 2 === 0) {
-      const delimitedParts = source.split('$').filter((_, index) => index % 2 === 1);
-      const allPartsLookLikeMath = delimitedParts.every(part =>
-        LATEX_COMMAND.test(part) || /^[A-Za-z]$/.test(part.trim()) || /[=^_∫∑√]/.test(part)
-      );
-      if (allPartsLookLikeMath) return source;
-    }
     const expression = '[A-Za-z][A-Za-z0-9_{}\\\\^]*\\s*=\\s*[^$\\s,;:.!?]+';
     const missingOpening = new RegExp(`(^|[\\s([:;,])(${expression})\\$(?=$|[\\s,;:.!?)}\\]])`, 'g');
     const missingClosing = new RegExp(`\\$(${expression})(?=(?:\\s+(?:and|or|then|where|gives|at)\\b)|[,;:.!?)]|$)`, 'gi');
@@ -92,20 +84,6 @@
         const lowerValue = lower.startsWith('{') ? lower.slice(1, -1) : lower;
         return `${prefix}{}^{${upperValue}}${operator}_{${lowerValue}}`;
       }
-    );
-  }
-
-  function repairLegacyBacktickMathBoundary(text) {
-    return String(text || '').replace(
-      /\b([A-Za-z]\s*=\s*[^`\r\n]+)`\s*(then|where|gives)\s*`([A-Za-z][A-Za-z0-9_]*)\$(?=\s|$)/gi,
-      (_, expression, joiningWord, variable) => `$${expression.trim()}$ ${joiningWord.toLowerCase()} $${variable}$`
-    );
-  }
-
-  function repairLegacySquaredDifference(text) {
-    return String(text || '').replace(
-      /(\d+)\^\{2-\}(\d+)\^\{?2\}?/g,
-      '$1^2-$2^2'
     );
   }
 
@@ -190,13 +168,11 @@
     source = source.replace(/\\\\([\[\]()])/g, '\\$1');
     source = normalizeFencedMath(source);
     source = removePlainTextFences(source);
-    source = repairLegacyBacktickMathBoundary(source);
     source = source.replace(/`thenfor`/gi, ' then for ');
     source = normalizeInlineCode(source);
     source = source.replace(/`+/g, '');
     source = source.replace(/\bthenfor\b/gi, 'then for');
     source = normalizeLegacyCombinatorics(source);
-    source = repairLegacySquaredDifference(source);
     source = repairJoinedMathProse(source);
     source = repairCommonOrphanInlineMath(source);
     source = source.replace(/(?<!\$)\b([xyz]\s*=\s*[+-]?\d+(?:\.\d+)?)\$(?=\s|$)/gi, '$$$1$');
