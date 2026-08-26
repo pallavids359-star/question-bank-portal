@@ -179,6 +179,34 @@
     return line.trim();
   }
 
+  function findFinalCompleteOptionStart(lines) {
+    const candidates = [];
+
+    for (let index = 0; index < lines.length; index++) {
+      const line = (typeof lines[index] === 'string' ? lines[index] : lines[index].text).trim();
+      if (!line || isAnsLine(line) || isSolLine(line)) break;
+      const key = detectOptionKey(line, index === 0);
+      if (key) candidates.push({ index, key });
+    }
+
+    const completeStarts = [];
+    for (let start = 0; start < candidates.length; start++) {
+      if (candidates[start].key !== 'A') continue;
+      let expected = 1;
+      for (let cursor = start + 1; cursor < candidates.length && expected < 4; cursor++) {
+        const expectedKey = ['A', 'B', 'C', 'D'][expected];
+        if (candidates[cursor].key === expectedKey) {
+          expected += 1;
+          continue;
+        }
+        if (candidates[cursor].key === 'A') break;
+      }
+      if (expected === 4) completeStarts.push(candidates[start].index);
+    }
+
+    return completeStarts.length ? completeStarts[completeStarts.length - 1] : -1;
+  }
+
   const Q_START_PATTERNS = [
     /^\s*(?:Q|Question|Que|Problem|Item)\s*#?\s*(\d{1,4})?\s*[:\.]?\s*/i,
     /^\s*@question\s*[:\.]?\s*/i,
@@ -678,6 +706,7 @@ const hasFlexibleMatchColumns =
     parseStandard(block, meta) {
       const inline = extractInlineMetadata(block.lines);
       const lines = inline.cleanLines;
+      const optionStartIndex = findFinalCompleteOptionStart(lines);
       let qLines = [];
       let solLines = [];
       let options = {};
@@ -719,7 +748,9 @@ const hasFlexibleMatchColumns =
           continue;
         }
 
-        const optKey = detectOptionKey(line, i === 0);
+        const optKey = i >= optionStartIndex && optionStartIndex >= 0
+          ? detectOptionKey(line, i === 0)
+          : null;
         if (optKey) {
           mode = 'opt';
           options[optKey] = stripOptionPrefix(line);

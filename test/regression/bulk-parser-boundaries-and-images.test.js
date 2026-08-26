@@ -90,6 +90,42 @@ Answer: iii
   assert.equal(romanOptions.answer, 'C');
 });
 
+test('MCQ statement labels before options remain in the question body', () => {
+  const [question] = loadParser()(`
+@subject: Biology
+@class: 11
+@chapter: Plant Kingdom
+@concept: Algae
+@type: MCQ
+@difficulty: Medium
+
+Q10: Read the following statements and identify the characters related to the alga shown in the diagram.
+
+[Figure]
+
+A. It is a member of Chlorophyceae.
+B. Food is stored in the form of starch.
+C. It is a monoecious plant showing oogonium and antheridium.
+D. Food is stored in the form of laminarin or mannitol.
+E. It shows dominance of pigments chlorophyll a, c and fucoxanthin.
+
+A. A, B and C only
+B. A, C and D only
+C. A, B, C and D only
+D. C, D and E only
+
+Ans: A
+
+Solution: The given diagram represents a green alga such as Chara.
+  `);
+
+  assert.match(question.question, /A\. It is a member of Chlorophyceae\./);
+  assert.match(question.question, /E\. It shows dominance of pigments/);
+  assert.equal(question.optA, 'A, B and C only');
+  assert.equal(question.optD, 'C, D and E only');
+  assert.equal(question.answer, 'A');
+});
+
 test('match parser keeps multiline wording together and allows more Column B rows', () => {
   const [question] = loadParser()(`
 @type: Match the Following
