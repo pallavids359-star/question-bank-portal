@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="stylesheet" href="bulk-import.css?v=20260825-2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-<script src="content-renderer.js?v=20260826-6"></script>
+<script src="content-renderer.js?v=20260826-7"></script>
 <script src="match-display.js?v=20260826-4"></script>
 <script src="dashboard-view.js"></script>
 <script src="auth-view-state.js"></script>
@@ -1044,6 +1044,7 @@ textarea{resize:vertical;min-height:70px;}
 .match-display-value img{max-width:100%;height:auto;}
 .match-options-display{margin-top:9px;display:grid;gap:4px;}
 .match-options-display>span{display:block;}
+.match-question-block{margin-top:8px;margin-bottom:10px;line-height:1.55;white-space:normal;}
 @media(max-width:560px){
   .match-columns-display{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
 }
@@ -1591,6 +1592,13 @@ img,svg,canvas{max-width:100%;}
             </div>
 
             <div id="matchBlock" style="display:none;">
+              <div class="field">
+                <div class="label-row">
+                  <label class="field-label">Question / Instruction <span style="color:var(--muted);font-weight:400;">(Optional)</span></label>
+                  <button type="button" class="attach-btn img-link-btn-flat" data-target="matchQuestion">📎 Attach Image</button>
+                </div>
+                <div class="eq-field multiline" id="matchQuestion" data-placeholder="e.g. Match the List I with List II." contenteditable="true" spellcheck="false"></div>
+              </div>
               <div class="grid2">
                 <div class="field"><label class="field-label">Column A <span class="req">*</span></label><div id="columnARows"></div><button type="button" class="tbtn wide" id="addColumnARow">+ Add Row</button></div>
                 <div class="field"><label class="field-label">Column B <span class="req">*</span></label><div id="columnBRows"></div><button type="button" class="tbtn wide" id="addColumnBRow">+ Add Row</button></div>
@@ -5613,7 +5621,7 @@ if(err){
   const subjectSel=document.getElementById('subject');
   const klassSel=document.getElementById('klass');
 
-  let mainQuestionText = eqVal('question');
+  let mainQuestionText = isMatch ? eqVal('matchQuestion') : eqVal('question');
   if(isNum) mainQuestionText = eqVal('numQuestion');
   else if(isAR) mainQuestionText = 'Assertion: ' + eqVal('assertion') + '\nReason: ' + eqVal('reason');
   else if(isStatement){
@@ -5624,7 +5632,6 @@ if(err){
 else if(isTF && !mainQuestionText){
   mainQuestionText = 'Question';
 }
-  else if(isMatch && !mainQuestionText) mainQuestionText = 'Match the Following Question';
 
   const allowedExams = allowedEntryExamsForSubject(subjectSel.value);
   const activeExams = Array.from(selectedExams.size > 0 ? selectedExams : [allowedExams[0]]);
@@ -5726,7 +5733,7 @@ function resetForm(){
   updateExamOptionsForSubject(subjectSel ? subjectSel.value : '');
   const qts=document.getElementById('qType');if(qts)qts.value='';
   const diffSel=document.getElementById('difficulty');if(diffSel)diffSel.value='Medium';
-  ['question','optA','optB','optC','optD','solutionText','assertion','reason','numQuestion','numAnswer','statement1','statement2'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
+  ['question','matchQuestion','optA','optB','optC','optD','solutionText','assertion','reason','numQuestion','numAnswer','statement1','statement2'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
   fillDefaultPredef();resetColumnRows('columnARows',columnALabel,4);resetColumnRows('columnBRows',columnBLabel,4);resetCombos(4);
   const co=document.getElementById('correctOption');if(co)co.value='';updateTypeVisibility();
   const formCard=document.getElementById('questionFormCard');
@@ -5992,6 +5999,14 @@ function getCleanQuestionText(q){
   return raw;
 }
 
+function getMatchQuestionStem(questionText){
+  const raw=String(questionText||'').replace(/\r\n?/g,'\n').trim();
+  if(!raw||/^Match the Following Question$/i.test(raw)) return '';
+  const columnStart=/\n\s*(?:\*\*)?\s*(?:Column|List)\s*[-–—:]?\s*(?:I|1|A|One|First|Left)\s*(?:\*\*)?\s*(?=\n|$)/i;
+  const match=columnStart.exec(raw);
+  return (match?raw.slice(0,match.index):raw).trim();
+}
+
 function ensureMathDelimiters(text) {
   return window.QbpContentRenderer.ensureMathDelimiters(text);
 }
@@ -6194,6 +6209,13 @@ main.appendChild(optsLine);
 
   main.appendChild(optsLine);
     }else if(q.qType==='match'){
+      const matchQuestionStem=getMatchQuestionStem(cleanQText);
+      if(matchQuestionStem){
+        const questionBlock=document.createElement('div');
+        questionBlock.className='match-question-block';
+        questionBlock.appendChild(renderStaticPreview(matchQuestionStem));
+        main.appendChild(questionBlock);
+      }
       const columns=document.createElement('div');columns.className='match-columns-display';
       [['Column A',q.columnA||[],'left'],['Column B',q.columnB||[],'right']].forEach(([title,rawEntries,labelType])=>{
         const column=document.createElement('div');column.className='match-display-column';
@@ -7164,10 +7186,7 @@ else if(normType==='statement_based'){
       setFieldFromRaw('optC',q.optC||'');
       setFieldFromRaw('optD',q.optD||'');
     }else if(normType==='match'){
-
-  if(q.question){
-    setFieldFromRaw('question', q.question);
-  }
+  setFieldFromRaw('matchQuestion', getMatchQuestionStem(q.question||''));
 
   let colA = [];
   let colB = [];

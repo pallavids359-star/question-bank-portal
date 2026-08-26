@@ -106,6 +106,14 @@ test('stray Markdown backticks are removed from displayed solution text', () => 
   assert.equal(renderer.ensureMathDelimiters('Therefore, `option A` is correct. ```'), 'Therefore, option A is correct. ');
 });
 
+test('legacy product notation keeps prose outside math and repairs squared differences', () => {
+  const source = 'If P=21\\left(21^{2-}1^2\\right)\\left(21^{2-}10^2\\right)`then`P$ is divisible by';
+  assert.equal(
+    renderer.ensureMathDelimiters(source),
+    'If $P=21\\left(21^2-1^2\\right)\\left(21^2-10^2\\right)$ then $P$ is divisible by'
+  );
+});
+
 const markdownCases = ['Pending Review','Correct answer','Solution','Option A','A formula $x^2$'];
 for (const value of markdownCases) test(`Markdown strong token preserves content: ${value}`, () => {
   assert.deepEqual(renderer.tokenizeMarkdown(`before **${value}** after`), [

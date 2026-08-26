@@ -28,6 +28,18 @@ test('Saved Questions applies existing smart math conversion after delimiter rep
   assert.match(html, /const normalized=smartConvertRaw\(ensureMathDelimiters\(raw\|\|''\)\);/);
 });
 
+test('Saved Match the Following cards display the question stem above both columns', () => {
+  assert.match(html, /const matchQuestionStem=getMatchQuestionStem\(cleanQText\);[\s\S]*?if\(matchQuestionStem\)\{[\s\S]*?questionBlock\.className='match-question-block';[\s\S]*?main\.appendChild\(questionBlock\);[\s\S]*?const columns=/);
+  assert.match(html, /\.match-question-block\{[^}]*margin-bottom:10px;/);
+});
+
+test('Match question instruction is optional and does not repeat embedded legacy columns', () => {
+  assert.match(html, /id="matchQuestion"[^>]*data-placeholder="e\.g\. Match the List I with List II\."/);
+  assert.doesNotMatch(html, /if\(isMatch && !mainQuestionText\) mainQuestionText = 'Match the Following Question';/);
+  assert.match(html, /function getMatchQuestionStem\(questionText\)[\s\S]*?const columnStart=/);
+  assert.match(html, /setFieldFromRaw\('matchQuestion', getMatchQuestionStem\(q\.question\|\|''\)\);/);
+});
+
 test('Question update endpoint notifies original reviewer when question has an active review', () => {
   assert.match(questionsRoute, /router\.put\('\/:id'/);
   assert.match(questionsRoute, /in\('type', \['question_review', 'question_accepted', 'question_acceptance_reversed'\]\)/);
