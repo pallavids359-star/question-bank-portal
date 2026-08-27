@@ -20,6 +20,7 @@ const usersRoutes     = require('./routes/users');
 const dashboardRoutes = require('./routes/dashboard');
 const auditRoutes     = require('./routes/audit');
 const notificationRoutes = require('./routes/notifications');
+const imageUploadRoutes = require('./routes/image-uploads');
 
 // ── Admin seeder ─────────────────────────────────────────────────────────────
 const seedAdmin = require('./lib/seed-admin');
@@ -41,7 +42,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: blob: https://res.cloudinary.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
   if (process.env.NODE_ENV === 'production') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
 });
@@ -54,6 +55,7 @@ app.use('/api/users',      usersRoutes);
 app.use('/api/dashboard',  dashboardRoutes);
 app.use('/api',            auditRoutes);          // /api/audit-log  + /api/login-history
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/uploads', imageUploadRoutes);
 app.use('/api', (req, res) => res.status(404).json({ success: false, error: 'API endpoint not found' }));
 
 // ── Health check ─────────────────────────────────────────────────────────────

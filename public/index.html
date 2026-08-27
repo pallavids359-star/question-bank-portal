@@ -2442,6 +2442,34 @@ async function apiRequest(path = '', options = {}) {
   return apiReq(API_QUESTIONS + path, options);
 }
 
+async function storeQuestionImage(dataUrl, subject, klass) {
+  const normalizedSubject = String(subject || '').trim().toLowerCase();
+  const normalizedClass = String(klass || '')
+    .replace(/^class\s*/i, '')
+    .trim();
+
+  // Only Physics Class 11 has completed the external-image migration.
+  // Other shards continue using the existing Base64 behavior for now.
+  if (normalizedSubject !== 'physics' || normalizedClass !== '11') {
+    return dataUrl;
+  }
+
+  const result = await apiReq('/api/uploads/image', {
+    method: 'POST',
+    body: JSON.stringify({
+      dataUrl,
+      subject: 'Physics',
+      klass: '11',
+    }),
+  });
+
+  if (!result || typeof result.url !== 'string' || !result.url.startsWith('https://')) {
+    throw new Error('Image upload did not return a valid URL.');
+  }
+
+  return result.url;
+}
+
 function noteUserInteraction() {
   _lastUserInteraction = Date.now();
 }
@@ -5141,7 +5169,10 @@ async function processAndInsertImage(imageSource, targetEl) {
     }
     if (!dataUrl) return false;
     const compressed = await compressImage(dataUrl);
-    insertImageChipAtCursor(targetEl, compressed);
+    const subject = document.getElementById('subject')?.value || '';
+    const klass = document.getElementById('klass')?.value || '';
+    const storedImage = await storeQuestionImage(compressed, subject, klass);
+    insertImageChipAtCursor(targetEl, storedImage);
     targetEl.dispatchEvent(new Event('input', { bubbles: true }));
     if (typeof showToast === 'function') {
       showToast('📷 Image pasted successfully!');
@@ -7739,10 +7770,17 @@ window.QP                   = QP;     // already assigned above
           compressed = await compressImage(dataUrl);
         }
 
+        const meta = window.BulkModule?.getEditingQuestionMeta?.();
+        const storedImage = await storeQuestionImage(
+          compressed,
+          meta?.subject || '',
+          meta?.klass || ''
+        );
+
         // Append {{IMG::url}} marker to the field value
         const field = document.getElementById(targetId);
         if (field) {
-          const marker = '{{IMG::' + compressed + '}}';
+          const marker = '{{IMG::' + storedImage + '}}';
           if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
             field.value = (field.value || '') + (field.value ? ' ' : '') + marker;
           }
@@ -7750,7 +7788,7 @@ window.QP                   = QP;     // already assigned above
 
         // Show preview chip below the field
         const previewId = targetId + 'ImgPreview';
-        bqShowImgPreview(previewId, compressed);
+        bqShowImgPreview(previewId, storedImage);
 
         if (typeof showToast === 'function') showToast('📷 Image attached!');
       };
@@ -7832,7 +7870,13 @@ window.QP                   = QP;     // already assigned above
     reader.onload = async (ev) => {
       const dataUrl = ev.target.result;
       const compressed = await compressImage(dataUrl);
-      const marker = '{{IMG::' + compressed + '}}';
+      const meta = window.BulkModule?.getEditingQuestionMeta?.();
+      const storedImage = await storeQuestionImage(
+        compressed,
+        meta?.subject || '',
+        meta?.klass || ''
+      );
+      const marker = '{{IMG::' + storedImage + '}}';
 
       // Insert {{IMG::...}} marker at current cursor position in field
       const start = target.selectionStart !== undefined ? target.selectionStart : target.value.length;
@@ -7853,7 +7897,7 @@ window.QP                   = QP;     // already assigned above
       // If inside Bulk Edit Modal, show preview chip
       if (isBulkEditModalField) {
         const previewId = target.id + 'ImgPreview';
-        bqShowImgPreview(previewId, compressed);
+        bqShowImgPreview(previewId, storedImage);
       }
 
       if (typeof showToast === 'function') showToast('📷 Clipboard image pasted successfully!');

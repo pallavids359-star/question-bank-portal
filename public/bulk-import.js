@@ -2883,6 +2883,12 @@ if (ta) {
     redoHistory,
     executeBulkImport,
     exportQuestions: () => {},
+    getEditingQuestionMeta: () => {
+      const q = state.parsedQuestions[state.editingIndex];
+      return q
+        ? { subject: q.subject || '', klass: q.klass || '' }
+        : null;
+    },
     toggleCardCollapse: (idx) => {
       if (state.parsedQuestions[idx]) {
         state.parsedQuestions[idx].collapsed = !state.parsedQuestions[idx].collapsed;
