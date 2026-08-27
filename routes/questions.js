@@ -1,6 +1,7 @@
 'use strict';
 const express  = require('express');
 const supabase = require('../lib/supabase');
+const supabasePhysics11 = require('../lib/supabase-physics-11');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');
@@ -108,46 +109,68 @@ function duplicateScopeKey(subject, klass, question) {
 }
 
 async function loadDuplicateQuestionCache(forceRefresh = false) {
-  const countResult = await supabase
-    .from('questions')
-    .select('id', { count: 'exact', head: true });
-  if (countResult.error) throw countResult.error;
+  const [sourceCountResult, physics11CountResult] = await Promise.all([
+    supabase.from('questions').select('id', { count: 'exact', head: true }),
+    supabasePhysics11.from('questions').select('id', { count: 'exact', head: true }),
+  ]);
 
-  const total = Number(countResult.count) || 0;
+  if (sourceCountResult.error) throw sourceCountResult.error;
+  if (physics11CountResult.error) throw physics11CountResult.error;
+
+  const total =
+    (Number(sourceCountResult.count) || 0) +
+    (Number(physics11CountResult.count) || 0);
+
   const cacheIsFresh = duplicateQuestionCache.loadedAt > 0
     && duplicateQuestionCache.total === total
     && Date.now() - duplicateQuestionCache.loadedAt < DUPLICATE_CACHE_TTL_MS;
-  if (!forceRefresh && cacheIsFresh) return duplicateQuestionCache.entries;
 
-  // Multiple duplicate checks can arrive while the cache is cold. Reuse the
-  // same in-flight load so one server instance never downloads every question
-  // more than once concurrently.
+  if (!forceRefresh && cacheIsFresh) return duplicateQuestionCache.entries;
   if (duplicateQuestionCacheLoad) return duplicateQuestionCacheLoad;
 
   duplicateQuestionCacheLoad = (async () => {
     const entries = new Map();
     const pageSize = 1000;
 
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await supabase
-        .from('questions')
-        .select('id, subject, klass, question')
-        .order('id', { ascending: true })
-        .range(offset, offset + pageSize - 1);
+    const sources = [
+      { client: supabase, skipPhysics11: true },
+      { client: supabasePhysics11, skipPhysics11: false },
+    ];
 
-      if (error) throw error;
+    for (const source of sources) {
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await source.client
+          .from('questions')
+          .select('id, subject, klass, question')
+          .order('id', { ascending: true })
+          .range(offset, offset + pageSize - 1);
 
-      for (const row of (data || [])) {
-        const key = duplicateScopeKey(row.subject, row.klass, row.question);
-        if (key && !entries.has(key)) {
-          entries.set(key, { id: row.id, subject: row.subject, klass: row.klass, key });
+        if (error) throw error;
+
+        for (const row of (data || [])) {
+          if (source.skipPhysics11 && isPhysics11(row.subject, row.klass)) continue;
+
+          const key = duplicateScopeKey(row.subject, row.klass, row.question);
+          if (key && !entries.has(key)) {
+            entries.set(key, {
+              id: row.id,
+              subject: row.subject,
+              klass: row.klass,
+              key,
+            });
+          }
         }
-      }
 
-      if (!data || data.length < pageSize) break;
+        if (!data || data.length < pageSize) break;
+      }
     }
 
-    duplicateQuestionCache = { loadedAt: Date.now(), total, entries };
+    duplicateQuestionCache = {
+      loadedAt: Date.now(),
+      total,
+      entries,
+    };
+
     return duplicateQuestionCache.entries;
   })();
 
@@ -157,7 +180,6 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
     duplicateQuestionCacheLoad = null;
   }
 }
-
 function rememberDuplicateQuestions(rows) {
   const insertedRows = (rows || []).filter(row => row && row.id);
   for (const row of insertedRows) {
@@ -332,6 +354,46 @@ function canonicalSubject(subject) {
   return known[value.toLowerCase()] || value;
 }
 
+function isPhysics11(subject, klass) {
+  return canonicalSubject(subject) === 'Physics'
+    && String(klass || '').replace(/^class\s*/i, '').trim() === '11';
+}
+
+function questionClientFor(subject, klass) {
+  return isPhysics11(subject, klass) ? supabasePhysics11 : supabase;
+}
+
+async function findQuestionById(id) {
+  const sourceResult = await supabase
+    .from('questions')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (sourceResult.error) {
+    return { data: null, error: sourceResult.error, client: supabase };
+  }
+
+  if (sourceResult.data && !isPhysics11(sourceResult.data.subject, sourceResult.data.klass)) {
+    return { data: sourceResult.data, error: null, client: supabase };
+  }
+
+  const shardResult = await supabasePhysics11
+    .from('questions')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (shardResult.error) {
+    return { data: null, error: shardResult.error, client: supabasePhysics11 };
+  }
+
+  if (shardResult.data) {
+    return { data: shardResult.data, error: null, client: supabasePhysics11 };
+  }
+
+  return { data: null, error: null, client: supabasePhysics11 };
+}
 const EXAMS_BY_SUBJECT = Object.freeze({
   Mathematics: ['JEE', 'KCET'],
   Biology: ['NEET', 'KCET'],
@@ -654,21 +716,39 @@ function applyQuestionFilters(query, params) {
 
 async function readFacetRows() {
   if (facetCache.expiresAt > Date.now()) return facetCache.rows;
+
   const rows = [];
-  for (let from = 0; ; from += FACET_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from('questions')
-      .select('subject, klass, chapter, topic, q_type, created_by, created_by_name')
-      .range(from, from + FACET_PAGE_SIZE - 1);
-    if (error) throw error;
-    const page = data || [];
-    rows.push(...page);
-    if (page.length < FACET_PAGE_SIZE) break;
+  const sources = [
+    { client: supabase, skipPhysics11: true },
+    { client: supabasePhysics11, skipPhysics11: false },
+  ];
+
+  for (const source of sources) {
+    for (let from = 0; ; from += FACET_PAGE_SIZE) {
+      const { data, error } = await source.client
+        .from('questions')
+        .select('subject, klass, chapter, topic, q_type, created_by, created_by_name')
+        .range(from, from + FACET_PAGE_SIZE - 1);
+
+      if (error) throw error;
+
+      const page = data || [];
+      for (const row of page) {
+        if (source.skipPhysics11 && isPhysics11(row.subject, row.klass)) continue;
+        rows.push(row);
+      }
+
+      if (page.length < FACET_PAGE_SIZE) break;
+    }
   }
-  facetCache = { expiresAt: Date.now() + FACET_CACHE_TTL_MS, rows };
+
+  facetCache = {
+    expiresAt: Date.now() + FACET_CACHE_TTL_MS,
+    rows,
+  };
+
   return rows;
 }
-
 // Lightweight values used by the cascading dropdowns. This intentionally
 // avoids downloading question text, options, solutions, and embedded images.
 router.get('/facets', ...READ_ROLES, async (req, res) => {
@@ -752,7 +832,14 @@ router.get('/', ...READ_ROLES, async (req, res) => {
   const limit = paged
     ? pageSize
     : Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
-  let query = supabase
+  const listUserRole = String(effectiveUser?.role || 'viewer').toLowerCase();
+  const listUserSubject = canonicalSubject(effectiveUser?.subject || 'All');
+  const listSubject = listUserRole !== 'admin' && listUserSubject !== 'All'
+    ? listUserSubject
+    : canonicalSubject(req.query.subject || '');
+  const questionClient = questionClientFor(listSubject, req.query.klass);
+
+  let query = questionClient
     .from('questions')
     .select('*', { count: paged ? 'exact' : undefined })
     .order('created_at', { ascending: false })
@@ -812,11 +899,7 @@ router.post('/duplicates', ...READ_ROLES, async (req, res) => {
 // â”€â”€ GET /api/questions/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/:id', ...READ_ROLES, async (req, res) => {
   const effectiveUser = await getEffectiveUser(req.user);
-  const { data, error } = await supabase
-    .from('questions')
-    .select('*')
-    .eq('id', req.params.id)
-    .maybeSingle();
+  const { data, error } = await findQuestionById(req.params.id);
 
   if (error) {
     return res.status(500).json({ error: 'Failed to fetch question.', details: error.message });
@@ -849,7 +932,9 @@ router.post('/', ...CREATE_ROLES, async (req, res) => {
   payload.created_by_name = req.user?.name || '';
   payload.updated_by_name = req.user?.name || '';
 
-  let { data, error } = await supabase
+  const createQuestionClient = questionClientFor(payload.subject, payload.klass);
+
+  let { data, error } = await createQuestionClient
     .from('questions')
     .insert(payload)
     .select()
@@ -860,13 +945,13 @@ router.post('/', ...CREATE_ROLES, async (req, res) => {
     console.warn('Single insert missing extended columns, auto-stripping to basic legacy schema...');
     const legacyFields = legacyFieldsFor(payload);
     const basicPayload = sanitizeRecord(payload, legacyFields);
-    let retry = await supabase
+    let retry = await createQuestionClient
       .from('questions')
       .insert(basicPayload)
       .select()
       .single();
     if (retry.error && legacyFields === GRAND_TEST_LEGACY_FIELDS) {
-      retry = await supabase
+      retry = await createQuestionClient
         .from('questions')
         .insert(sanitizeRecord(payload, BASIC_LEGACY_FIELDS))
         .select()
@@ -932,72 +1017,80 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
   const insertedData = [];
   let lastErrorMessage = '';
 
-  for (let i = 0; i < recordsToInsert.length; i += chunkSize) {
-    let chunk = recordsToInsert.slice(i, i + chunkSize);
-    let { data, error } = await supabase
-      .from('questions')
-      .insert(chunk)
-      .select();
-
-    // Auto-fallback if database schema does not have new extended columns yet (e.g. statement1, column_a)
-    if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
-      console.warn(`Database missing extended columns, auto-stripping to basic legacy schema...`);
-      const includesGrandTest = chunk.some(record => record.source || record.year);
-      const fallbackFields = includesGrandTest ? GRAND_TEST_LEGACY_FIELDS : BASIC_LEGACY_FIELDS;
-      const basicChunk = chunk.map(r => sanitizeRecord(r, fallbackFields));
-      let retry = await supabase
-        .from('questions')
-        .insert(basicChunk)
-        .select();
-      if (retry.error && includesGrandTest) {
-        retry = await supabase
-          .from('questions')
-          .insert(chunk.map(r => sanitizeRecord(r, BASIC_LEGACY_FIELDS)))
-          .select();
-      }
-      data = retry.data;
-      error = retry.error;
-    }
-
-    if (error) {
-      console.warn(`Batch chunk insert failed at offset ${i}:`, error.message);
-      lastErrorMessage = error.message;
-
-      // Sequential retry item by item
-      for (const item of chunk) {
-        let singleRetry = await supabase
-          .from('questions')
-          .insert([item])
-          .select();
-
-        if (singleRetry.error) {
-          // Retry single item with basic legacy schema
-          const legacyFields = legacyFieldsFor(item);
-          const basicItem = sanitizeRecord(item, legacyFields);
-          singleRetry = await supabase
-            .from('questions')
-            .insert([basicItem])
-            .select();
-          if (singleRetry.error && legacyFields === GRAND_TEST_LEGACY_FIELDS) {
-            singleRetry = await supabase
-              .from('questions')
-              .insert([sanitizeRecord(item, BASIC_LEGACY_FIELDS)])
-              .select();
-          }
-        }
-
-        if (singleRetry.error) {
-          console.error(`Single item insert failed:`, singleRetry.error.message);
-          lastErrorMessage = singleRetry.error.message;
-        } else if (singleRetry.data && singleRetry.data.length) {
-          insertedData.push(singleRetry.data[0]);
-        }
-      }
-    } else if (data) {
-      insertedData.push(...data);
-    }
+  const destinationGroups = new Map();
+  for (const record of recordsToInsert) {
+    const client = questionClientFor(record.subject, record.klass);
+    if (!destinationGroups.has(client)) destinationGroups.set(client, []);
+    destinationGroups.get(client).push(record);
   }
 
+  for (const [batchQuestionClient, destinationRecords] of destinationGroups) {
+    for (let i = 0; i < destinationRecords.length; i += chunkSize) {
+      let chunk = destinationRecords.slice(i, i + chunkSize);
+      let { data, error } = await batchQuestionClient
+        .from('questions')
+        .insert(chunk)
+        .select();
+
+      // Auto-fallback if database schema does not have new extended columns yet
+      if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
+        console.warn(`Database missing extended columns, auto-stripping to basic legacy schema...`);
+        const includesGrandTest = chunk.some(record => record.source || record.year);
+        const fallbackFields = includesGrandTest ? GRAND_TEST_LEGACY_FIELDS : BASIC_LEGACY_FIELDS;
+        const basicChunk = chunk.map(r => sanitizeRecord(r, fallbackFields));
+        let retry = await batchQuestionClient
+          .from('questions')
+          .insert(basicChunk)
+          .select();
+        if (retry.error && includesGrandTest) {
+          retry = await batchQuestionClient
+            .from('questions')
+            .insert(chunk.map(r => sanitizeRecord(r, BASIC_LEGACY_FIELDS)))
+            .select();
+        }
+        data = retry.data;
+        error = retry.error;
+      }
+
+      if (error) {
+        console.warn(`Batch chunk insert failed at offset ${i}:`, error.message);
+        lastErrorMessage = error.message;
+
+        // Sequential retry item by item, on the same destination database.
+        for (const item of chunk) {
+          let singleRetry = await batchQuestionClient
+            .from('questions')
+            .insert([item])
+            .select();
+
+          if (singleRetry.error) {
+            const legacyFields = legacyFieldsFor(item);
+            const basicItem = sanitizeRecord(item, legacyFields);
+            singleRetry = await batchQuestionClient
+              .from('questions')
+              .insert([basicItem])
+              .select();
+
+            if (singleRetry.error && legacyFields === GRAND_TEST_LEGACY_FIELDS) {
+              singleRetry = await batchQuestionClient
+                .from('questions')
+                .insert([sanitizeRecord(item, BASIC_LEGACY_FIELDS)])
+                .select();
+            }
+          }
+
+          if (singleRetry.error) {
+            console.error(`Single item insert failed:`, singleRetry.error.message);
+            lastErrorMessage = singleRetry.error.message;
+          } else if (singleRetry.data && singleRetry.data.length) {
+            insertedData.push(singleRetry.data[0]);
+          }
+        }
+      } else if (data) {
+        insertedData.push(...data);
+      }
+    }
+  }
   if (insertedData.length === 0) {
     return res.status(400).json({
       error: 'Failed to insert questions into database: ' + (lastErrorMessage || 'Please check required fields and database schema.'),
@@ -1026,11 +1119,7 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
 // â”€â”€ PUT /api/questions/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/:id', ...EDIT_ROLES, async (req, res) => {
   const effectiveUser = await getEffectiveUser(req.user);
-  const { data: existingQuestion, error: existingError } = await supabase
-    .from('questions')
-    .select('*')
-    .eq('id', req.params.id)
-    .maybeSingle();
+  const { data: existingQuestion, error: existingError, client: existingQuestionClient } = await findQuestionById(req.params.id);
   if (existingError) return res.status(500).json({ error: existingError.message });
   if (!existingQuestion) return res.status(404).json({ error: 'Question not found.' });
 
@@ -1044,6 +1133,13 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
     return res.status(400).json({ error: 'No valid fields supplied.' });
   }
 
+  const destinationSubject = payload.subject || existingQuestion.subject;
+  const destinationKlass = payload.klass || existingQuestion.klass;
+  const destinationClient = questionClientFor(destinationSubject, destinationKlass);
+  if (destinationClient !== existingQuestionClient) {
+    return res.status(400).json({ error: 'Changing a question across database shards is not allowed during migration.' });
+  }
+
   if (!hasSubjectAccess(effectiveUser, existingQuestion.subject) ||
       (payload.subject && !hasSubjectAccess(effectiveUser, payload.subject))) {
     return res.status(403).json({ error: 'You can edit questions only in your assigned subject.' });
@@ -1055,7 +1151,7 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
   }
   payload.updated_by_name = req.user?.name || '';
 
-  let { data, error } = await supabase
+  let { data, error } = await existingQuestionClient
     .from('questions')
     .update(payload)
     .eq('id', req.params.id)
@@ -1066,7 +1162,7 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
   if (error && (error.message.includes('column') || error.message.includes('schema') || error.code === 'PGRST204' || error.message.includes('statement1') || error.message.includes('assertion'))) {
     console.warn('Update question missing extended columns, auto-stripping to basic legacy schema...');
     const basicPayload = sanitizeRecord(payload, BASIC_LEGACY_FIELDS);
-    const retry = await supabase
+    const retry = await existingQuestionClient
       .from('questions')
       .update(basicPayload)
       .eq('id', req.params.id)
@@ -1152,7 +1248,14 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
 
 // â”€â”€ DELETE /api/questions/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.delete('/:id', ...DELETE_ROLES, async (req, res) => {
-  const { data, error } = await supabase
+  const { data: existingQuestion, error: existingError, client: existingQuestionClient } = await findQuestionById(req.params.id);
+
+  if (existingError) {
+    return res.status(500).json({ error: 'Failed to locate question.', details: existingError.message });
+  }
+  if (!existingQuestion) return res.status(404).json({ error: 'Question not found.' });
+
+  const { data, error } = await existingQuestionClient
     .from('questions')
     .delete()
     .eq('id', req.params.id)
