@@ -1540,6 +1540,9 @@ function checkDuplicates(
     );
 
 
+    const previousExistingId =
+      question.existingId || question.overwriteId || null;
+
     question.isDuplicate = false;
     question.existingId = null;
     question.duplicateReason = '';
@@ -1568,6 +1571,13 @@ function checkDuplicates(
       question.duplicateReason =
         'Already exists in database';
 
+      continue;
+    }
+
+    if (previousExistingId) {
+      question.isDuplicate = true;
+      question.existingId = previousExistingId;
+      question.duplicateReason = 'Existing database question being edited';
       continue;
     }
 
@@ -2582,6 +2592,13 @@ if (duplicateKey) {
       return;
     }
 
+    // If the textarea was just changed and its debounced reparse has not
+    // fired yet, flush it now so we never import stale parsedQuestions.
+    if (state.debounceTimer) {
+      clearTimeout(state.debounceTimer);
+      state.debounceTimer = null;
+      runParse();
+    }
     await state.duplicateCheckPromise;
 
     const meta = getMeta();
