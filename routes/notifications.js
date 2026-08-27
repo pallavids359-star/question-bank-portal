@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const supabase = require('../lib/supabase');
+const supabase = require('../lib/supabase-control');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');

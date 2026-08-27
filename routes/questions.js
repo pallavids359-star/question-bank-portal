@@ -1,6 +1,7 @@
 'use strict';
 const express  = require('express');
 const supabase = require('../lib/supabase');
+const supabaseControl = require('../lib/supabase-control');
 const supabasePhysics11 = require('../lib/supabase-physics-11');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
@@ -363,6 +364,66 @@ function questionClientFor(subject, klass) {
   return isPhysics11(subject, klass) ? supabasePhysics11 : supabase;
 }
 
+function questionShardName(subject, klass) {
+  const normalizedSubject = canonicalSubject(subject)
+    .toLowerCase()
+    .replace(/\s+/g, '-');
+
+  const normalizedClass = String(klass || '')
+    .replace(/^class\s*/i, '')
+    .trim();
+
+  const knownSubjects = new Set([
+    'physics',
+    'chemistry',
+    'mathematics',
+    'biology'
+  ]);
+
+  if (
+    !knownSubjects.has(normalizedSubject) ||
+    !['11', '12'].includes(normalizedClass)
+  ) {
+    return 'unmapped';
+  }
+
+  return `qbp-${normalizedSubject}-${normalizedClass}`;
+}
+
+async function recordQuestionActivity(rows) {
+  const activityRows = (rows || [])
+    .filter(row => row && row.id)
+    .map(row => ({
+      question_id: row.id,
+      user_id: isValidUuid(row.created_by)
+        ? row.created_by
+        : null,
+      user_name: row.created_by_name || '',
+      subject: canonicalSubject(row.subject),
+      klass: String(row.klass || '')
+        .replace(/^class\s*/i, '')
+        .trim(),
+      shard: questionShardName(row.subject, row.klass),
+      created_at: row.created_at || new Date().toISOString(),
+    }));
+
+  if (!activityRows.length) return;
+
+  const { error } = await supabaseControl
+    .from('question_activity')
+    .upsert(
+      activityRows,
+      {
+        onConflict: 'shard,question_id',
+        ignoreDuplicates: true,
+      }
+    );
+
+  if (error) {
+    throw error;
+  }
+}
+
 async function findQuestionById(id) {
   const sourceResult = await supabase
     .from('questions')
@@ -435,7 +496,7 @@ async function getEffectiveUser(sessionUser) {
   const columns = 'id, name, email, role, subject, status';
 
   if (sessionUser?.userId) {
-    const byId = await supabase
+    const byId = await supabaseControl
       .from('users')
       .select(columns)
       .eq('id', sessionUser.userId)
@@ -445,7 +506,7 @@ async function getEffectiveUser(sessionUser) {
 
   const email = String(sessionUser?.email || '').trim().toLowerCase();
   if (email) {
-    const byEmail = await supabase
+    const byEmail = await supabaseControl
       .from('users')
       .select(columns)
       .eq('email', email)
@@ -787,7 +848,7 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       !requestedType || normalizeQType(row.q_type) === normalizeQType(requestedType)
     );
 
-    const { data: contributorUsers, error: contributorError } = await supabase
+    const { data: contributorUsers, error: contributorError } = await supabaseControl
       .from('users')
       .select('id, name, role')
       .in('role', ['admin', 'adder']);
@@ -967,6 +1028,11 @@ router.post('/', ...CREATE_ROLES, async (req, res) => {
 
   rememberDuplicateQuestions([data]);
 
+  await recordQuestionActivity([data])
+    .catch(err =>
+      console.warn('Question activity tracking failed:', err.message)
+    );
+
   await writeAuditLog({
     userId: isValidUuid(req.user?.userId) ? req.user.userId : null,
     userName: req.user?.name || 'User',
@@ -1100,6 +1166,11 @@ router.post('/batch', ...CREATE_ROLES, async (req, res) => {
 
   rememberDuplicateQuestions(insertedData);
 
+  await recordQuestionActivity(insertedData)
+    .catch(err =>
+      console.warn('Question activity tracking failed:', err.message)
+    );
+
 
   await writeAuditLog({
     userId: isValidUuid(userId) ? userId : null,
@@ -1189,7 +1260,7 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
   try {
     let reviewerId = null;
 
-    const { data: reviewNotif } = await supabase
+    const { data: reviewNotif } = await supabaseControl
       .from('notifications')
       .select('sender_id, sender_name, type')
       .eq('question_id', req.params.id)
@@ -1204,7 +1275,7 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
       reviewerId = existingQuestion.reviewed_by;
     }
 
-    const { error: removeReviewNotificationError } = await supabase
+    const { error: removeReviewNotificationError } = await supabaseControl
       .from('notifications')
       .delete()
       .eq('question_id', req.params.id)
@@ -1231,11 +1302,11 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
         },
       };
 
-      let insertRes = await supabase.from('notifications').insert(notifPayload);
+      let insertRes = await supabaseControl.from('notifications').insert(notifPayload);
       if (insertRes.error && (insertRes.error.message.includes('recipient_id') || insertRes.error.message.includes('column'))) {
         delete notifPayload.recipient_id;
         notifPayload.user_id = reviewerId;
-        await supabase.from('notifications').insert(notifPayload).catch(() => {});
+        await supabaseControl.from('notifications').insert(notifPayload).catch(() => {});
       }
     }
   } catch (notifErr) {

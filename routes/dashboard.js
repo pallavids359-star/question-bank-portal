@@ -1,6 +1,7 @@
 'use strict';
 const express  = require('express');
 const supabase = require('../lib/supabase');
+const supabaseControl = require('../lib/supabase-control');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { toLogicalUser } = require('../lib/user-role');
 
@@ -10,10 +11,10 @@ let dashboardAggregatesSupported = true;
 
 // Read every real row without naming optional columns. Older installations may
 // not yet have ownership/difficulty fields, but the dashboard must still load.
-async function readAll(table, columns = '*') {
+async function readAll(table, columns = '*', client = supabase) {
   const rows = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from(table)
       .select(columns)
       .range(from, from + PAGE_SIZE - 1);
@@ -437,8 +438,8 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       recentEditedRows,
     ] = await Promise.all([
       readDashboardQuestionGroups(),
-      readAll('users', 'id, name, email, role, subject, status'),
-      readAll('login_history', 'user_id, status, login_time, logout_time, last_activity_at, duration_seconds'),
+      readAll('users', 'id, name, email, role, subject, status', supabaseControl),
+      readAll('login_history', 'user_id, status, login_time, logout_time, last_activity_at, duration_seconds', supabaseControl),
       countRows('questions'),
       countRows('questions', query => query.gte('created_at', week.toISOString())),
       countRows('questions', query => query.gte('created_at', month.toISOString())),
@@ -674,7 +675,7 @@ questionGroups.distributionRows.forEach(question => {
 // Admins who have created questions.
 router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const rawUsers = await readAll('users', 'id, name, email, role, subject, status');
+    const rawUsers = await readAll('users', 'id, name, email, role, subject, status', supabaseControl);
     const user = rawUsers.map(toLogicalUser)
       .find(candidate => String(candidate.id) === String(req.params.userId));
 

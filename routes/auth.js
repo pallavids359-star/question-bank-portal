@@ -3,6 +3,7 @@ const express  = require('express');
 const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
 const supabase = require('../lib/supabase');
+const supabaseControl = require('../lib/supabase-control');
 const {
   requireAuth,
   requireRole
@@ -26,7 +27,7 @@ async function findAuthenticatedUser(req, columns) {
   let lastError = null;
 
   if (req.user?.userId) {
-    const byId = await supabase
+    const byId = await supabaseControl
       .from('users')
       .select(columns)
       .eq('id', req.user.userId)
@@ -38,7 +39,7 @@ async function findAuthenticatedUser(req, columns) {
 
   const email = String(req.user?.email || '').trim().toLowerCase();
   if (email) {
-    const byEmail = await supabase
+    const byEmail = await supabaseControl
       .from('users')
       .select(columns)
       .eq('email', email)
@@ -54,7 +55,7 @@ async function findAuthenticatedUser(req, columns) {
 async function logLogin(userId, req, status) {
   try {
     const ua = req.headers['user-agent'] || '';
-    const { data } = await supabase
+    const { data } = await supabaseControl
       .from('login_history')
       .insert({
         user_id:    userId || null,
@@ -83,7 +84,7 @@ async function countActiveLoginSessions(userId) {
     Date.now() - (3 * 60 * 1000)
   ).toISOString();
 
-  const { count, error } = await supabase
+  const { count, error } = await supabaseControl
     .from('login_history')
     .select('id', {
       count: 'exact',
@@ -110,7 +111,7 @@ async function closeLoginSession(userId, sessionId) {
   if (!userId || !sessionId) return { closed: false, alreadyClosed: true };
 
   const now = new Date();
-  const { data: session, error: readError } = await supabase
+  const { data: session, error: readError } = await supabaseControl
     .from('login_history')
     .select('id, user_id, login_time, logout_time, last_activity_at, duration_seconds')
     .eq('id', sessionId)
@@ -123,7 +124,7 @@ async function closeLoginSession(userId, sessionId) {
   const previous = new Date(session.last_activity_at || session.login_time || now);
   const rawDelta = Math.max(0, Math.floor((now.getTime() - previous.getTime()) / 1000));
   const durationSeconds = Math.max(0, Number(session.duration_seconds) || 0) + Math.min(rawDelta, 90);
-  const { data: closed, error: updateError } = await supabase
+  const { data: closed, error: updateError } = await supabaseControl
     .from('login_history')
     .update({
       logout_time: now.toISOString(),
@@ -158,7 +159,7 @@ router.post('/login', loginRateLimit, async (req, res) => {
     const cleanPass = String(password);
 
     // Find user
-    const { data: activeUser, error: userError } = await supabase
+    const { data: activeUser, error: userError } = await supabaseControl
       .from('users')
       .select('*')
       .eq('email', cleanEmail)
@@ -280,7 +281,7 @@ if (loginLimit > 0) {
     }
 
     try {
-      await supabase
+      await supabaseControl
         .from('users')
         .update({
           last_login: new Date().toISOString()
@@ -363,7 +364,7 @@ router.post('/heartbeat', requireAuth, async (req, res) => {
     return res.json({ tracked: false });
   }
 
-  const { data: session, error: readError } = await supabase
+  const { data: session, error: readError } = await supabaseControl
     .from('login_history')
     .select('id, user_id, login_time, logout_time, last_activity_at, duration_seconds')
     .eq('id', sessionId)
@@ -379,7 +380,7 @@ router.post('/heartbeat', requireAuth, async (req, res) => {
   const activeDelta = Math.min(rawDelta, 90);
   const durationSeconds = Math.max(0, Number(session.duration_seconds) || 0) + activeDelta;
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await supabaseControl
     .from('login_history')
     .update({
       last_activity_at: now.toISOString(),
@@ -477,7 +478,7 @@ router.get(
       const {
         data: sessions,
         error: sessionError
-      } = await supabase
+      } = await supabaseControl
         .from('login_history')
         .select(`
           id,
@@ -623,7 +624,7 @@ for (
       const {
         data: users,
         error: usersError
-      } = await supabase
+      } = await supabaseControl
         .from('users')
         .select(`
           id,
@@ -1208,7 +1209,7 @@ router.put(
       }
 
       const { data: user, error: findError } =
-        await supabase
+        await supabaseControl
           .from('users')
           .select(
             'id, name, email, login_limit'
@@ -1233,7 +1234,7 @@ router.put(
 
 
       const { data, error } =
-        await supabase
+        await supabaseControl
           .from('users')
           .update({
             login_limit:loginLimit
@@ -1324,7 +1325,7 @@ router.put('/change-password', requireAuth, async (req, res) => {
   }
 
   const newHash = await bcrypt.hash(newPassword, 12);
-  const { error: updateError } = await supabase
+  const { error: updateError } = await supabaseControl
     .from('users')
     .update({ password_hash: newHash })
     .eq('id', user.id);
