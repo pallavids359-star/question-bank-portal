@@ -1884,6 +1884,11 @@ async function checkPreviousImports(questions, requestId) {
         btn.textContent = act.replace('_', ' ').toUpperCase();
         btn.onclick = () => {
           q.dupAction = act;
+          if (act === 'overwrite' && q.existingId) {
+            q.overwriteId = q.existingId;
+          } else if (act !== 'overwrite') {
+            q.overwriteId = null;
+          }
           renderCards();
         };
         dupBanner.appendChild(btn);
@@ -2604,7 +2609,17 @@ if (duplicateKey) {
       return;
     }
 
-    if (!confirm(`Import ${importList.length} validated question(s) into database?`)) return;
+    const overwriteList = importList.filter(q => q.dupAction === 'overwrite');
+    const missingOverwriteTarget = overwriteList.find(q => !(q.overwriteId || q.existingId));
+    if (missingOverwriteTarget) {
+      if (typeof showToast === 'function') {
+        showToast('Cannot overwrite this question because its original database ID is unavailable. Re-parse the questions and try again.', true);
+      }
+      return;
+    }
+
+    const newQuestionCount = importList.length - overwriteList.length;
+    if (!confirm(`Update ${overwriteList.length} existing question(s) and import ${newQuestionCount} new question(s)?`)) return;
 
     const btn = document.getElementById('bqImportBtn') || document.getElementById('bulkImportBtn');
     if (btn) {
@@ -2643,33 +2658,63 @@ if (duplicateKey) {
       grandTest: q.grandTest || null,
     }));
 
+    const payloadEntries = importList.map((q, index) => ({
+      q,
+      payload: payload[index],
+    }));
+
+    const overwritePayloads = payloadEntries
+      .filter(({ q }) => q.dupAction === 'overwrite')
+      .map(({ q, payload: updatePayload }) => ({
+        targetId: q.overwriteId || q.existingId,
+        payload: updatePayload,
+      }));
+
+    const createPayload = payloadEntries
+      .filter(({ q }) => q.dupAction !== 'overwrite')
+      .map(({ payload: createItem }) => createItem);
+
     try {
-      const res = await apiReq('/api/questions/batch', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      let updatedCount = 0;
+      const updatedRows = [];
+
+      for (const item of overwritePayloads) {
+        const updatedRow = await apiReq('/api/questions/' + encodeURIComponent(item.targetId), {
+          method: 'PUT',
+          body: JSON.stringify(item.payload),
+        });
+        if (updatedRow && updatedRow.id) {
+          updatedRows.push(updatedRow);
+        }
+        updatedCount += 1;
+      }
+
+      let res = { count: 0, duplicateCount: 0, data: [] };
+
+      if (createPayload.length) {
+        res = await apiReq('/api/questions/batch', {
+          method: 'POST',
+          body: JSON.stringify(createPayload),
+        });
+      }
 
       if (typeof showToast === 'function') {
+        const importedCount = Number(res.count || 0);
+        const duplicateCount = Number(res.duplicateCount || 0);
+        const parts = [];
 
-  const importedCount =
-    Number(res.count || 0);
+        if (updatedCount > 0) {
+          parts.push(`Updated ${updatedCount} existing question(s).`);
+        }
+        if (importedCount > 0) {
+          parts.push(`Imported ${importedCount} new question(s).`);
+        }
+        if (duplicateCount > 0) {
+          parts.push(`${duplicateCount} duplicate question(s) skipped.`);
+        }
 
-  const duplicateCount =
-    Number(res.duplicateCount || 0);
-
-  if (duplicateCount > 0) {
-
-    showToast(
-      `Imported ${importedCount} question(s). ${duplicateCount} duplicate question(s) skipped.`
-    );
-
-  } else {
-
-    showToast(
-      `Successfully imported ${importedCount || payload.length} questions!`
-    );
-  }
-}
+        showToast(parts.join(' ') || 'No database changes were required.');
+      }
 
 
 // ==========================================
@@ -2677,19 +2722,19 @@ if (duplicateKey) {
 // REFRESH DUPLICATE DATABASE CACHE
 // ==========================================
 
-for (
-  const item
-  of payload
-) {
+const savedRows = [
+  ...updatedRows,
+  ...(Array.isArray(res.data) ? res.data : [])
+];
 
+for (const item of savedRows) {
   const key = duplicateScopeKey(
     item.subject,
     item.klass,
     item.question
   );
 
-  if (key) {
-
+  if (key && item.id) {
     state.duplicateMap.set(
       key,
       item
