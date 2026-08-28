@@ -2,6 +2,7 @@
 const express  = require('express');
 const supabase = require('../lib/supabase');
 const supabaseControl = require('../lib/supabase-control');
+const supabasePhysics11 = require('../lib/supabase-physics-11');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { toLogicalUser } = require('../lib/user-role');
 
@@ -27,48 +28,139 @@ async function readAll(table, columns = '*', client = supabase) {
   return rows;
 }
 
-async function readAllSince(table, columns, field, cutoff) {
+function isPhysics11(subject, klass) {
+  const normalizedSubject = String(subject || '').trim().toLowerCase();
+  const normalizedClass = String(klass || '')
+    .replace(/^class\s*/i, '')
+    .trim();
+
+  return normalizedSubject === 'physics' && normalizedClass === '11';
+}
+
+async function readAllSince(
+  table,
+  columns,
+  field,
+  cutoff,
+  client = supabase
+) {
   const rows = [];
+
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from(table)
       .select(columns)
       .gte(field, cutoff.toISOString())
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw new Error(`${table}: ${error.message}`);
+
     const page = data || [];
     rows.push(...page);
+
     if (page.length < PAGE_SIZE) break;
   }
+
   return rows;
 }
 
-async function countRows(table, applyFilters) {
-  let query = supabase
+async function countRows(
+  table,
+  applyFilters,
+  client = supabase
+) {
+  let query = client
     .from(table)
     .select('id', { count: 'exact', head: true });
-  if (applyFilters) query = applyFilters(query);
+
+  if (applyFilters) {
+    query = applyFilters(query);
+  }
+
   const { count, error } = await query;
-  if (error) throw new Error(`${table}: ${error.message}`);
+
+  if (error) {
+    throw new Error(`${table}: ${error.message}`);
+  }
+
   return Number(count) || 0;
 }
 
-async function readAllGroupedQuestions(columns, orderColumns) {
+async function countEffectiveQuestions(applyFilters) {
+  const sourcePhysics11Filter = query => {
+    let filtered = applyFilters
+      ? applyFilters(query)
+      : query;
+
+    return filtered
+      .eq('subject', 'Physics')
+      .eq('klass', '11');
+  };
+
+  const [
+    sourceTotal,
+    sourcePhysics11,
+    shardPhysics11
+  ] = await Promise.all([
+    countRows(
+      'questions',
+      applyFilters,
+      supabase
+    ),
+    countRows(
+      'questions',
+      sourcePhysics11Filter,
+      supabase
+    ),
+    countRows(
+      'questions',
+      applyFilters,
+      supabasePhysics11
+    ),
+  ]);
+
+  return (
+    Math.max(
+      0,
+      sourceTotal - sourcePhysics11
+    ) +
+    shardPhysics11
+  );
+}
+
+async function readAllGroupedQuestions(
+  columns,
+  orderColumns,
+  client = supabase
+) {
   const rows = [];
+
   for (let from = 0; ; from += PAGE_SIZE) {
-    let query = supabase
+    let query = client
       .from('questions')
       .select(columns);
+
     orderColumns.forEach(column => {
-      query = query.order(column, { ascending: true, nullsFirst: true });
+      query = query.order(column, {
+        ascending: true,
+        nullsFirst: true
+      });
     });
-    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+
+    const { data, error } =
+      await query.range(
+        from,
+        from + PAGE_SIZE - 1
+      );
+
     if (error) throw error;
+
     const page = data || [];
     rows.push(...page);
+
     if (page.length < PAGE_SIZE) break;
   }
+
   return rows;
 }
 
@@ -121,34 +213,140 @@ function groupQuestionRows(rows) {
 async function readDashboardQuestionGroups() {
   if (dashboardAggregatesSupported) {
     try {
-      const [distributionRows, contributionRows] = await Promise.all([
+      const [
+        sourceDistribution,
+        sourceContributions,
+        p11Distribution,
+        p11Contributions
+      ] = await Promise.all([
         readAllGroupedQuestions(
           'subject, klass, chapter, topic, question_count:id.count()',
-          ['subject', 'klass', 'chapter', 'topic']
+          ['subject', 'klass', 'chapter', 'topic'],
+          supabase
         ),
+
         readAllGroupedQuestions(
-          'created_by, created_by_name, question_count:id.count()',
-          ['created_by', 'created_by_name']
+          'subject, klass, created_by, created_by_name, question_count:id.count()',
+          [
+            'subject',
+            'klass',
+            'created_by',
+            'created_by_name'
+          ],
+          supabase
+        ),
+
+        readAllGroupedQuestions(
+          'subject, klass, chapter, topic, question_count:id.count()',
+          ['subject', 'klass', 'chapter', 'topic'],
+          supabasePhysics11
+        ),
+
+        readAllGroupedQuestions(
+          'subject, klass, created_by, created_by_name, question_count:id.count()',
+          [
+            'subject',
+            'klass',
+            'created_by',
+            'created_by_name'
+          ],
+          supabasePhysics11
         ),
       ]);
+
+      const distributionRows = [
+        ...sourceDistribution.filter(
+          row =>
+            !isPhysics11(
+              row.subject,
+              row.klass
+            )
+        ),
+        ...p11Distribution,
+      ].map(row => ({
+        ...row,
+        questionCount:
+          Number(row.question_count) || 0,
+      }));
+
+      const contributionMap = new Map();
+
+      const contributionRowsRaw = [
+        ...sourceContributions.filter(
+          row =>
+            !isPhysics11(
+              row.subject,
+              row.klass
+            )
+        ),
+        ...p11Contributions,
+      ];
+
+      contributionRowsRaw.forEach(row => {
+        const key = JSON.stringify([
+          row.created_by || null,
+          row.created_by_name || null
+        ]);
+
+        const count =
+          Number(row.question_count) || 0;
+
+        const existing =
+          contributionMap.get(key);
+
+        if (existing) {
+          existing.questionCount += count;
+        } else {
+          contributionMap.set(key, {
+            created_by:
+              row.created_by || null,
+
+            created_by_name:
+              row.created_by_name || null,
+
+            questionCount: count,
+          });
+        }
+      });
+
       return {
-        distributionRows: distributionRows.map(row => ({
-          ...row,
-          questionCount: Number(row.question_count) || 0,
-        })),
-        contributionRows: contributionRows.map(row => ({
-          ...row,
-          questionCount: Number(row.question_count) || 0,
-        })),
+        distributionRows,
+        contributionRows:
+          [...contributionMap.values()],
       };
     } catch (error) {
       dashboardAggregatesSupported = false;
-      console.warn('[dashboard] PostgREST aggregates unavailable; using compatibility reader:', error.message);
+
+      console.warn(
+        '[dashboard] PostgREST aggregates unavailable; using compatibility reader:',
+        error.message
+      );
     }
   }
 
-  const rows = await readAll('questions', 'subject, klass, chapter, topic, created_by, created_by_name');
-  return groupQuestionRows(rows);
+  const [
+    sourceRows,
+    p11Rows
+  ] = await Promise.all([
+    readAll('questions', 'subject, klass, chapter, topic, created_by, created_by_name'),
+
+    readAll(
+      'questions',
+      'subject, klass, chapter, topic, created_by, created_by_name',
+      supabasePhysics11
+    ),
+  ]);
+
+  return groupQuestionRows([
+    ...sourceRows.filter(
+      row =>
+        !isPhysics11(
+          row.subject,
+          row.klass
+        )
+    ),
+    ...p11Rows,
+  ]);
 }
 
 function timeValue(value) {
@@ -156,26 +354,151 @@ function timeValue(value) {
   return Number.isFinite(valueAsTime) ? valueAsTime : 0;
 }
 
-async function readRecentQuestions(field) {
-  const { data, error } = await supabase
+async function readRecentFromClient(
+  client,
+  field,
+  columns
+) {
+  const { data, error } = await client
     .from('questions')
-    .select('id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by_name, updated_by_name')
+    .select(columns)
     .not(field, 'is', null)
     .order(field, { ascending: false })
     .limit(5);
+
   if (error) throw error;
+
   return data || [];
 }
 
+function mergeRecentQuestionRows(
+  sourceRows,
+  p11Rows,
+  field
+) {
+  const rowsById = new Map();
+
+  sourceRows
+    .filter(
+      row =>
+        !isPhysics11(
+          row.subject,
+          row.klass
+        )
+    )
+    .forEach(row => {
+      rowsById.set(
+        String(row.id),
+        row
+      );
+    });
+
+  p11Rows.forEach(row => {
+    rowsById.set(
+      String(row.id),
+      row
+    );
+  });
+
+  return [...rowsById.values()]
+    .sort(
+      (a, b) =>
+        timeValue(b[field]) -
+        timeValue(a[field])
+    )
+    .slice(0, 5);
+}
+
+async function readRecentQuestions(field) {
+  const columns =
+    'id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by_name, updated_by_name';
+
+  const [
+    sourceRows,
+    p11Rows
+  ] = await Promise.all([
+    readRecentFromClient(
+      supabase,
+      field,
+      columns
+    ),
+    readRecentFromClient(
+      supabasePhysics11,
+      field,
+      columns
+    ),
+  ]);
+
+  return mergeRecentQuestionRows(
+    sourceRows,
+    p11Rows,
+    field
+  );
+}
+
 async function readRecentDashboardQuestions(field) {
-  const { data, error } = await supabase
-    .from('questions')
-    .select('id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by, created_by_name, updated_by, updated_by_name')
-    .not(field, 'is', null)
-    .order(field, { ascending: false })
-    .limit(5);
-  if (error) throw error;
-  return data || [];
+  const columns =
+    'id, subject, klass, chapter, topic, q_type, created_at, updated_at, created_by, created_by_name, updated_by, updated_by_name';
+
+  const [
+    sourceRows,
+    p11Rows
+  ] = await Promise.all([
+    readRecentFromClient(
+      supabase,
+      field,
+      columns
+    ),
+    readRecentFromClient(
+      supabasePhysics11,
+      field,
+      columns
+    ),
+  ]);
+
+  return mergeRecentQuestionRows(
+    sourceRows,
+    p11Rows,
+    field
+  );
+}
+
+async function readEffectiveQuestionsSince(
+  columns,
+  field,
+  cutoff
+) {
+  const [
+    sourceRows,
+    p11Rows
+  ] = await Promise.all([
+    readAllSince(
+      'questions',
+      columns,
+      field,
+      cutoff,
+      supabase
+    ),
+
+    readAllSince(
+      'questions',
+      columns,
+      field,
+      cutoff,
+      supabasePhysics11
+    ),
+  ]);
+
+  return [
+    ...sourceRows.filter(
+      row =>
+        !isPhysics11(
+          row.subject,
+          row.klass
+        )
+    ),
+    ...p11Rows,
+  ];
 }
 
 function questionBelongsToUser(question, user) {
@@ -440,10 +763,26 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       readDashboardQuestionGroups(),
       readAll('users', 'id, name, email, role, subject, status', supabaseControl),
       readAll('login_history', 'user_id, status, login_time, logout_time, last_activity_at, duration_seconds', supabaseControl),
-      countRows('questions'),
-      countRows('questions', query => query.gte('created_at', week.toISOString())),
-      countRows('questions', query => query.gte('created_at', month.toISOString())),
-      readAllSince('questions', 'created_by, created_by_name, created_at', 'created_at', today),
+      countEffectiveQuestions(),
+      countEffectiveQuestions(
+        query =>
+          query.gte(
+            'created_at',
+            week.toISOString()
+          )
+      ),
+      countEffectiveQuestions(
+        query =>
+          query.gte(
+            'created_at',
+            month.toISOString()
+          )
+      ),
+      readEffectiveQuestionsSince(
+        'subject, klass, created_by, created_by_name, created_at',
+        'created_at',
+        today
+      ),
       readRecentDashboardQuestions('created_at'),
       readRecentDashboardQuestions('updated_at'),
     ]);
@@ -683,32 +1022,125 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
       return res.status(404).json({ error: 'Question contributor not found.' });
     }
 
-    const questionColumns = 'id, subject, klass, chapter, topic, q_type, question, solution_text, num_answer, correct_option, created_at, created_by, created_by_name';
-    let questions = [];
-    for (let from = 0; ; from += PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from('questions')
-        .select(questionColumns)
-        .eq('created_by', user.id)
-        .order('created_at', { ascending: false })
-        .range(from, from + PAGE_SIZE - 1);
-      if (error) throw error;
-      const page = data || [];
-      questions.push(...page);
-      if (page.length < PAGE_SIZE) break;
+    const questionColumns =
+      'id, subject, klass, chapter, topic, q_type, question, solution_text, num_answer, correct_option, created_at, created_by, created_by_name';
+
+    const readOwned = async (
+      client,
+      field,
+      value
+    ) => {
+      const rows = [];
+
+      for (
+        let from = 0;
+        ;
+        from += PAGE_SIZE
+      ) {
+        const { data, error } =
+          await client
+            .from('questions')
+            .select(questionColumns)
+            .eq(field, value)
+            .order(
+              'created_at',
+              { ascending: false }
+            )
+            .range(
+              from,
+              from + PAGE_SIZE - 1
+            );
+
+        if (error) throw error;
+
+        const page = data || [];
+        rows.push(...page);
+
+        if (page.length < PAGE_SIZE) {
+          break;
+        }
+      }
+
+      return rows;
+    };
+
+    const [
+      sourceById,
+      p11ById
+    ] = await Promise.all([
+      readOwned(
+        supabase,
+        'created_by',
+        user.id
+      ),
+
+      readOwned(
+        supabasePhysics11,
+        'created_by',
+        user.id
+      ),
+    ]);
+
+    let questions = [
+      ...sourceById.filter(
+        question =>
+          !isPhysics11(
+            question.subject,
+            question.klass
+          )
+      ),
+      ...p11ById,
+    ];
+
+    // Compatibility for historical rows that stored
+    // only the contributor name.
+    if (!questions.length && user.name) {
+      const [
+        sourceLegacy,
+        p11Legacy
+      ] = await Promise.all([
+        readOwned(
+          supabase,
+          'created_by_name',
+          user.name
+        ),
+
+        readOwned(
+          supabasePhysics11,
+          'created_by_name',
+          user.name
+        ),
+      ]);
+
+      questions = [
+        ...sourceLegacy.filter(
+          question =>
+            !isPhysics11(
+              question.subject,
+              question.klass
+            )
+        ),
+        ...p11Legacy,
+      ];
     }
 
-    // Compatibility for older rows that stored only the contributor name.
-    if (!questions.length && user.name) {
-      const legacy = await supabase
-        .from('questions')
-        .select(questionColumns)
-        .eq('created_by_name', user.name)
-        .order('created_at', { ascending: false })
-        .limit(1000);
-      if (legacy.error) throw legacy.error;
-      questions = legacy.data || [];
-    }
+    const uniqueQuestions =
+      new Map();
+
+    questions.forEach(question => {
+      uniqueQuestions.set(
+        String(question.id),
+        question
+      );
+    });
+
+    questions =
+      [...uniqueQuestions.values()]
+        .sort(
+          (a, b) =>
+            timeValue(b.created_at) -
+            timeValue(a.created_at)
+        );
 
     const ownedQuestions = questions
       .map(question => compactQuestion(question, user.name || user.email));
