@@ -6,8 +6,10 @@ const { allowedOrigins } = require('./lib/config');
 
 // ── Supabase client ─────────────────────────────────────────────────────────
 let supabase;
+let supabaseControl;
 try {
   supabase = require('./lib/supabase');
+  supabaseControl = require('./lib/supabase-control');
 } catch (error) {
   console.error(error.message);
   process.exit(1);
@@ -62,7 +64,7 @@ app.use('/api', (req, res) => res.status(404).json({ success: false, error: 'API
 app.get('/health', async (req, res) => {
   const [{ error: questionsError }, { error: sessionsError }] = await Promise.all([
     supabase.from('questions').select('id').limit(1),
-    supabase.from('login_history').select('id').limit(1),
+    supabaseControl.from('login_history').select('id').limit(1),
   ]);
   if (questionsError || sessionsError) {
     return res.status(503).json({ status: 'error', database: 'unavailable' });
@@ -78,7 +80,7 @@ module.exports = app;
 
 if (require.main === module) {
   (async () => {
-    const { error: sessionStoreError } = await supabase.from('login_history').select('id').limit(1);
+    const { error: sessionStoreError } = await supabaseControl.from('login_history').select('id').limit(1);
     if (sessionStoreError) {
       console.error('[startup] Required session store is unavailable.');
       process.exitCode = 1;
