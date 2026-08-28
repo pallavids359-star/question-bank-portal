@@ -3,6 +3,7 @@ const express  = require('express');
 const supabase = require('../lib/supabase');
 const supabaseControl = require('../lib/supabase-control');
 const supabasePhysics11 = require('../lib/supabase-physics-11');
+const supabasePhysics12 = require('../lib/supabase-physics-12');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { toLogicalUser } = require('../lib/user-role');
 
@@ -28,13 +29,27 @@ async function readAll(table, columns = '*', client = supabase) {
   return rows;
 }
 
-function isPhysics11(subject, klass) {
-  const normalizedSubject = String(subject || '').trim().toLowerCase();
-  const normalizedClass = String(klass || '')
+function normalizedPhysicsClass(subject, klass) {
+  const normalizedSubject =
+    String(subject || '').trim().toLowerCase();
+
+  if (normalizedSubject !== 'physics') return '';
+
+  return String(klass || '')
     .replace(/^class\s*/i, '')
     .trim();
+}
 
-  return normalizedSubject === 'physics' && normalizedClass === '11';
+function isPhysics11(subject, klass) {
+  return normalizedPhysicsClass(subject, klass) === '11';
+}
+
+function isPhysics12(subject, klass) {
+  return normalizedPhysicsClass(subject, klass) === '12';
+}
+
+function isMigratedPhysics(subject, klass) {
+  return isPhysics11(subject, klass) || isPhysics12(subject, klass);
 }
 
 async function readAllSince(
@@ -87,44 +102,37 @@ async function countRows(
 }
 
 async function countEffectiveQuestions(applyFilters) {
-  const sourcePhysics11Filter = query => {
+  const sourcePhysicsFilter = klass => query => {
     let filtered = applyFilters
       ? applyFilters(query)
       : query;
 
     return filtered
       .eq('subject', 'Physics')
-      .eq('klass', '11');
+      .in('klass', [klass, `Class ${klass}`]);
   };
 
   const [
     sourceTotal,
     sourcePhysics11,
-    shardPhysics11
+    sourcePhysics12,
+    shardPhysics11,
+    shardPhysics12
   ] = await Promise.all([
-    countRows(
-      'questions',
-      applyFilters,
-      supabase
-    ),
-    countRows(
-      'questions',
-      sourcePhysics11Filter,
-      supabase
-    ),
-    countRows(
-      'questions',
-      applyFilters,
-      supabasePhysics11
-    ),
+    countRows('questions', applyFilters, supabase),
+    countRows('questions', sourcePhysicsFilter('11'), supabase),
+    countRows('questions', sourcePhysicsFilter('12'), supabase),
+    countRows('questions', applyFilters, supabasePhysics11),
+    countRows('questions', applyFilters, supabasePhysics12),
   ]);
 
   return (
     Math.max(
       0,
-      sourceTotal - sourcePhysics11
+      sourceTotal - sourcePhysics11 - sourcePhysics12
     ) +
-    shardPhysics11
+    shardPhysics11 +
+    shardPhysics12
   );
 }
 
@@ -217,7 +225,9 @@ async function readDashboardQuestionGroups() {
         sourceDistribution,
         sourceContributions,
         p11Distribution,
-        p11Contributions
+        p11Contributions,
+        p12Distribution,
+        p12Contributions
       ] = await Promise.all([
         readAllGroupedQuestions(
           'subject, klass, chapter, topic, question_count:id.count()',
@@ -252,17 +262,35 @@ async function readDashboardQuestionGroups() {
           ],
           supabasePhysics11
         ),
+
+        readAllGroupedQuestions(
+          'subject, klass, chapter, topic, question_count:id.count()',
+          ['subject', 'klass', 'chapter', 'topic'],
+          supabasePhysics12
+        ),
+
+        readAllGroupedQuestions(
+          'subject, klass, created_by, created_by_name, question_count:id.count()',
+          [
+            'subject',
+            'klass',
+            'created_by',
+            'created_by_name'
+          ],
+          supabasePhysics12
+        ),
       ]);
 
       const distributionRows = [
         ...sourceDistribution.filter(
           row =>
-            !isPhysics11(
+            !isMigratedPhysics(
               row.subject,
               row.klass
             )
         ),
         ...p11Distribution,
+        ...p12Distribution,
       ].map(row => ({
         ...row,
         questionCount:
@@ -274,12 +302,13 @@ async function readDashboardQuestionGroups() {
       const contributionRowsRaw = [
         ...sourceContributions.filter(
           row =>
-            !isPhysics11(
+            !isMigratedPhysics(
               row.subject,
               row.klass
             )
         ),
         ...p11Contributions,
+        ...p12Contributions,
       ];
 
       contributionRowsRaw.forEach(row => {
@@ -326,7 +355,8 @@ async function readDashboardQuestionGroups() {
 
   const [
     sourceRows,
-    p11Rows
+    p11Rows,
+    p12Rows
   ] = await Promise.all([
     readAll('questions', 'subject, klass, chapter, topic, created_by, created_by_name'),
 
@@ -335,17 +365,24 @@ async function readDashboardQuestionGroups() {
       'subject, klass, chapter, topic, created_by, created_by_name',
       supabasePhysics11
     ),
+
+    readAll(
+      'questions',
+      'subject, klass, chapter, topic, created_by, created_by_name',
+      supabasePhysics12
+    ),
   ]);
 
   return groupQuestionRows([
     ...sourceRows.filter(
       row =>
-        !isPhysics11(
+        !isMigratedPhysics(
           row.subject,
           row.klass
         )
     ),
     ...p11Rows,
+    ...p12Rows,
   ]);
 }
 
@@ -374,6 +411,7 @@ async function readRecentFromClient(
 function mergeRecentQuestionRows(
   sourceRows,
   p11Rows,
+  p12Rows,
   field
 ) {
   const rowsById = new Map();
@@ -381,7 +419,7 @@ function mergeRecentQuestionRows(
   sourceRows
     .filter(
       row =>
-        !isPhysics11(
+        !isMigratedPhysics(
           row.subject,
           row.klass
         )
@@ -394,10 +432,11 @@ function mergeRecentQuestionRows(
     });
 
   p11Rows.forEach(row => {
-    rowsById.set(
-      String(row.id),
-      row
-    );
+    rowsById.set(String(row.id), row);
+  });
+
+  p12Rows.forEach(row => {
+    rowsById.set(String(row.id), row);
   });
 
   return [...rowsById.values()]
@@ -415,23 +454,18 @@ async function readRecentQuestions(field) {
 
   const [
     sourceRows,
-    p11Rows
+    p11Rows,
+    p12Rows
   ] = await Promise.all([
-    readRecentFromClient(
-      supabase,
-      field,
-      columns
-    ),
-    readRecentFromClient(
-      supabasePhysics11,
-      field,
-      columns
-    ),
+    readRecentFromClient(supabase, field, columns),
+    readRecentFromClient(supabasePhysics11, field, columns),
+    readRecentFromClient(supabasePhysics12, field, columns),
   ]);
 
   return mergeRecentQuestionRows(
     sourceRows,
     p11Rows,
+    p12Rows,
     field
   );
 }
@@ -442,23 +476,18 @@ async function readRecentDashboardQuestions(field) {
 
   const [
     sourceRows,
-    p11Rows
+    p11Rows,
+    p12Rows
   ] = await Promise.all([
-    readRecentFromClient(
-      supabase,
-      field,
-      columns
-    ),
-    readRecentFromClient(
-      supabasePhysics11,
-      field,
-      columns
-    ),
+    readRecentFromClient(supabase, field, columns),
+    readRecentFromClient(supabasePhysics11, field, columns),
+    readRecentFromClient(supabasePhysics12, field, columns),
   ]);
 
   return mergeRecentQuestionRows(
     sourceRows,
     p11Rows,
+    p12Rows,
     field
   );
 }
@@ -470,7 +499,8 @@ async function readEffectiveQuestionsSince(
 ) {
   const [
     sourceRows,
-    p11Rows
+    p11Rows,
+    p12Rows
   ] = await Promise.all([
     readAllSince(
       'questions',
@@ -487,17 +517,26 @@ async function readEffectiveQuestionsSince(
       cutoff,
       supabasePhysics11
     ),
+
+    readAllSince(
+      'questions',
+      columns,
+      field,
+      cutoff,
+      supabasePhysics12
+    ),
   ]);
 
   return [
     ...sourceRows.filter(
       row =>
-        !isPhysics11(
+        !isMigratedPhysics(
           row.subject,
           row.klass
         )
     ),
     ...p11Rows,
+    ...p12Rows,
   ];
 }
 
@@ -1066,7 +1105,8 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
 
     const [
       sourceById,
-      p11ById
+      p11ById,
+      p12ById
     ] = await Promise.all([
       readOwned(
         supabase,
@@ -1079,17 +1119,24 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
         'created_by',
         user.id
       ),
+
+      readOwned(
+        supabasePhysics12,
+        'created_by',
+        user.id
+      ),
     ]);
 
     let questions = [
       ...sourceById.filter(
         question =>
-          !isPhysics11(
+          !isMigratedPhysics(
             question.subject,
             question.klass
           )
       ),
       ...p11ById,
+      ...p12ById,
     ];
 
     // Compatibility for historical rows that stored
@@ -1097,7 +1144,8 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
     if (!questions.length && user.name) {
       const [
         sourceLegacy,
-        p11Legacy
+        p11Legacy,
+        p12Legacy
       ] = await Promise.all([
         readOwned(
           supabase,
@@ -1110,17 +1158,24 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
           'created_by_name',
           user.name
         ),
+
+        readOwned(
+          supabasePhysics12,
+          'created_by_name',
+          user.name
+        ),
       ]);
 
       questions = [
         ...sourceLegacy.filter(
           question =>
-            !isPhysics11(
+            !isMigratedPhysics(
               question.subject,
               question.klass
             )
         ),
         ...p11Legacy,
+        ...p12Legacy,
       ];
     }
 

@@ -3,6 +3,7 @@ const express  = require('express');
 const supabase = require('../lib/supabase');
 const supabaseControl = require('../lib/supabase-control');
 const supabasePhysics11 = require('../lib/supabase-physics-11');
+const supabasePhysics12 = require('../lib/supabase-physics-12');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');
@@ -110,17 +111,24 @@ function duplicateScopeKey(subject, klass, question) {
 }
 
 async function loadDuplicateQuestionCache(forceRefresh = false) {
-  const [sourceCountResult, physics11CountResult] = await Promise.all([
+  const [
+    sourceCountResult,
+    physics11CountResult,
+    physics12CountResult
+  ] = await Promise.all([
     supabase.from('questions').select('id', { count: 'exact', head: true }),
     supabasePhysics11.from('questions').select('id', { count: 'exact', head: true }),
+    supabasePhysics12.from('questions').select('id', { count: 'exact', head: true }),
   ]);
 
   if (sourceCountResult.error) throw sourceCountResult.error;
   if (physics11CountResult.error) throw physics11CountResult.error;
+  if (physics12CountResult.error) throw physics12CountResult.error;
 
   const total =
     (Number(sourceCountResult.count) || 0) +
-    (Number(physics11CountResult.count) || 0);
+    (Number(physics11CountResult.count) || 0) +
+    (Number(physics12CountResult.count) || 0);
 
   const cacheIsFresh = duplicateQuestionCache.loadedAt > 0
     && duplicateQuestionCache.total === total
@@ -134,8 +142,9 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
     const pageSize = 1000;
 
     const sources = [
-      { client: supabase, skipPhysics11: true },
-      { client: supabasePhysics11, skipPhysics11: false },
+      { client: supabase, skipMigratedPhysics: true },
+      { client: supabasePhysics11, skipMigratedPhysics: false },
+      { client: supabasePhysics12, skipMigratedPhysics: false },
     ];
 
     for (const source of sources) {
@@ -149,7 +158,7 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
         if (error) throw error;
 
         for (const row of (data || [])) {
-          if (source.skipPhysics11 && isPhysics11(row.subject, row.klass)) continue;
+          if (source.skipMigratedPhysics && isMigratedPhysics(row.subject, row.klass)) continue;
 
           const key = duplicateScopeKey(row.subject, row.klass, row.question);
           if (key && !entries.has(key)) {
@@ -360,8 +369,19 @@ function isPhysics11(subject, klass) {
     && String(klass || '').replace(/^class\s*/i, '').trim() === '11';
 }
 
+function isPhysics12(subject, klass) {
+  return canonicalSubject(subject) === 'Physics'
+    && String(klass || '').replace(/^class\s*/i, '').trim() === '12';
+}
+
+function isMigratedPhysics(subject, klass) {
+  return isPhysics11(subject, klass) || isPhysics12(subject, klass);
+}
+
 function questionClientFor(subject, klass) {
-  return isPhysics11(subject, klass) ? supabasePhysics11 : supabase;
+  if (isPhysics11(subject, klass)) return supabasePhysics11;
+  if (isPhysics12(subject, klass)) return supabasePhysics12;
+  return supabase;
 }
 
 function questionShardName(subject, klass) {
@@ -435,26 +455,62 @@ async function findQuestionById(id) {
     return { data: null, error: sourceResult.error, client: supabase };
   }
 
-  if (sourceResult.data && !isPhysics11(sourceResult.data.subject, sourceResult.data.klass)) {
+  if (
+    sourceResult.data &&
+    !isMigratedPhysics(
+      sourceResult.data.subject,
+      sourceResult.data.klass
+    )
+  ) {
     return { data: sourceResult.data, error: null, client: supabase };
   }
 
-  const shardResult = await supabasePhysics11
-    .from('questions')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
+  if (sourceResult.data) {
+    const shardClient = questionClientFor(
+      sourceResult.data.subject,
+      sourceResult.data.klass
+    );
 
-  if (shardResult.error) {
-    return { data: null, error: shardResult.error, client: supabasePhysics11 };
+    const shardResult = await shardClient
+      .from('questions')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    return {
+      data: shardResult.data || null,
+      error: shardResult.error || null,
+      client: shardClient,
+    };
   }
 
-  if (shardResult.data) {
-    return { data: shardResult.data, error: null, client: supabasePhysics11 };
+  for (const shardClient of [supabasePhysics11, supabasePhysics12]) {
+    const shardResult = await shardClient
+      .from('questions')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (shardResult.error) {
+      return {
+        data: null,
+        error: shardResult.error,
+        client: shardClient,
+      };
+    }
+
+    if (shardResult.data) {
+      return {
+        data: shardResult.data,
+        error: null,
+        client: shardClient,
+      };
+    }
   }
 
-  return { data: null, error: null, client: supabasePhysics11 };
+  return { data: null, error: null, client: supabasePhysics12 };
 }
+
 const EXAMS_BY_SUBJECT = Object.freeze({
   Mathematics: ['JEE', 'KCET'],
   Biology: ['NEET', 'KCET'],
@@ -780,8 +836,9 @@ async function readFacetRows() {
 
   const rows = [];
   const sources = [
-    { client: supabase, skipPhysics11: true },
-    { client: supabasePhysics11, skipPhysics11: false },
+    { client: supabase, skipMigratedPhysics: true },
+    { client: supabasePhysics11, skipMigratedPhysics: false },
+    { client: supabasePhysics12, skipMigratedPhysics: false },
   ];
 
   for (const source of sources) {
@@ -795,7 +852,7 @@ async function readFacetRows() {
 
       const page = data || [];
       for (const row of page) {
-        if (source.skipPhysics11 && isPhysics11(row.subject, row.klass)) continue;
+        if (source.skipMigratedPhysics && isMigratedPhysics(row.subject, row.klass)) continue;
         rows.push(row);
       }
 
