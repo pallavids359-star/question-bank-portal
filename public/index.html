@@ -2448,9 +2448,9 @@ async function storeQuestionImage(dataUrl, subject, klass) {
     .replace(/^class\s*/i, '')
     .trim();
 
-  // Physics Classes 11 and 12 have completed the external-image migration.
+  // Only Physics Class 11 has completed the external-image migration.
   // Other shards continue using the existing Base64 behavior for now.
-  if (normalizedSubject !== 'physics' || !['11', '12'].includes(normalizedClass)) {
+  if (normalizedSubject !== 'physics' || normalizedClass !== '11') {
     return dataUrl;
   }
 
@@ -2459,7 +2459,7 @@ async function storeQuestionImage(dataUrl, subject, klass) {
     body: JSON.stringify({
       dataUrl,
       subject: 'Physics',
-      klass: normalizedClass,
+      klass: '11',
     }),
   });
 
