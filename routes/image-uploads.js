@@ -35,7 +35,7 @@ function isCloudinaryMigratedShard(subject, klass) {
     .replace(/^class\s*/i, '')
     .trim();
 
-  return ['physics', 'chemistry'].includes(normalizedSubject)
+  return ['physics', 'chemistry', 'biology'].includes(normalizedSubject)
     && ['11', '12'].includes(normalizedClass);
 }
 
@@ -57,7 +57,7 @@ router.post(
 
       if (!isCloudinaryMigratedShard(subject, klass)) {
         return res.status(400).json({
-          error: 'Cloudinary image upload is currently enabled only for Physics and Chemistry Classes 11 and 12.',
+          error: 'Cloudinary image upload is currently enabled only for Physics, Chemistry and Biology Classes 11 and 12.',
         });
       }
 

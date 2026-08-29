@@ -8,6 +8,8 @@ const supabasePhysics11 = require('../lib/supabase-physics-11');
 const supabasePhysics12 = require('../lib/supabase-physics-12');
 const supabaseChemistry11 = require('../lib/supabase-chemistry-11');
 const supabaseChemistry12 = require('../lib/supabase-chemistry-12');
+const supabaseBiology11 = require('../lib/supabase-biology-11');
+const supabaseBiology12 = require('../lib/supabase-biology-12');
 const {
   requireAuth,
   requireRole
@@ -549,7 +551,7 @@ const isMigratedQuestionShard = question => {
       .trim();
 
   return (
-    ['physics', 'chemistry'].includes(subject) &&
+    ['physics', 'chemistry', 'biology'].includes(subject) &&
     ['11', '12'].includes(klass)
   );
 };
@@ -625,6 +627,8 @@ try {
     readPeriodQuestions(supabasePhysics12),
     readPeriodQuestions(supabaseChemistry11),
     readPeriodQuestions(supabaseChemistry12),
+    readPeriodQuestions(supabaseBiology11),
+    readPeriodQuestions(supabaseBiology12),
   ]);
 } catch (questionError) {
   console.error(
@@ -643,7 +647,9 @@ const [
   physics11Questions,
   physics12Questions,
   chemistry11Questions,
-  chemistry12Questions
+  chemistry12Questions,
+  biology11Questions,
+  biology12Questions
 ] = questionSets;
 
 validQuestions.push(
@@ -654,7 +660,9 @@ validQuestions.push(
   ...physics11Questions,
   ...physics12Questions,
   ...chemistry11Questions,
-  ...chemistry12Questions
+  ...chemistry12Questions,
+  ...biology11Questions,
+  ...biology12Questions
 );
 
 

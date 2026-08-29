@@ -6,6 +6,8 @@ const supabasePhysics11 = require('../lib/supabase-physics-11');
 const supabasePhysics12 = require('../lib/supabase-physics-12');
 const supabaseChemistry11 = require('../lib/supabase-chemistry-11');
 const supabaseChemistry12 = require('../lib/supabase-chemistry-12');
+const supabaseBiology11 = require('../lib/supabase-biology-11');
+const supabaseBiology12 = require('../lib/supabase-biology-12');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');
@@ -118,13 +120,17 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
     physics11CountResult,
     physics12CountResult,
     chemistry11CountResult,
-    chemistry12CountResult
+    chemistry12CountResult,
+    biology11CountResult,
+    biology12CountResult
   ] = await Promise.all([
     supabase.from('questions').select('id', { count: 'exact', head: true }),
     supabasePhysics11.from('questions').select('id', { count: 'exact', head: true }),
     supabasePhysics12.from('questions').select('id', { count: 'exact', head: true }),
     supabaseChemistry11.from('questions').select('id', { count: 'exact', head: true }),
     supabaseChemistry12.from('questions').select('id', { count: 'exact', head: true }),
+    supabaseBiology11.from('questions').select('id', { count: 'exact', head: true }),
+    supabaseBiology12.from('questions').select('id', { count: 'exact', head: true }),
   ]);
 
   if (sourceCountResult.error) throw sourceCountResult.error;
@@ -132,13 +138,17 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
   if (physics12CountResult.error) throw physics12CountResult.error;
   if (chemistry11CountResult.error) throw chemistry11CountResult.error;
   if (chemistry12CountResult.error) throw chemistry12CountResult.error;
+  if (biology11CountResult.error) throw biology11CountResult.error;
+  if (biology12CountResult.error) throw biology12CountResult.error;
 
   const total =
     (Number(sourceCountResult.count) || 0) +
     (Number(physics11CountResult.count) || 0) +
     (Number(physics12CountResult.count) || 0) +
     (Number(chemistry11CountResult.count) || 0) +
-    (Number(chemistry12CountResult.count) || 0);
+    (Number(chemistry12CountResult.count) || 0) +
+    (Number(biology11CountResult.count) || 0) +
+    (Number(biology12CountResult.count) || 0);
 
   const cacheIsFresh = duplicateQuestionCache.loadedAt > 0
     && duplicateQuestionCache.total === total
@@ -157,6 +167,8 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
       { client: supabasePhysics12, skipMigratedShards: false },
       { client: supabaseChemistry11, skipMigratedShards: false },
       { client: supabaseChemistry12, skipMigratedShards: false },
+      { client: supabaseBiology11, skipMigratedShards: false },
+      { client: supabaseBiology12, skipMigratedShards: false },
     ];
 
     for (const source of sources) {
@@ -402,11 +414,23 @@ function isChemistry12(subject, klass) {
     && normalizedQuestionClass(klass) === '12';
 }
 
+function isBiology11(subject, klass) {
+  return canonicalSubject(subject) === 'Biology'
+    && normalizedQuestionClass(klass) === '11';
+}
+
+function isBiology12(subject, klass) {
+  return canonicalSubject(subject) === 'Biology'
+    && normalizedQuestionClass(klass) === '12';
+}
+
 function isMigratedQuestionShard(subject, klass) {
   return isPhysics11(subject, klass)
     || isPhysics12(subject, klass)
     || isChemistry11(subject, klass)
-    || isChemistry12(subject, klass);
+    || isChemistry12(subject, klass)
+    || isBiology11(subject, klass)
+    || isBiology12(subject, klass);
 }
 
 function questionClientFor(subject, klass) {
@@ -414,6 +438,8 @@ function questionClientFor(subject, klass) {
   if (isPhysics12(subject, klass)) return supabasePhysics12;
   if (isChemistry11(subject, klass)) return supabaseChemistry11;
   if (isChemistry12(subject, klass)) return supabaseChemistry12;
+  if (isBiology11(subject, klass)) return supabaseBiology11;
+  if (isBiology12(subject, klass)) return supabaseBiology12;
   return supabase;
 }
 
@@ -521,7 +547,9 @@ async function findQuestionById(id) {
     supabasePhysics11,
     supabasePhysics12,
     supabaseChemistry11,
-    supabaseChemistry12
+    supabaseChemistry12,
+    supabaseBiology11,
+    supabaseBiology12
   ]) {
     const shardResult = await shardClient
       .from('questions')
@@ -879,6 +907,8 @@ async function readFacetRows() {
     { client: supabasePhysics12, skipMigratedShards: false },
     { client: supabaseChemistry11, skipMigratedShards: false },
     { client: supabaseChemistry12, skipMigratedShards: false },
+    { client: supabaseBiology11, skipMigratedShards: false },
+    { client: supabaseBiology12, skipMigratedShards: false },
   ];
 
   for (const source of sources) {
