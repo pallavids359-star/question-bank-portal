@@ -9,13 +9,13 @@ const html = fs.readFileSync(
 );
 
 function extractChapterMap() {
-  const match = html.match(/const NCERT_CHAPTERS = (\{[\s\S]*?\n\});\nconst BULK_NCERT_CHAPTERS/);
+  const match = html.match(/const NCERT_CHAPTERS = (\{[\s\S]*?\r?\n\});\r?\nconst BULK_NCERT_CHAPTERS/);
   assert.ok(match, 'NCERT_CHAPTERS catalogue must exist');
   return Function(`"use strict"; return (${match[1]});`)();
 }
 
 function extractBulkChapterMap() {
-  const match = html.match(/const BULK_NCERT_CHAPTERS = (\{[\s\S]*?\n\});\nconst EXAMS/);
+  const match = html.match(/const BULK_NCERT_CHAPTERS = (\{[\s\S]*?\r?\n\});\r?\nconst EXAMS/);
   assert.ok(match, 'BULK_NCERT_CHAPTERS catalogue must exist');
   return Function(`"use strict"; return (${match[1]});`)();
 }
@@ -100,8 +100,8 @@ test('an existing non-catalogue chapter remains selectable without changing its 
 });
 
 test('syllabus catalogue code contains no database mutation or automatic reassignment', () => {
-  const catalogue = html.match(/const NCERT_CHAPTERS = [\s\S]*?\n};\nconst EXAMS/);
-  const dropdown = html.match(/function updateChapterOptions\(presetChapter\) \{[\s\S]*?\n}\nwindow\.updateChapterOptions/);
+  const catalogue = html.match(/const NCERT_CHAPTERS = [\s\S]*?\r?\n};\r?\nconst EXAMS/);
+  const dropdown = html.match(/function updateChapterOptions\(presetChapter\) \{[\s\S]*?\r?\n}\r?\nwindow\.updateChapterOptions/);
   assert.ok(catalogue, 'syllabus catalogue must be present');
   assert.ok(dropdown, 'chapter dropdown updater must be present');
   assert.doesNotMatch(

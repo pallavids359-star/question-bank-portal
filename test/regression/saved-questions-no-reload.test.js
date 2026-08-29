@@ -25,7 +25,7 @@ for (const [name, start, end] of [
   ['review', 'review: async function(id){', 'difficulty: async function(id, selectedDifficulty){'],
   ['difficulty', 'difficulty: async function(id, selectedDifficulty){', 'accept: async function(id, currentlyAccepted){'],
   ['accept', 'accept: async function(id, currentlyAccepted){', 'edit:function(id){'],
-  ['delete', 'remove:async function(id){', '\n};\n\nasync function loadQuestionFacets(){'],
+  ['delete', 'remove:async function(id){', 'async function loadQuestionFacets(){'],
 ]) {
   test(`${name} updates Saved Questions in place`, () => {
     const body = actionBody(start, end);

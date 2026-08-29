@@ -22,7 +22,7 @@ test('Physics 12 routes to its shard and Cloudinary', () => {
 
   assert.match(questions, /supabasePhysics12/);
   assert.match(questions, /function isPhysics12/);
-  assert.match(questions, /isMigratedPhysics/);
+  assert.match(questions, /isMigratedQuestionShard/);
 
   assert.match(dashboard, /supabasePhysics12/);
   assert.match(dashboard, /sourcePhysics12/);
