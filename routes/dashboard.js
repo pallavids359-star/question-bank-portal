@@ -4,6 +4,8 @@ const supabase = require('../lib/supabase');
 const supabaseControl = require('../lib/supabase-control');
 const supabasePhysics11 = require('../lib/supabase-physics-11');
 const supabasePhysics12 = require('../lib/supabase-physics-12');
+const supabaseChemistry11 = require('../lib/supabase-chemistry-11');
+const supabaseChemistry12 = require('../lib/supabase-chemistry-12');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { toLogicalUser } = require('../lib/user-role');
 
@@ -29,28 +31,29 @@ async function readAll(table, columns = '*', client = supabase) {
   return rows;
 }
 
-function normalizedPhysicsClass(subject, klass) {
-  const normalizedSubject =
-    String(subject || '').trim().toLowerCase();
-
-  if (normalizedSubject !== 'physics') return '';
-
+function normalizedQuestionClass(klass) {
   return String(klass || '')
     .replace(/^class\s*/i, '')
     .trim();
 }
 
-function isPhysics11(subject, klass) {
-  return normalizedPhysicsClass(subject, klass) === '11';
+function isMigratedQuestionShard(subject, klass) {
+  const normalizedSubject =
+    String(subject || '').trim().toLowerCase();
+
+  const normalizedClass =
+    normalizedQuestionClass(klass);
+
+  return ['physics', 'chemistry'].includes(normalizedSubject)
+    && ['11', '12'].includes(normalizedClass);
 }
 
-function isPhysics12(subject, klass) {
-  return normalizedPhysicsClass(subject, klass) === '12';
-}
-
-function isMigratedPhysics(subject, klass) {
-  return isPhysics11(subject, klass) || isPhysics12(subject, klass);
-}
+const MIGRATED_QUESTION_CLIENTS = [
+  supabasePhysics11,
+  supabasePhysics12,
+  supabaseChemistry11,
+  supabaseChemistry12,
+];
 
 async function readAllSince(
   table,
@@ -102,13 +105,13 @@ async function countRows(
 }
 
 async function countEffectiveQuestions(applyFilters) {
-  const sourcePhysicsFilter = klass => query => {
+  const sourceShardFilter = (subject, klass) => query => {
     let filtered = applyFilters
       ? applyFilters(query)
       : query;
 
     return filtered
-      .eq('subject', 'Physics')
+      .eq('subject', subject)
       .in('klass', [klass, `Class ${klass}`]);
   };
 
@@ -116,23 +119,77 @@ async function countEffectiveQuestions(applyFilters) {
     sourceTotal,
     sourcePhysics11,
     sourcePhysics12,
+    sourceChemistry11,
+    sourceChemistry12,
     shardPhysics11,
-    shardPhysics12
+    shardPhysics12,
+    shardChemistry11,
+    shardChemistry12
   ] = await Promise.all([
     countRows('questions', applyFilters, supabase),
-    countRows('questions', sourcePhysicsFilter('11'), supabase),
-    countRows('questions', sourcePhysicsFilter('12'), supabase),
-    countRows('questions', applyFilters, supabasePhysics11),
-    countRows('questions', applyFilters, supabasePhysics12),
+
+    countRows(
+      'questions',
+      sourceShardFilter('Physics', '11'),
+      supabase
+    ),
+
+    countRows(
+      'questions',
+      sourceShardFilter('Physics', '12'),
+      supabase
+    ),
+
+    countRows(
+      'questions',
+      sourceShardFilter('Chemistry', '11'),
+      supabase
+    ),
+
+    countRows(
+      'questions',
+      sourceShardFilter('Chemistry', '12'),
+      supabase
+    ),
+
+    countRows(
+      'questions',
+      applyFilters,
+      supabasePhysics11
+    ),
+
+    countRows(
+      'questions',
+      applyFilters,
+      supabasePhysics12
+    ),
+
+    countRows(
+      'questions',
+      applyFilters,
+      supabaseChemistry11
+    ),
+
+    countRows(
+      'questions',
+      applyFilters,
+      supabaseChemistry12
+    ),
   ]);
 
   return (
     Math.max(
       0,
-      sourceTotal - sourcePhysics11 - sourcePhysics12
-    ) +
-    shardPhysics11 +
-    shardPhysics12
+      sourceTotal
+        - sourcePhysics11
+        - sourcePhysics12
+        - sourceChemistry11
+        - sourceChemistry12
+    )
+    + shardPhysics11
+    + shardPhysics12
+    + shardChemistry11
+    + shardChemistry12
   );
 }
 
@@ -219,78 +276,88 @@ function groupQuestionRows(rows) {
 }
 
 async function readDashboardQuestionGroups() {
+  const distributionColumns =
+    'subject, klass, chapter, topic, question_count:id.count()';
+
+  const contributionColumns =
+    'subject, klass, created_by, created_by_name, question_count:id.count()';
+
   if (dashboardAggregatesSupported) {
     try {
+      const tasks = [
+        readAllGroupedQuestions(
+          distributionColumns,
+          ['subject', 'klass', 'chapter', 'topic'],
+          supabase
+        ),
+
+        readAllGroupedQuestions(
+          contributionColumns,
+          [
+            'subject',
+            'klass',
+            'created_by',
+            'created_by_name'
+          ],
+          supabase
+        ),
+      ];
+
+      for (const client of MIGRATED_QUESTION_CLIENTS) {
+        tasks.push(
+          readAllGroupedQuestions(
+            distributionColumns,
+            ['subject', 'klass', 'chapter', 'topic'],
+            client
+          )
+        );
+
+        tasks.push(
+          readAllGroupedQuestions(
+            contributionColumns,
+            [
+              'subject',
+              'klass',
+              'created_by',
+              'created_by_name'
+            ],
+            client
+          )
+        );
+      }
+
       const [
         sourceDistribution,
         sourceContributions,
-        p11Distribution,
-        p11Contributions,
-        p12Distribution,
-        p12Contributions
-      ] = await Promise.all([
-        readAllGroupedQuestions(
-          'subject, klass, chapter, topic, question_count:id.count()',
-          ['subject', 'klass', 'chapter', 'topic'],
-          supabase
-        ),
+        ...shardResults
+      ] = await Promise.all(tasks);
 
-        readAllGroupedQuestions(
-          'subject, klass, created_by, created_by_name, question_count:id.count()',
-          [
-            'subject',
-            'klass',
-            'created_by',
-            'created_by_name'
-          ],
-          supabase
-        ),
+      const shardDistribution = [];
+      const shardContributions = [];
 
-        readAllGroupedQuestions(
-          'subject, klass, chapter, topic, question_count:id.count()',
-          ['subject', 'klass', 'chapter', 'topic'],
-          supabasePhysics11
-        ),
+      for (
+        let index = 0;
+        index < shardResults.length;
+        index += 2
+      ) {
+        shardDistribution.push(
+          ...(shardResults[index] || [])
+        );
 
-        readAllGroupedQuestions(
-          'subject, klass, created_by, created_by_name, question_count:id.count()',
-          [
-            'subject',
-            'klass',
-            'created_by',
-            'created_by_name'
-          ],
-          supabasePhysics11
-        ),
-
-        readAllGroupedQuestions(
-          'subject, klass, chapter, topic, question_count:id.count()',
-          ['subject', 'klass', 'chapter', 'topic'],
-          supabasePhysics12
-        ),
-
-        readAllGroupedQuestions(
-          'subject, klass, created_by, created_by_name, question_count:id.count()',
-          [
-            'subject',
-            'klass',
-            'created_by',
-            'created_by_name'
-          ],
-          supabasePhysics12
-        ),
-      ]);
+        shardContributions.push(
+          ...(shardResults[index + 1] || [])
+        );
+      }
 
       const distributionRows = [
         ...sourceDistribution.filter(
           row =>
-            !isMigratedPhysics(
+            !isMigratedQuestionShard(
               row.subject,
               row.klass
             )
         ),
-        ...p11Distribution,
-        ...p12Distribution,
+        ...shardDistribution,
       ].map(row => ({
         ...row,
         questionCount:
@@ -302,13 +369,12 @@ async function readDashboardQuestionGroups() {
       const contributionRowsRaw = [
         ...sourceContributions.filter(
           row =>
-            !isMigratedPhysics(
+            !isMigratedQuestionShard(
               row.subject,
               row.klass
             )
         ),
-        ...p11Contributions,
-        ...p12Contributions,
+        ...shardContributions,
       ];
 
       contributionRowsRaw.forEach(row => {
@@ -355,34 +421,33 @@ async function readDashboardQuestionGroups() {
 
   const [
     sourceRows,
-    p11Rows,
-    p12Rows
+    ...shardRowSets
   ] = await Promise.all([
-    readAll('questions', 'subject, klass, chapter, topic, created_by, created_by_name'),
-
     readAll(
       'questions',
       'subject, klass, chapter, topic, created_by, created_by_name',
-      supabasePhysics11
+      supabase
     ),
 
-    readAll(
-      'questions',
-      'subject, klass, chapter, topic, created_by, created_by_name',
-      supabasePhysics12
+    ...MIGRATED_QUESTION_CLIENTS.map(
+      client =>
+        readAll(
+          'questions',
+          'subject, klass, chapter, topic, created_by, created_by_name',
+          client
+        )
     ),
   ]);
 
   return groupQuestionRows([
     ...sourceRows.filter(
       row =>
-        !isMigratedPhysics(
+        !isMigratedQuestionShard(
           row.subject,
           row.klass
         )
     ),
-    ...p11Rows,
-    ...p12Rows,
+    ...shardRowSets.flat(),
   ]);
 }
 
@@ -410,8 +475,7 @@ async function readRecentFromClient(
 
 function mergeRecentQuestionRows(
   sourceRows,
-  p11Rows,
-  p12Rows,
+  shardRowSets,
   field
 ) {
   const rowsById = new Map();
@@ -419,7 +483,7 @@ function mergeRecentQuestionRows(
   sourceRows
     .filter(
       row =>
-        !isMigratedPhysics(
+        !isMigratedQuestionShard(
           row.subject,
           row.klass
         )
@@ -431,12 +495,11 @@ function mergeRecentQuestionRows(
       );
     });
 
-  p11Rows.forEach(row => {
-    rowsById.set(String(row.id), row);
-  });
-
-  p12Rows.forEach(row => {
-    rowsById.set(String(row.id), row);
+  shardRowSets.flat().forEach(row => {
+    rowsById.set(
+      String(row.id),
+      row
+    );
   });
 
   return [...rowsById.values()]
@@ -454,18 +517,27 @@ async function readRecentQuestions(field) {
 
   const [
     sourceRows,
-    p11Rows,
-    p12Rows
+    ...shardRows
   ] = await Promise.all([
-    readRecentFromClient(supabase, field, columns),
-    readRecentFromClient(supabasePhysics11, field, columns),
-    readRecentFromClient(supabasePhysics12, field, columns),
+    readRecentFromClient(
+      supabase,
+      field,
+      columns
+    ),
+
+    ...MIGRATED_QUESTION_CLIENTS.map(
+      client =>
+        readRecentFromClient(
+          client,
+          field,
+          columns
+        )
+    ),
   ]);
 
   return mergeRecentQuestionRows(
     sourceRows,
-    p11Rows,
-    p12Rows,
+    shardRows,
     field
   );
 }
@@ -476,18 +548,27 @@ async function readRecentDashboardQuestions(field) {
 
   const [
     sourceRows,
-    p11Rows,
-    p12Rows
+    ...shardRows
   ] = await Promise.all([
-    readRecentFromClient(supabase, field, columns),
-    readRecentFromClient(supabasePhysics11, field, columns),
-    readRecentFromClient(supabasePhysics12, field, columns),
+    readRecentFromClient(
+      supabase,
+      field,
+      columns
+    ),
+
+    ...MIGRATED_QUESTION_CLIENTS.map(
+      client =>
+        readRecentFromClient(
+          client,
+          field,
+          columns
+        )
+    ),
   ]);
 
   return mergeRecentQuestionRows(
     sourceRows,
-    p11Rows,
-    p12Rows,
+    shardRows,
     field
   );
 }
@@ -499,8 +580,7 @@ async function readEffectiveQuestionsSince(
 ) {
   const [
     sourceRows,
-    p11Rows,
-    p12Rows
+    ...shardRows
   ] = await Promise.all([
     readAllSince(
       'questions',
@@ -510,33 +590,27 @@ async function readEffectiveQuestionsSince(
       supabase
     ),
 
-    readAllSince(
-      'questions',
-      columns,
-      field,
-      cutoff,
-      supabasePhysics11
-    ),
-
-    readAllSince(
-      'questions',
-      columns,
-      field,
-      cutoff,
-      supabasePhysics12
+    ...MIGRATED_QUESTION_CLIENTS.map(
+      client =>
+        readAllSince(
+          'questions',
+          columns,
+          field,
+          cutoff,
+          client
+        )
     ),
   ]);
 
   return [
     ...sourceRows.filter(
       row =>
-        !isMigratedPhysics(
+        !isMigratedQuestionShard(
           row.subject,
           row.klass
         )
     ),
-    ...p11Rows,
-    ...p12Rows,
+    ...shardRows.flat(),
   ];
 }
 
@@ -1053,12 +1127,27 @@ questionGroups.distributionRows.forEach(question => {
 // Admins who have created questions.
 router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const rawUsers = await readAll('users', 'id, name, email, role, subject, status', supabaseControl);
-    const user = rawUsers.map(toLogicalUser)
-      .find(candidate => String(candidate.id) === String(req.params.userId));
+    const rawUsers = await readAll(
+      'users',
+      'id, name, email, role, subject, status',
+      supabaseControl
+    );
 
-    if (!user || !['adder', 'admin'].includes(user.role)) {
-      return res.status(404).json({ error: 'Question contributor not found.' });
+    const user = rawUsers
+      .map(toLogicalUser)
+      .find(
+        candidate =>
+          String(candidate.id) ===
+          String(req.params.userId)
+      );
+
+    if (
+      !user ||
+      !['adder', 'admin'].includes(user.role)
+    ) {
+      return res.status(404).json({
+        error: 'Question contributor not found.'
+      });
     }
 
     const questionColumns =
@@ -1105,8 +1194,7 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
 
     const [
       sourceById,
-      p11ById,
-      p12ById
+      ...shardByIdSets
     ] = await Promise.all([
       readOwned(
         supabase,
@@ -1114,29 +1202,26 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
         user.id
       ),
 
-      readOwned(
-        supabasePhysics11,
-        'created_by',
-        user.id
-      ),
-
-      readOwned(
-        supabasePhysics12,
-        'created_by',
-        user.id
+      ...MIGRATED_QUESTION_CLIENTS.map(
+        client =>
+          readOwned(
+            client,
+            'created_by',
+            user.id
+          )
       ),
     ]);
 
     let questions = [
       ...sourceById.filter(
         question =>
-          !isMigratedPhysics(
+          !isMigratedQuestionShard(
             question.subject,
             question.klass
           )
       ),
-      ...p11ById,
-      ...p12ById,
+
+      ...shardByIdSets.flat(),
     ];
 
     // Compatibility for historical rows that stored
@@ -1144,8 +1229,7 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
     if (!questions.length && user.name) {
       const [
         sourceLegacy,
-        p11Legacy,
-        p12Legacy
+        ...shardLegacySets
       ] = await Promise.all([
         readOwned(
           supabase,
@@ -1153,29 +1237,26 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
           user.name
         ),
 
-        readOwned(
-          supabasePhysics11,
-          'created_by_name',
-          user.name
-        ),
-
-        readOwned(
-          supabasePhysics12,
-          'created_by_name',
-          user.name
+        ...MIGRATED_QUESTION_CLIENTS.map(
+          client =>
+            readOwned(
+              client,
+              'created_by_name',
+              user.name
+            )
         ),
       ]);
 
       questions = [
         ...sourceLegacy.filter(
           question =>
-            !isMigratedPhysics(
+            !isMigratedQuestionShard(
               question.subject,
               question.klass
             )
         ),
-        ...p11Legacy,
-        ...p12Legacy,
+
+        ...shardLegacySets.flat(),
       ];
     }
 
@@ -1197,23 +1278,44 @@ router.get('/adders/:userId/questions', requireAuth, requireRole('admin'), async
             timeValue(a.created_at)
         );
 
-    const ownedQuestions = questions
-      .map(question => compactQuestion(question, user.name || user.email));
+    const ownedQuestions =
+      questions.map(
+        question =>
+          compactQuestion(
+            question,
+            user.name || user.email
+          )
+      );
 
     res.json({
       adder: {
         id: user.id,
-        name: user.name || user.email || 'Unnamed Contributor',
+        name:
+          user.name ||
+          user.email ||
+          'Unnamed Contributor',
         email: user.email || '',
         role: user.role,
         subject: user.subject || 'All',
-        questionCount: ownedQuestions.length,
+        questionCount:
+          ownedQuestions.length,
       },
-      questions: ownedQuestions,
+
+      questions:
+        ownedQuestions,
     });
   } catch (err) {
-    console.error('[dashboard adder questions]', err);
-    res.status(500).json({ error: 'Failed to load questions added by this user.', details: err.message });
+    console.error(
+      '[dashboard adder questions]',
+      err
+    );
+
+    res.status(500).json({
+      error:
+        'Failed to load questions added by this user.',
+      details:
+        err.message
+    });
   }
 });
 

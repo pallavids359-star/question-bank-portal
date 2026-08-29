@@ -26,12 +26,16 @@ function cloudinaryConfig() {
   };
 }
 
-function isCloudinaryPhysicsClass(subject, klass) {
+function isCloudinaryMigratedShard(subject, klass) {
+  const normalizedSubject = String(subject || '')
+    .trim()
+    .toLowerCase();
+
   const normalizedClass = String(klass || '')
     .replace(/^class\s*/i, '')
     .trim();
 
-  return String(subject || '').trim().toLowerCase() === 'physics'
+  return ['physics', 'chemistry'].includes(normalizedSubject)
     && ['11', '12'].includes(normalizedClass);
 }
 
@@ -51,9 +55,9 @@ router.post(
     try {
       const { dataUrl, subject, klass } = req.body || {};
 
-      if (!isCloudinaryPhysicsClass(subject, klass)) {
+      if (!isCloudinaryMigratedShard(subject, klass)) {
         return res.status(400).json({
-          error: 'Cloudinary image upload is currently enabled only for Physics Classes 11 and 12.',
+          error: 'Cloudinary image upload is currently enabled only for Physics and Chemistry Classes 11 and 12.',
         });
       }
 
@@ -70,13 +74,17 @@ router.post(
 
       const { cloudName, apiKey, apiSecret } = cloudinaryConfig();
 
+      const normalizedSubject = String(subject || '')
+        .trim()
+        .toLowerCase();
+
       const normalizedClass = String(klass || '')
         .replace(/^class\s*/i, '')
         .trim();
 
       const publicId = [
         'question-bank',
-        'physics',
+        normalizedSubject,
         normalizedClass,
         `${Date.now()}-${crypto.randomUUID()}`,
       ].map(safeSegment).join('/');

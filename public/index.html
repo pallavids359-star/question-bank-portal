@@ -2448,9 +2448,12 @@ async function storeQuestionImage(dataUrl, subject, klass) {
     .replace(/^class\s*/i, '')
     .trim();
 
-  // Physics Classes 11 and 12 have completed the external-image migration.
+  // Physics and Chemistry Classes 11 and 12 use external Cloudinary images.
   // Other shards continue using the existing Base64 behavior for now.
-  if (normalizedSubject !== 'physics' || !['11', '12'].includes(normalizedClass)) {
+  if (
+    !['physics', 'chemistry'].includes(normalizedSubject)
+    || !['11', '12'].includes(normalizedClass)
+  ) {
     return dataUrl;
   }
 
@@ -2458,7 +2461,10 @@ async function storeQuestionImage(dataUrl, subject, klass) {
     method: 'POST',
     body: JSON.stringify({
       dataUrl,
-      subject: 'Physics',
+      subject:
+        normalizedSubject === 'physics'
+          ? 'Physics'
+          : 'Chemistry',
       klass: normalizedClass,
     }),
   });

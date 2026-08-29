@@ -4,6 +4,10 @@ const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
 const supabase = require('../lib/supabase');
 const supabaseControl = require('../lib/supabase-control');
+const supabasePhysics11 = require('../lib/supabase-physics-11');
+const supabasePhysics12 = require('../lib/supabase-physics-12');
+const supabaseChemistry11 = require('../lib/supabase-chemistry-11');
+const supabaseChemistry12 = require('../lib/supabase-chemistry-12');
 const {
   requireAuth,
   requireRole
@@ -533,79 +537,125 @@ const validQuestions = [];
 
 const QUESTION_PAGE_SIZE = 1000;
 
-for (
-  let from = 0;
-  ;
-  from += QUESTION_PAGE_SIZE
-) {
+const isMigratedQuestionShard = question => {
+  const subject =
+    String(question?.subject || '')
+      .trim()
+      .toLowerCase();
 
-  const {
-    data: questionPage,
-    error: questionError
-  } = await supabase
-    .from('questions')
-    .select(`
-      id,
-      created_by,
-      created_by_name,
-      created_at
-    `)
-    .gte(
-      'created_at',
-      startDate.toISOString()
-    )
-    .lt(
-      'created_at',
-      endDate.toISOString()
-    )
-    .order(
-      'created_at',
-      {
-        ascending: true
-      }
-    )
-    .range(
-      from,
-      from + QUESTION_PAGE_SIZE - 1
-    );
+  const klass =
+    String(question?.klass || '')
+      .replace(/^class\s*/i, '')
+      .trim();
 
+  return (
+    ['physics', 'chemistry'].includes(subject) &&
+    ['11', '12'].includes(klass)
+  );
+};
 
-  if (questionError) {
+const readPeriodQuestions = async client => {
+  const rows = [];
 
-    console.error(
-      '[user-time-summary questions]',
-      questionError
-    );
+  for (
+    let from = 0;
+    ;
+    from += QUESTION_PAGE_SIZE
+  ) {
+    const {
+      data: questionPage,
+      error: questionError
+    } = await client
+      .from('questions')
+      .select(`
+        id,
+        subject,
+        klass,
+        created_by,
+        created_by_name,
+        created_at
+      `)
+      .gte(
+        'created_at',
+        startDate.toISOString()
+      )
+      .lt(
+        'created_at',
+        endDate.toISOString()
+      )
+      .order(
+        'created_at',
+        {
+          ascending: true
+        }
+      )
+      .range(
+        from,
+        from + QUESTION_PAGE_SIZE - 1
+      );
 
-    return res.status(500).json({
-      error:
-        questionError.message
-    });
+    if (questionError) {
+      throw questionError;
+    }
 
+    const page =
+      Array.isArray(questionPage)
+        ? questionPage
+        : [];
+
+    rows.push(...page);
+
+    if (
+      page.length <
+      QUESTION_PAGE_SIZE
+    ) {
+      break;
+    }
   }
 
+  return rows;
+};
 
-  const page =
-    Array.isArray(questionPage)
-      ? questionPage
-      : [];
+let questionSets;
 
-
-  validQuestions.push(
-    ...page
+try {
+  questionSets = await Promise.all([
+    readPeriodQuestions(supabase),
+    readPeriodQuestions(supabasePhysics11),
+    readPeriodQuestions(supabasePhysics12),
+    readPeriodQuestions(supabaseChemistry11),
+    readPeriodQuestions(supabaseChemistry12),
+  ]);
+} catch (questionError) {
+  console.error(
+    '[user-time-summary questions]',
+    questionError
   );
 
-
-  if (
-    page.length <
-    QUESTION_PAGE_SIZE
-  ) {
-    break;
-  }
-
+  return res.status(500).json({
+    error:
+      questionError.message
+  });
 }
 
+const [
+  sourceQuestions,
+  physics11Questions,
+  physics12Questions,
+  chemistry11Questions,
+  chemistry12Questions
+] = questionSets;
 
+validQuestions.push(
+  ...sourceQuestions.filter(
+    question =>
+      !isMigratedQuestionShard(question)
+  ),
+  ...physics11Questions,
+  ...physics12Questions,
+  ...chemistry11Questions,
+  ...chemistry12Questions
+);
 
 
       // =========================================================
