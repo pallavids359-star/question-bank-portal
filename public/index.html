@@ -2448,10 +2448,10 @@ async function storeQuestionImage(dataUrl, subject, klass) {
     .replace(/^class\s*/i, '')
     .trim();
 
-  // Physics, Chemistry and Biology Classes 11 and 12 use external Cloudinary images.
+  // Physics, Chemistry, Biology and Mathematics Classes 11 and 12 use external Cloudinary images.
   // Other shards continue using the existing Base64 behavior for now.
   if (
-    !['physics', 'chemistry', 'biology'].includes(normalizedSubject)
+    !['physics', 'chemistry', 'biology', 'mathematics'].includes(normalizedSubject)
     || !['11', '12'].includes(normalizedClass)
   ) {
     return dataUrl;

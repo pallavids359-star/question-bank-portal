@@ -8,6 +8,8 @@ const supabaseChemistry11 = require('../lib/supabase-chemistry-11');
 const supabaseChemistry12 = require('../lib/supabase-chemistry-12');
 const supabaseBiology11 = require('../lib/supabase-biology-11');
 const supabaseBiology12 = require('../lib/supabase-biology-12');
+const supabaseMathematics11 = require('../lib/supabase-mathematics-11');
+const supabaseMathematics12 = require('../lib/supabase-mathematics-12');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { toLogicalUser } = require('../lib/user-role');
 
@@ -46,7 +48,7 @@ function isMigratedQuestionShard(subject, klass) {
   const normalizedClass =
     normalizedQuestionClass(klass);
 
-  return ['physics', 'chemistry', 'biology'].includes(normalizedSubject)
+  return ['physics', 'chemistry', 'biology', 'mathematics'].includes(normalizedSubject)
     && ['11', '12'].includes(normalizedClass);
 }
 
@@ -57,6 +59,8 @@ const MIGRATED_QUESTION_CLIENTS = [
   supabaseChemistry12,
   supabaseBiology11,
   supabaseBiology12,
+  supabaseMathematics11,
+  supabaseMathematics12,
 ];
 
 async function readAllSince(
@@ -127,12 +131,16 @@ async function countEffectiveQuestions(applyFilters) {
     sourceChemistry12,
     sourceBiology11,
     sourceBiology12,
+    sourceMathematics11,
+    sourceMathematics12,
     shardPhysics11,
     shardPhysics12,
     shardChemistry11,
     shardChemistry12,
     shardBiology11,
-    shardBiology12
+    shardBiology12,
+    shardMathematics11,
+    shardMathematics12
   ] = await Promise.all([
     countRows('questions', applyFilters, supabase),
 
@@ -142,6 +150,8 @@ async function countEffectiveQuestions(applyFilters) {
     countRows('questions', sourceShardFilter('Chemistry', '12'), supabase),
     countRows('questions', sourceShardFilter('Biology', '11'), supabase),
     countRows('questions', sourceShardFilter('Biology', '12'), supabase),
+    countRows('questions', sourceShardFilter('Mathematics', '11'), supabase),
+    countRows('questions', sourceShardFilter('Mathematics', '12'), supabase),
 
     countRows('questions', applyFilters, supabasePhysics11),
     countRows('questions', applyFilters, supabasePhysics12),
@@ -149,6 +159,8 @@ async function countEffectiveQuestions(applyFilters) {
     countRows('questions', applyFilters, supabaseChemistry12),
     countRows('questions', applyFilters, supabaseBiology11),
     countRows('questions', applyFilters, supabaseBiology12),
+    countRows('questions', applyFilters, supabaseMathematics11),
+    countRows('questions', applyFilters, supabaseMathematics12),
   ]);
 
   return (
@@ -161,6 +173,8 @@ async function countEffectiveQuestions(applyFilters) {
         - sourceChemistry12
         - sourceBiology11
         - sourceBiology12
+        - sourceMathematics11
+        - sourceMathematics12
     )
     + shardPhysics11
     + shardPhysics12
@@ -168,6 +182,8 @@ async function countEffectiveQuestions(applyFilters) {
     + shardChemistry12
     + shardBiology11
     + shardBiology12
+    + shardMathematics11
+    + shardMathematics12
   );
 }
 
