@@ -481,6 +481,62 @@ function questionClientFor(subject, klass) {
   return supabase;
 }
 
+function questionReadSourcesFor(subject, klass) {
+  const normalizedSubject = canonicalSubject(subject);
+  const normalizedClass = normalizedQuestionClass(klass);
+  const subjectClients = {
+    Physics: { 11: supabasePhysics11, 12: supabasePhysics12 },
+    Chemistry: { 11: supabaseChemistry11, 12: supabaseChemistry12 },
+    Biology: { 11: supabaseBiology11, 12: supabaseBiology12 },
+    Mathematics: { 11: supabaseMathematics11, 12: supabaseMathematics12 },
+  };
+
+  if (normalizedClass.toLowerCase() === 'full syllabus') {
+    return [supabaseControl];
+  }
+
+  if (subjectClients[normalizedSubject]) {
+    if (normalizedClass === '11' || normalizedClass === '12') {
+      return [subjectClients[normalizedSubject][normalizedClass]];
+    }
+    return [
+      subjectClients[normalizedSubject][11],
+      subjectClients[normalizedSubject][12],
+      supabaseControl,
+    ];
+  }
+
+  if (normalizedClass === '11') {
+    return [
+      supabasePhysics11,
+      supabaseChemistry11,
+      supabaseBiology11,
+      supabaseMathematics11,
+    ];
+  }
+
+  if (normalizedClass === '12') {
+    return [
+      supabasePhysics12,
+      supabaseChemistry12,
+      supabaseBiology12,
+      supabaseMathematics12,
+    ];
+  }
+
+  return [
+    supabaseControl,
+    supabasePhysics11,
+    supabasePhysics12,
+    supabaseChemistry11,
+    supabaseChemistry12,
+    supabaseBiology11,
+    supabaseBiology12,
+    supabaseMathematics11,
+    supabaseMathematics12,
+  ];
+}
+
 function questionShardName(subject, klass) {
   const normalizedSubject = canonicalSubject(subject)
     .toLowerCase()
@@ -1056,48 +1112,87 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
 
 // â”€â”€ GET /api/questions?subject=X&qType=Y â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/', ...READ_ROLES, async (req, res) => {
-  const effectiveUser = await getEffectiveUser(req.user);
-  const paged = req.query.paged === '1' || req.query.page !== undefined;
-  const pageSize = Math.min(100, Math.max(10, Number.parseInt(req.query.pageSize, 10) || 25));
-  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
-  const offset = paged
-    ? (page - 1) * pageSize
-    : Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
-  const limit = paged
-    ? pageSize
-    : Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
-  const listUserRole = String(effectiveUser?.role || 'viewer').toLowerCase();
-  const listUserSubject = canonicalSubject(effectiveUser?.subject || 'All');
-  const listSubject = listUserRole !== 'admin' && listUserSubject !== 'All'
-    ? listUserSubject
-    : canonicalSubject(req.query.subject || '');
-  const questionClient = questionClientFor(listSubject, req.query.klass);
+  try {
+    const effectiveUser = await getEffectiveUser(req.user);
+    const paged = req.query.paged === '1' || req.query.page !== undefined;
+    const pageSize = Math.min(100, Math.max(10, Number.parseInt(req.query.pageSize, 10) || 25));
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const offset = paged
+      ? (page - 1) * pageSize
+      : Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    const limit = paged
+      ? pageSize
+      : Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
 
-  let query = questionClient
-    .from('questions')
-    .select('*', { count: paged ? 'exact' : undefined })
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .range(offset, offset + limit - 1);
+    const listUserRole = String(effectiveUser?.role || 'viewer').toLowerCase();
+    const listUserSubject = canonicalSubject(effectiveUser?.subject || 'All');
+    const listSubject = listUserRole !== 'admin' && listUserSubject !== 'All'
+      ? listUserSubject
+      : canonicalSubject(req.query.subject || '');
 
-  query = applySubjectFilter(query, effectiveUser, req.query.subject);
-  query = applyQuestionFilters(query, req.query);
+    const readSources = questionReadSourcesFor(listSubject, req.query.klass);
+    const perSourceEnd = Math.max(0, offset + limit - 1);
 
-  const { data, error, count } = await query;
-  if (error) {
-    return res.status(500).json({ error: 'Failed to fetch questions.', details: error.message });
+    const sourceResults = await Promise.all(readSources.map(async questionClient => {
+      let query = questionClient
+        .from('questions')
+        .select('*', { count: paged ? 'exact' : undefined })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(0, perSourceEnd);
+
+      query = applySubjectFilter(query, effectiveUser, req.query.subject);
+      query = applyQuestionFilters(query, req.query);
+
+      const { data, error, count } = await query;
+      if (error) throw error;
+
+      return {
+        rows: data || [],
+        count: Number(count) || 0,
+      };
+    }));
+
+    const seenIds = new Set();
+    const mergedRows = sourceResults
+      .flatMap(result => result.rows)
+      .filter(row => {
+        const id = String(row?.id || '');
+        if (!id || seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      })
+      .sort((a, b) => {
+        const aTime = Date.parse(a?.created_at || '') || 0;
+        const bTime = Date.parse(b?.created_at || '') || 0;
+        if (aTime !== bTime) return bTime - aTime;
+        return String(b?.id || '').localeCompare(String(a?.id || ''));
+      });
+
+    const questions = mergedRows
+      .slice(offset, offset + limit)
+      .map(toApi);
+
+    if (!paged) return res.json(questions);
+
+    const total = sourceResults.reduce(
+      (sum, result) => sum + result.count,
+      0
+    );
+
+    res.json({
+      items: questions,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to fetch questions.',
+      details: error.message,
+    });
   }
-  const questions = (data || []).map(toApi);
-  if (!paged) return res.json(questions);
-
-  const total = Number(count) || 0;
-  res.json({
-    items: questions,
-    page,
-    pageSize,
-    total,
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
-  });
 });
 
 // â”€â”€ POST /api/questions/duplicates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
