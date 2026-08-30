@@ -5,15 +5,18 @@ const path       = require('path');
 const { allowedOrigins } = require('./lib/config');
 
 // ── Supabase client ─────────────────────────────────────────────────────────
-let supabase;
-let supabaseControl;
-try {
-  supabase = require('./lib/supabase');
-  supabaseControl = require('./lib/supabase-control');
-} catch (error) {
-  console.error(error.message);
-  process.exit(1);
-}
+const supabaseControl = require('./lib/supabase-control');
+
+const questionHealthClients = [
+  { name: 'physics-11', client: require('./lib/supabase-physics-11') },
+  { name: 'physics-12', client: require('./lib/supabase-physics-12') },
+  { name: 'chemistry-11', client: require('./lib/supabase-chemistry-11') },
+  { name: 'chemistry-12', client: require('./lib/supabase-chemistry-12') },
+  { name: 'biology-11', client: require('./lib/supabase-biology-11') },
+  { name: 'biology-12', client: require('./lib/supabase-biology-12') },
+  { name: 'mathematics-11', client: require('./lib/supabase-mathematics-11') },
+  { name: 'mathematics-12', client: require('./lib/supabase-mathematics-12') },
+];
 
 // ── Route modules ───────────────────────────────────────────────────────────
 const questionRoutes  = require('./routes/questions');
@@ -62,14 +65,62 @@ app.use('/api', (req, res) => res.status(404).json({ success: false, error: 'API
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', async (req, res) => {
-  const [{ error: questionsError }, { error: sessionsError }] = await Promise.all([
-    supabase.from('questions').select('id').limit(1),
-    supabaseControl.from('login_history').select('id').limit(1),
-  ]);
-  if (questionsError || sessionsError) {
-    return res.status(503).json({ status: 'error', database: 'unavailable' });
+  const checks = [
+    {
+      name: 'control',
+      client: supabaseControl,
+      table: 'login_history',
+    },
+    {
+      name: 'grand-test-control',
+      client: supabaseControl,
+      table: 'questions',
+    },
+    ...questionHealthClients.map(({ name, client }) => ({
+      name,
+      client,
+      table: 'questions',
+    })),
+  ];
+
+  const results = await Promise.all(
+    checks.map(async ({ name, client, table }) => {
+      try {
+        const { error } = await client
+          .from(table)
+          .select('id')
+          .limit(1);
+
+        return {
+          name,
+          ok: !error,
+          error: error ? error.message : null,
+        };
+      } catch (error) {
+        return {
+          name,
+          ok: false,
+          error: error.message,
+        };
+      }
+    })
+  );
+
+  const failed = results.filter(result => !result.ok);
+
+  if (failed.length) {
+    return res.status(503).json({
+      status: 'error',
+      database: 'unavailable',
+      failed: failed.map(({ name, error }) => ({ name, error })),
+    });
   }
-  res.json({ status: 'ok', database: 'connected' });
+
+  return res.json({
+    status: 'ok',
+    database: 'connected',
+    services: results.map(({ name }) => name),
+  });
 });
 
 // ── Static frontend ──────────────────────────────────────────────────────────

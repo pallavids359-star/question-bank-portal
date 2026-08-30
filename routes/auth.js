@@ -2,8 +2,8 @@
 const express  = require('express');
 const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
-const supabase = require('../lib/supabase');
 const supabaseControl = require('../lib/supabase-control');
+const supabase = supabaseControl; // Grand Test / Full Syllabus question source
 const supabasePhysics11 = require('../lib/supabase-physics-11');
 const supabasePhysics12 = require('../lib/supabase-physics-12');
 const supabaseChemistry11 = require('../lib/supabase-chemistry-11');

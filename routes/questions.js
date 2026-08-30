@@ -119,6 +119,7 @@ function duplicateScopeKey(subject, klass, question) {
 async function loadDuplicateQuestionCache(forceRefresh = false) {
   const [
     sourceCountResult,
+    grandTestCountResult,
     physics11CountResult,
     physics12CountResult,
     chemistry11CountResult,
@@ -129,6 +130,7 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
     mathematics12CountResult
   ] = await Promise.all([
     supabase.from('questions').select('id', { count: 'exact', head: true }),
+    supabaseControl.from('questions').select('id', { count: 'exact', head: true }),
     supabasePhysics11.from('questions').select('id', { count: 'exact', head: true }),
     supabasePhysics12.from('questions').select('id', { count: 'exact', head: true }),
     supabaseChemistry11.from('questions').select('id', { count: 'exact', head: true }),
@@ -140,6 +142,7 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
   ]);
 
   if (sourceCountResult.error) throw sourceCountResult.error;
+  if (grandTestCountResult.error) throw grandTestCountResult.error;
   if (physics11CountResult.error) throw physics11CountResult.error;
   if (physics12CountResult.error) throw physics12CountResult.error;
   if (chemistry11CountResult.error) throw chemistry11CountResult.error;
@@ -151,6 +154,7 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
 
   const total =
     (Number(sourceCountResult.count) || 0) +
+    (Number(grandTestCountResult.count) || 0) +
     (Number(physics11CountResult.count) || 0) +
     (Number(physics12CountResult.count) || 0) +
     (Number(chemistry11CountResult.count) || 0) +
@@ -173,6 +177,7 @@ async function loadDuplicateQuestionCache(forceRefresh = false) {
 
     const sources = [
       { client: supabase, skipMigratedShards: true },
+      { client: supabaseControl, skipMigratedShards: false },
       { client: supabasePhysics11, skipMigratedShards: false },
       { client: supabasePhysics12, skipMigratedShards: false },
       { client: supabaseChemistry11, skipMigratedShards: false },
@@ -457,7 +462,14 @@ function isMigratedQuestionShard(subject, klass) {
     || isMathematics12(subject, klass);
 }
 
+function isGrandTestKlass(klass) {
+  return String(klass || '')
+    .replace(/^class\\s*/i, '')
+    .trim()
+    .toLowerCase() === 'full syllabus';
+}
 function questionClientFor(subject, klass) {
+  if (isGrandTestKlass(klass)) return supabaseControl;
   if (isPhysics11(subject, klass)) return supabasePhysics11;
   if (isPhysics12(subject, klass)) return supabasePhysics12;
   if (isChemistry11(subject, klass)) return supabaseChemistry11;
@@ -477,6 +489,8 @@ function questionShardName(subject, klass) {
   const normalizedClass = String(klass || '')
     .replace(/^class\s*/i, '')
     .trim();
+
+  if (normalizedClass.toLowerCase() === 'full syllabus') return 'qbp-grand-test';
 
   const knownSubjects = new Set([
     'physics',
@@ -570,6 +584,7 @@ async function findQuestionById(id) {
   }
 
   for (const shardClient of [
+    supabaseControl,
     supabasePhysics11,
     supabasePhysics12,
     supabaseChemistry11,
@@ -931,6 +946,7 @@ async function readFacetRows() {
   const rows = [];
   const sources = [
     { client: supabase, skipMigratedShards: true },
+    { client: supabaseControl, skipMigratedShards: false },
     { client: supabasePhysics11, skipMigratedShards: false },
     { client: supabasePhysics12, skipMigratedShards: false },
     { client: supabaseChemistry11, skipMigratedShards: false },
