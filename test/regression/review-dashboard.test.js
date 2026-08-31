@@ -34,10 +34,15 @@ test('editors receive update notifications and their unread badge is polled', ()
   assert.match(questions, /type: 'question_updated'/);
 });
 
-test('editor review-dashboard results are limited to sent or received workflows', () => {
+test('admin and editor dashboards show only questions reviewed by that user', () => {
   assert.match(notifications, /\.eq\('sender_id', userId\)/);
   assert.match(notifications, /\.eq\('recipient_id', userId\)/);
+  assert.match(notifications, /const reviewedQuestionIds = new Set\(/);
+  assert.match(notifications, /row\.type === 'question_review'/);
+  assert.match(notifications, /row\.type === 'question_updated'/);
+  assert.match(notifications, /reviewedQuestionIds\.has\(String\(row\.question_id \|\| ''\)\)/);
   assert.match(notifications, /const unique = new Map\(\)/);
+  assert.doesNotMatch(notifications, /if \(role === 'admin'\)/);
 });
 
 test('review, difficulty and accept locate questions in the migrated shards', () => {

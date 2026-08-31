@@ -280,37 +280,34 @@ router.get('/question-states', ...ACTIVE_USER, async (req, res) => {
   res.json({ data: [...latest.values()] });
 });
 
-// Admins can inspect every review workflow. Editors see only workflows they
-// participated in, which prevents subject or reviewer data leaking between
-// editor accounts. Status is derived from the newest existing notification,
-// so this works with the current notifications table and needs no migration.
+// Admins and Editors see only questions they personally reviewed. A received
+// question_updated row keeps that question in the dashboard after the original
+// actionable review notification has been removed from the contributor feed.
+// Status is derived from the newest event for those user-owned workflows.
 router.get('/review-dashboard', ...REVIEW_DASHBOARD_ROLES, async (req, res) => {
   const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
   const user = await effectiveUser(req.user);
-  const role = String(user?.role || '').toLowerCase();
+  const userId = user?.id || req.user.userId;
   const columns = 'id, recipient_id, sender_id, sender_name, question_id, type, title, message, difficulty, is_read, created_at, read_at, metadata';
 
-  let rows = [];
-  if (role === 'admin') {
-    const result = await supabase.from('notifications')
-      .select(columns)
-      .in('type', REVIEW_NOTIFICATION_TYPES)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (result.error) return isSchemaError(result.error) ? tableError(res, result.error) : res.status(500).json({ error: result.error.message });
-    rows = result.data || [];
-  } else {
-    const userId = user?.id || req.user.userId;
-    const [sent, received] = await Promise.all([
-      supabase.from('notifications').select(columns).eq('sender_id', userId).in('type', REVIEW_NOTIFICATION_TYPES).order('created_at', { ascending: false }).limit(limit),
-      supabase.from('notifications').select(columns).eq('recipient_id', userId).in('type', REVIEW_NOTIFICATION_TYPES).order('created_at', { ascending: false }).limit(limit),
-    ]);
-    const error = sent.error || received.error;
-    if (error) return isSchemaError(error) ? tableError(res, error) : res.status(500).json({ error: error.message });
-    const unique = new Map();
-    for (const row of [...(sent.data || []), ...(received.data || [])]) unique.set(String(row.id), row);
-    rows = [...unique.values()].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, limit);
+  const [sent, received] = await Promise.all([
+    supabase.from('notifications').select(columns).eq('sender_id', userId).in('type', REVIEW_NOTIFICATION_TYPES).order('created_at', { ascending: false }).limit(limit),
+    supabase.from('notifications').select(columns).eq('recipient_id', userId).in('type', REVIEW_NOTIFICATION_TYPES).order('created_at', { ascending: false }).limit(limit),
+  ]);
+  const error = sent.error || received.error;
+  if (error) return isSchemaError(error) ? tableError(res, error) : res.status(500).json({ error: error.message });
+
+  const reviewedQuestionIds = new Set([
+    ...(sent.data || []).filter(row => row.type === 'question_review').map(row => String(row.question_id || '')),
+    ...(received.data || []).filter(row => row.type === 'question_updated').map(row => String(row.question_id || '')),
+  ].filter(Boolean));
+  const unique = new Map();
+  for (const row of [...(sent.data || []), ...(received.data || [])]) {
+    if (reviewedQuestionIds.has(String(row.question_id || ''))) unique.set(String(row.id), row);
   }
+  const rows = [...unique.values()]
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    .slice(0, limit);
 
   const byQuestion = new Map();
   for (const row of rows) {
