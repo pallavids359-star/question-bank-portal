@@ -40,10 +40,10 @@ test('Accept button can reverse acceptance without deleting history', () => {
   assert.doesNotMatch(acceptRoute, /from\('notifications'\)\.delete/);
 });
 
-test('a recipient can delete only their own review notification', () => {
+test('a recipient can delete only their own visible review or update notification', () => {
   assert.match(notifications, /router\.delete\('\/:id'/);
   assert.match(notifications, /\.eq\('recipient_id', req\.user\.userId\)/);
-  assert.match(notifications, /\.eq\('type', 'question_review'\)/);
+  assert.match(notifications, /\.in\('type', \['question_review', 'question_updated'\]\)/);
   assert.match(frontend, /deleteNotification\('\$\{n\.id\}'\)/);
 });
 

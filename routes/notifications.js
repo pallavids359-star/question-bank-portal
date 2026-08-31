@@ -2,6 +2,14 @@
 
 const express = require('express');
 const supabase = require('../lib/supabase-control');
+const supabasePhysics11 = require('../lib/supabase-physics-11');
+const supabasePhysics12 = require('../lib/supabase-physics-12');
+const supabaseChemistry11 = require('../lib/supabase-chemistry-11');
+const supabaseChemistry12 = require('../lib/supabase-chemistry-12');
+const supabaseBiology11 = require('../lib/supabase-biology-11');
+const supabaseBiology12 = require('../lib/supabase-biology-12');
+const supabaseMathematics11 = require('../lib/supabase-mathematics-11');
+const supabaseMathematics12 = require('../lib/supabase-mathematics-12');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../lib/audit');
 const { toLogicalUser } = require('../lib/user-role');
@@ -26,11 +34,63 @@ async function requireActiveSession(req, res, next) {
 
 const ACTIVE_USER = [requireAuth, requireActiveSession];
 const EDITOR_ONLY = [requireAuth, requireActiveSession, requireRole('editor', 'admin')];
+const REVIEW_DASHBOARD_ROLES = [requireAuth, requireActiveSession, requireRole('editor', 'admin')];
+
+const REVIEW_NOTIFICATION_TYPES = [
+  'question_review',
+  'question_updated',
+  'question_accepted',
+  'question_acceptance_reversed',
+];
+
+const QUESTION_CLIENTS = [
+  supabase,
+  supabasePhysics11,
+  supabasePhysics12,
+  supabaseChemistry11,
+  supabaseChemistry12,
+  supabaseBiology11,
+  supabaseBiology12,
+  supabaseMathematics11,
+  supabaseMathematics12,
+];
 
 function canonicalSubject(subject) {
   const value = String(subject || '').trim();
   const known = { physics: 'Physics', chemistry: 'Chemistry', biology: 'Biology', mathematics: 'Mathematics', maths: 'Mathematics', all: 'All' };
   return known[value.toLowerCase()] || value;
+}
+
+function normalizedClass(klass) {
+  return String(klass || '').replace(/^class\s*/i, '').trim();
+}
+
+function hintedQuestionClient(subject, klass) {
+  const key = `${canonicalSubject(subject)}:${normalizedClass(klass)}`;
+  return {
+    'Physics:11': supabasePhysics11,
+    'Physics:12': supabasePhysics12,
+    'Chemistry:11': supabaseChemistry11,
+    'Chemistry:12': supabaseChemistry12,
+    'Biology:11': supabaseBiology11,
+    'Biology:12': supabaseBiology12,
+    'Mathematics:11': supabaseMathematics11,
+    'Mathematics:12': supabaseMathematics12,
+  }[key] || (normalizedClass(klass).toLowerCase() === 'full syllabus' ? supabase : null);
+}
+
+async function findQuestionAcrossShards(questionId, subject, klass) {
+  const hinted = hintedQuestionClient(subject, klass);
+  const clients = hinted
+    ? [hinted, ...QUESTION_CLIENTS.filter(client => client !== hinted)]
+    : QUESTION_CLIENTS;
+
+  for (const client of clients) {
+    const result = await client.from('questions').select('*').eq('id', questionId).maybeSingle();
+    if (result.error) return { question: null, client, error: result.error };
+    if (result.data) return { question: result.data, client, error: null };
+  }
+  return { question: null, client: hinted || supabase, error: null };
 }
 
 function validDifficulty(value) {
@@ -75,7 +135,11 @@ async function getQuestionForEditor(req, res) {
     res.status(400).json({ error: 'questionId is required.' });
     return null;
   }
-  const { data: question, error } = await supabase.from('questions').select('*').eq('id', questionId).maybeSingle();
+  const { question, client, error } = await findQuestionAcrossShards(
+    questionId,
+    req.body?.subject,
+    req.body?.klass
+  );
   if (error) {
     res.status(500).json({ error: error.message });
     return null;
@@ -89,7 +153,7 @@ async function getQuestionForEditor(req, res) {
     res.status(403).json({ error: `You can review only ${user.subject || 'your assigned subject'} questions.` });
     return null;
   }
-  return { questionId, question, user };
+  return { questionId, question, questionClient: client, user };
 }
 
 async function findRecipient(question) {
@@ -147,11 +211,14 @@ async function notifyOwner({ question, questionId, user, type, title, message, d
 
 router.get('/', ...ACTIVE_USER, async (req, res) => {
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+  const user = await effectiveUser(req.user);
+  const role = String(user?.role || '').toLowerCase();
+  const visibleTypes = role === 'editor' ? ['question_updated'] : ['question_review'];
   const { data, error } = await supabase
     .from('notifications')
     .select('id, recipient_id, sender_id, sender_name, question_id, type, title, message, difficulty, is_read, created_at, read_at')
     .eq('recipient_id', req.user.userId)
-    .eq('type', 'question_review')
+    .in('type', visibleTypes)
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) return isSchemaError(error) ? tableError(res, error) : res.status(500).json({ error: error.message });
@@ -162,11 +229,14 @@ router.get('/', ...ACTIVE_USER, async (req, res) => {
 // Return only the unread count so the badge can update without reloading the
 // page or downloading the complete notification list.
 router.get('/unread-count', ...ACTIVE_USER, async (req, res) => {
+  const user = await effectiveUser(req.user);
+  const role = String(user?.role || '').toLowerCase();
+  const visibleTypes = role === 'editor' ? ['question_updated'] : ['question_review'];
   const { count, error } = await supabase
     .from('notifications')
     .select('id', { count: 'exact', head: true })
     .eq('recipient_id', req.user.userId)
-    .eq('type', 'question_review')
+    .in('type', visibleTypes)
     .eq('is_read', false);
 
   if (error) {
@@ -185,9 +255,12 @@ router.get('/question-states', ...ACTIVE_USER, async (req, res) => {
   if (!ids.length) return res.json({ data: [] });
   const user = await effectiveUser(req.user);
 
-  const questionResult = await supabase.from('questions').select('id, subject').in('id', ids);
-  if (questionResult.error) return res.status(500).json({ error: questionResult.error.message });
-  const allowedIds = (questionResult.data || [])
+  const questionResults = await Promise.all(
+    QUESTION_CLIENTS.map(client => client.from('questions').select('id, subject').in('id', ids))
+  );
+  const questionError = questionResults.find(result => result.error)?.error;
+  if (questionError) return res.status(500).json({ error: questionError.message });
+  const allowedIds = questionResults.flatMap(result => result.data || [])
     .filter(question => hasSubjectAccess(user, question.subject))
     .map(question => String(question.id));
   if (!allowedIds.length) return res.json({ data: [] });
@@ -207,19 +280,87 @@ router.get('/question-states', ...ACTIVE_USER, async (req, res) => {
   res.json({ data: [...latest.values()] });
 });
 
+// Admins can inspect every review workflow. Editors see only workflows they
+// participated in, which prevents subject or reviewer data leaking between
+// editor accounts. Status is derived from the newest existing notification,
+// so this works with the current notifications table and needs no migration.
+router.get('/review-dashboard', ...REVIEW_DASHBOARD_ROLES, async (req, res) => {
+  const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
+  const user = await effectiveUser(req.user);
+  const role = String(user?.role || '').toLowerCase();
+  const columns = 'id, recipient_id, sender_id, sender_name, question_id, type, title, message, difficulty, is_read, created_at, read_at, metadata';
+
+  let rows = [];
+  if (role === 'admin') {
+    const result = await supabase.from('notifications')
+      .select(columns)
+      .in('type', REVIEW_NOTIFICATION_TYPES)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (result.error) return isSchemaError(result.error) ? tableError(res, result.error) : res.status(500).json({ error: result.error.message });
+    rows = result.data || [];
+  } else {
+    const userId = user?.id || req.user.userId;
+    const [sent, received] = await Promise.all([
+      supabase.from('notifications').select(columns).eq('sender_id', userId).in('type', REVIEW_NOTIFICATION_TYPES).order('created_at', { ascending: false }).limit(limit),
+      supabase.from('notifications').select(columns).eq('recipient_id', userId).in('type', REVIEW_NOTIFICATION_TYPES).order('created_at', { ascending: false }).limit(limit),
+    ]);
+    const error = sent.error || received.error;
+    if (error) return isSchemaError(error) ? tableError(res, error) : res.status(500).json({ error: error.message });
+    const unique = new Map();
+    for (const row of [...(sent.data || []), ...(received.data || [])]) unique.set(String(row.id), row);
+    rows = [...unique.values()].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, limit);
+  }
+
+  const byQuestion = new Map();
+  for (const row of rows) {
+    const questionId = String(row.question_id || '').trim();
+    if (!questionId) continue;
+    if (!byQuestion.has(questionId)) {
+      const state = stateFromNotification(row);
+      if (row.type === 'question_updated') {
+        state.status = 'updated';
+        state.last_action = 'question_updated';
+      }
+      byQuestion.set(questionId, {
+        question_id: questionId,
+        status: state.status,
+        last_action: state.last_action,
+        last_editor_name: state.last_editor_name,
+        last_message: row.message || '',
+        updated_at: row.created_at || null,
+        notification_read: Boolean(row.is_read),
+        title: row.title || '',
+        chapter: row.metadata?.chapter || '',
+        preview: row.metadata?.preview || '',
+      });
+    }
+  }
+
+  const data = [...byQuestion.values()];
+  const totals = data.reduce((summary, item) => {
+    summary.total += 1;
+    summary[item.status] = (summary[item.status] || 0) + 1;
+    return summary;
+  }, { total: 0, pending: 0, reviewed: 0, updated: 0, accepted: 0 });
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ data, totals });
+});
+
 // Difficulty is independent from review messages.
 router.post('/difficulty', ...EDITOR_ONLY, async (req, res) => {
   const difficulty = validDifficulty(req.body?.difficulty);
   if (!difficulty) return res.status(400).json({ error: 'Select Easy, Medium, or Hard.' });
   const context = await getQuestionForEditor(req, res);
   if (!context) return;
-  const { questionId, question, user } = context;
+  const { questionId, question, questionClient, user } = context;
   const payload = { solution_text: cleanSolutionWithDifficulty(question, difficulty), updated_by_name: user.name || 'Editor' };
   if (Object.prototype.hasOwnProperty.call(question, 'difficulty')) payload.difficulty = difficulty;
-  let result = await supabase.from('questions').update(payload).eq('id', questionId).select('id').maybeSingle();
+  let result = await questionClient.from('questions').update(payload).eq('id', questionId).select('id').maybeSingle();
   if (result.error && /difficulty|column|schema/i.test(result.error.message || '')) {
     delete payload.difficulty;
-    result = await supabase.from('questions').update(payload).eq('id', questionId).select('id').maybeSingle();
+    result = await questionClient.from('questions').update(payload).eq('id', questionId).select('id').maybeSingle();
   }
   if (result.error) return res.status(400).json({ error: result.error.message });
   await writeAuditLog({ userId: user.id || user.userId, userName: user.name || 'Editor', action: 'SET_QUESTION_DIFFICULTY', resourceType: 'question', resourceId: questionId, details: { difficulty } }).catch(() => {});
@@ -349,7 +490,7 @@ router.delete('/:id', ...ACTIVE_USER, async (req, res) => {
     .delete()
     .eq('id', req.params.id)
     .eq('recipient_id', req.user.userId)
-    .eq('type', 'question_review')
+    .in('type', ['question_review', 'question_updated'])
     .select('id')
     .maybeSingle();
 

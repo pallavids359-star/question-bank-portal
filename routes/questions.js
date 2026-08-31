@@ -1532,12 +1532,12 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
       .from('notifications')
       .select('sender_id, sender_name, type')
       .eq('question_id', req.params.id)
-      .in('type', ['question_review', 'question_accepted', 'question_acceptance_reversed'])
+      .eq('type', 'question_review')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (reviewNotif && reviewNotif.type === 'question_review' && reviewNotif.sender_id) {
+    if (reviewNotif && reviewNotif.sender_id) {
       reviewerId = reviewNotif.sender_id;
     } else if (existingQuestion.review_status === 'reviewed' && existingQuestion.reviewed_by) {
       reviewerId = existingQuestion.reviewed_by;
