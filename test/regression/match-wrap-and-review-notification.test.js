@@ -42,7 +42,7 @@ test('Match question instruction is optional and does not repeat embedded legacy
 
 test('Question update endpoint notifies original reviewer when question has an active review', () => {
   assert.match(questionsRoute, /router\.put\('\/:id'/);
-  assert.match(questionsRoute, /eq\('type', 'question_review'\)/);
+  assert.match(questionsRoute, /in\('type', \['question_review', 'question_updated'\]\)/);
   assert.match(questionsRoute, /type: 'question_updated'/);
   assert.match(questionsRoute, /title: 'Question Updated'/);
   assert.match(questionsRoute, /The question you reviewed has been updated by/);

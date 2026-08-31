@@ -27,11 +27,19 @@ test('review dashboard reports pending, reviewed, updated and accepted states', 
 });
 
 test('editors receive update notifications and their unread badge is polled', () => {
-  assert.match(notifications, /role === 'editor' \? \['question_updated'\] : \['question_review'\]/);
+  assert.match(notifications, /if \(normalizedRole === 'admin'\) return \['question_review', 'question_updated'\]/);
+  assert.match(notifications, /if \(normalizedRole === 'editor'\) return \['question_updated'\]/);
   assert.match(html, /\['admin','adder','editor'\]\.includes\(role\)/);
-  assert.match(questions, /\.eq\('type', 'question_review'\)/);
+  assert.match(questions, /\.in\('type', \['question_review', 'question_updated'\]\)/);
   assert.match(questions, /recipient_id: reviewerId/);
   assert.match(questions, /type: 'question_updated'/);
+});
+
+test('later edits keep notifying the same reviewer and verify insertion', () => {
+  assert.match(questions, /reviewNotif\?\.type === 'question_updated'/);
+  assert.match(questions, /reviewerId = reviewNotif\.recipient_id/);
+  assert.match(questions, /if \(reviewerLookupError\) throw reviewerLookupError/);
+  assert.match(questions, /if \(insertRes\.error\) throw insertRes\.error/);
 });
 
 test('admin and editor dashboards show only questions reviewed by that user', () => {

@@ -1528,17 +1528,20 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
   try {
     let reviewerId = null;
 
-    const { data: reviewNotif } = await supabaseControl
+    const { data: reviewNotif, error: reviewerLookupError } = await supabaseControl
       .from('notifications')
-      .select('sender_id, sender_name, type')
+      .select('recipient_id, sender_id, sender_name, type')
       .eq('question_id', req.params.id)
-      .eq('type', 'question_review')
+      .in('type', ['question_review', 'question_updated'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (reviewerLookupError) throw reviewerLookupError;
 
-    if (reviewNotif && reviewNotif.sender_id) {
+    if (reviewNotif?.type === 'question_review' && reviewNotif.sender_id) {
       reviewerId = reviewNotif.sender_id;
+    } else if (reviewNotif?.type === 'question_updated' && reviewNotif.recipient_id) {
+      reviewerId = reviewNotif.recipient_id;
     } else if (existingQuestion.review_status === 'reviewed' && existingQuestion.reviewed_by) {
       reviewerId = existingQuestion.reviewed_by;
     }
@@ -1570,12 +1573,13 @@ router.put('/:id', ...EDIT_ROLES, async (req, res) => {
         },
       };
 
-      let insertRes = await supabaseControl.from('notifications').insert(notifPayload);
+      let insertRes = await supabaseControl.from('notifications').insert(notifPayload).select('id').maybeSingle();
       if (insertRes.error && (insertRes.error.message.includes('recipient_id') || insertRes.error.message.includes('column'))) {
         delete notifPayload.recipient_id;
         notifPayload.user_id = reviewerId;
-        await supabaseControl.from('notifications').insert(notifPayload).catch(() => {});
+        insertRes = await supabaseControl.from('notifications').insert(notifPayload).select('id').maybeSingle();
       }
+      if (insertRes.error) throw insertRes.error;
     }
   } catch (notifErr) {
     console.warn('Review update notification warning:', notifErr.message);

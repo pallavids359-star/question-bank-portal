@@ -100,6 +100,13 @@ function validDifficulty(value) {
     : '';
 }
 
+function visibleNotificationTypes(role) {
+  const normalizedRole = String(role || '').toLowerCase();
+  if (normalizedRole === 'admin') return ['question_review', 'question_updated'];
+  if (normalizedRole === 'editor') return ['question_updated'];
+  return ['question_review'];
+}
+
 function isSchemaError(error) {
   return /notifications|relation|schema cache/i.test(String(error?.message || ''));
 }
@@ -213,7 +220,7 @@ router.get('/', ...ACTIVE_USER, async (req, res) => {
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
   const user = await effectiveUser(req.user);
   const role = String(user?.role || '').toLowerCase();
-  const visibleTypes = role === 'editor' ? ['question_updated'] : ['question_review'];
+  const visibleTypes = visibleNotificationTypes(role);
   const { data, error } = await supabase
     .from('notifications')
     .select('id, recipient_id, sender_id, sender_name, question_id, type, title, message, difficulty, is_read, created_at, read_at')
@@ -231,7 +238,7 @@ router.get('/', ...ACTIVE_USER, async (req, res) => {
 router.get('/unread-count', ...ACTIVE_USER, async (req, res) => {
   const user = await effectiveUser(req.user);
   const role = String(user?.role || '').toLowerCase();
-  const visibleTypes = role === 'editor' ? ['question_updated'] : ['question_review'];
+  const visibleTypes = visibleNotificationTypes(role);
   const { count, error } = await supabase
     .from('notifications')
     .select('id', { count: 'exact', head: true })

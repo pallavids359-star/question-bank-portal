@@ -9,9 +9,9 @@ test('notification list and unread badge select the notification type for the cu
   const listRoute = source.slice(source.indexOf("router.get('/',"), source.indexOf("router.get('/unread-count'"));
   const countRoute = source.slice(source.indexOf("router.get('/unread-count'"), source.indexOf("router.get('/question-states'"));
 
-  assert.match(listRoute, /role === 'editor' \? \['question_updated'\] : \['question_review'\]/);
+  assert.match(listRoute, /visibleNotificationTypes\(role\)/);
   assert.match(listRoute, /\.in\('type', visibleTypes\)/);
-  assert.match(countRoute, /role === 'editor' \? \['question_updated'\] : \['question_review'\]/);
+  assert.match(countRoute, /visibleNotificationTypes\(role\)/);
   assert.match(countRoute, /\.in\('type', visibleTypes\)/);
 });
 
