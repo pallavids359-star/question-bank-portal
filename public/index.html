@@ -828,53 +828,6 @@ textarea{resize:vertical;min-height:70px;}
   border-color:var(--danger);
 }
 
-.question-bulk-toolbar{
-  display:flex;
-  align-items:center;
-  flex-wrap:wrap;
-  gap:10px;
-  margin:14px 0;
-  padding:14px;
-  border:1px solid #46516a;
-  border-radius:10px;
-  background:#1a2030;
-}
-.question-bulk-toolbar[hidden]{display:none!important;}
-.question-bulk-select{
-  display:flex;
-  align-items:center;
-  gap:9px;
-  min-height:40px;
-  padding:0 12px;
-  color:#fff;
-  font-size:14px;
-  font-weight:700;
-  cursor:pointer;
-}
-.question-bulk-select input{width:18px;height:18px;accent-color:var(--gold);}
-.question-bulk-count{min-width:82px;color:#d5dcec;font-size:14px;font-weight:700;}
-.question-bulk-toolbar .icon-btn{
-  width:auto;
-  min-width:125px;
-  height:40px;
-  padding:0 15px;
-  color:#fff;
-  border-width:1px;
-  font-size:13px;
-  font-weight:800;
-}
-.question-bulk-toolbar .bulk-review{border-color:#21a8c7;background:rgba(33,168,199,.15);}
-.question-bulk-toolbar .bulk-accept{border-color:#4caf7d;background:rgba(76,175,125,.16);}
-.question-bulk-toolbar .icon-btn.bulk-delete{width:auto;min-width:125px;padding:0 15px;border-color:#e55b64;background:rgba(229,91,100,.14);color:#ff9ca3;}
-.question-bulk-toolbar .bulk-clear{min-width:100px;border-color:#758198;background:#252d3e;}
-.question-bulk-toolbar .icon-btn:disabled{opacity:.48;color:#c1c8d6;cursor:not-allowed;}
-@media(max-width:700px){
-  .question-bulk-toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
-  .question-bulk-select,.question-bulk-count{grid-column:1/-1;}
-  .question-bulk-toolbar .icon-btn,
-  .question-bulk-toolbar .icon-btn.bulk-delete{width:100%;min-width:0;}
-}
-
 .review-btn:hover{
   color:#00b4d8;
   border-color:#00b4d8;
@@ -1774,13 +1727,13 @@ img,svg,canvas{max-width:100%;}
 </select>
 
 </div>
-            <div id="questionBulkToolbar" class="question-bulk-toolbar" hidden>
-              <label class="question-bulk-select"><input type="checkbox" id="selectVisibleQuestions"> Select visible questions</label>
-              <span id="selectedQuestionCount" class="question-bulk-count">0 selected</span>
-              <button type="button" class="icon-btn bulk-review" id="bulkReviewBtn">Review selected</button>
-              <button type="button" class="icon-btn bulk-accept" id="bulkAcceptBtn">Accept selected</button>
-              <button type="button" class="icon-btn bulk-delete" id="bulkDeleteBtn">Delete selected</button>
-              <button type="button" class="icon-btn bulk-clear" id="bulkClearBtn">Clear selection</button>
+            <div id="questionBulkToolbar" hidden style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0;padding:10px 12px;border:1px solid #2e364a;border-radius:8px;background:#151923;">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="selectVisibleQuestions"> Select visible</label>
+              <span id="selectedQuestionCount" style="color:#aab4ca;font-size:13px;">0 selected</span>
+              <button type="button" class="icon-btn" id="bulkReviewBtn">Review selected</button>
+              <button type="button" class="icon-btn accept-btn" id="bulkAcceptBtn">Accept selected</button>
+              <button type="button" class="icon-btn del" id="bulkDeleteBtn">Delete selected</button>
+              <button type="button" class="icon-btn" id="bulkClearBtn">Clear</button>
             </div>
             <div class="count-line" id="countLine"></div>
             <div id="listContainer"></div>
@@ -6193,7 +6146,7 @@ function updateQuestionBulkToolbar(){
   const mayReview=canReviewQuestions();
   const visible=mayDelete||mayReview;
   toolbar.hidden=!visible;
-  toolbar.style.display=visible?'':'none';
+  toolbar.style.display=visible?'flex':'none';
   const reviewBtn=document.getElementById('bulkReviewBtn');
   const acceptBtn=document.getElementById('bulkAcceptBtn');
   const deleteBtn=document.getElementById('bulkDeleteBtn');
