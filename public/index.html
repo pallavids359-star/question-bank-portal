@@ -1727,6 +1727,14 @@ img,svg,canvas{max-width:100%;}
 </select>
 
 </div>
+            <div id="questionBulkToolbar" hidden style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0;padding:10px 12px;border:1px solid #2e364a;border-radius:8px;background:#151923;">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="selectVisibleQuestions"> Select visible</label>
+              <span id="selectedQuestionCount" style="color:#aab4ca;font-size:13px;">0 selected</span>
+              <button type="button" class="icon-btn" id="bulkReviewBtn">Review selected</button>
+              <button type="button" class="icon-btn accept-btn" id="bulkAcceptBtn">Accept selected</button>
+              <button type="button" class="icon-btn del" id="bulkDeleteBtn">Delete selected</button>
+              <button type="button" class="icon-btn" id="bulkClearBtn">Clear</button>
+            </div>
             <div class="count-line" id="countLine"></div>
             <div id="listContainer"></div>
             <div class="question-pagination" id="questionPagination" style="display:none;">
@@ -2355,6 +2363,7 @@ var questionTotalPages = 1;
 var questionFacets = { subjects:[], classes:[], chapters:[], concepts:[], types:[], contributors:[] };
 var questionTimeframe = '';
 var questionLoadSequence = 0;
+var selectedQuestionIds = new Map();
 
 // fillSelect: used by bulk-import.js
 function fillSelect(id, options, placeholder) {
@@ -2880,6 +2889,8 @@ function sameSubject(left, right) {
 function applyRoleRestrictions() {
   const user = Auth.getUser() || {};
   const canAdd = Auth.can('add');
+  renderSavedQuestionCount();
+  updateQuestionBulkToolbar();
   // Editors open this form only by clicking Edit on an existing question.
   const formCard = document.getElementById('questionFormCard');
   if (formCard) formCard.style.display = canAdd ? '' : 'none';
@@ -6108,6 +6119,108 @@ function renderStaticPreview(raw){
   return span;
 }
 
+function renderSavedQuestionCount(){
+  const countLine=document.getElementById('countLine');
+  if(!countLine)return;
+  const isViewer=String(Auth.getRole()||'').toLowerCase()==='viewer';
+  countLine.hidden=isViewer;
+  countLine.setAttribute('aria-hidden',String(isViewer));
+  countLine.textContent=isViewer
+    ? ''
+    : questionTotal+' question'+(questionTotal===1?'':'s');
+}
+
+function canReviewQuestions(){
+  const role=String(Auth.getRole()||'').toLowerCase();
+  return role==='admin'||role==='editor';
+}
+
+function selectableQuestionsOnPage(){
+  return allQuestions.filter(q=>q&&q.id!==undefined&&q.id!==null);
+}
+
+function updateQuestionBulkToolbar(){
+  const toolbar=document.getElementById('questionBulkToolbar');
+  if(!toolbar)return;
+  const mayDelete=Auth.can('delete');
+  const mayReview=canReviewQuestions();
+  const visible=mayDelete||mayReview;
+  toolbar.hidden=!visible;
+  toolbar.style.display=visible?'flex':'none';
+  const reviewBtn=document.getElementById('bulkReviewBtn');
+  const acceptBtn=document.getElementById('bulkAcceptBtn');
+  const deleteBtn=document.getElementById('bulkDeleteBtn');
+  if(reviewBtn)reviewBtn.style.display=mayReview?'':'none';
+  if(acceptBtn)acceptBtn.style.display=mayReview?'':'none';
+  if(deleteBtn)deleteBtn.style.display=mayDelete?'':'none';
+  const count=document.getElementById('selectedQuestionCount');
+  if(count)count.textContent=selectedQuestionIds.size+' selected';
+  [reviewBtn,acceptBtn,deleteBtn,document.getElementById('bulkClearBtn')].forEach(button=>{
+    if(button)button.disabled=selectedQuestionIds.size===0;
+  });
+  const selectVisible=document.getElementById('selectVisibleQuestions');
+  if(selectVisible){
+    const pageIds=selectableQuestionsOnPage().map(q=>String(q.id));
+    const selectedCount=pageIds.filter(id=>selectedQuestionIds.has(id)).length;
+    selectVisible.checked=pageIds.length>0&&selectedCount===pageIds.length;
+    selectVisible.indeterminate=selectedCount>0&&selectedCount<pageIds.length;
+  }
+}
+
+function selectedQuestions(){
+  return Array.from(selectedQuestionIds.values());
+}
+
+async function runQuestionBatch(action,questions,concurrency=6){
+  const results=[];
+  for(let index=0;index<questions.length;index+=concurrency){
+    const chunk=questions.slice(index,index+concurrency);
+    results.push(...await Promise.allSettled(chunk.map(action)));
+  }
+  return results;
+}
+
+async function bulkReviewQuestions(){
+  if(!canReviewQuestions())return showToast('Only an Admin or Editor can review questions.',true);
+  const questions=selectedQuestions();
+  const message=prompt('Enter one review message for '+questions.length+' selected question(s):','');
+  if(message===null)return;
+  const cleanMessage=String(message).trim();
+  if(!cleanMessage)return showToast('Please enter a review message.',true);
+  const results=await runQuestionBatch(q=>apiReq('/api/notifications/review',{method:'POST',body:JSON.stringify({questionId:q.id,subject:q.subject,klass:q.klass,message:cleanMessage})}),questions);
+  finishQuestionBatch('reviewed',questions,results);
+}
+
+async function bulkAcceptQuestions(){
+  if(!canReviewQuestions())return showToast('Only an Admin or Editor can accept questions.',true);
+  const questions=selectedQuestions();
+  if(!confirm('Accept '+questions.length+' selected question(s)?'))return;
+  const results=await runQuestionBatch(q=>apiReq('/api/notifications/accept',{method:'POST',body:JSON.stringify({questionId:q.id,subject:q.subject,klass:q.klass,accepted:true})}),questions);
+  finishQuestionBatch('accepted',questions,results);
+}
+
+async function bulkDeleteQuestions(){
+  if(!Auth.can('delete'))return showToast('Only an Admin or Adder can delete questions.',true);
+  const questions=selectedQuestions();
+  if(!confirm('Delete '+questions.length+' selected question(s)? This cannot be undone.'))return;
+  const results=await runQuestionBatch(q=>apiRequest('/'+encodeURIComponent(q.id),{method:'DELETE'}),questions);
+  finishQuestionBatch('deleted',questions,results,true);
+}
+
+function finishQuestionBatch(action,questions,results,reload=false){
+  let succeeded=0;
+  results.forEach((result,index)=>{
+    if(result.status==='fulfilled'){
+      succeeded++;
+      selectedQuestionIds.delete(String(questions[index].id));
+    }
+  });
+  const failed=results.length-succeeded;
+  showToast(succeeded+' question(s) '+action+(failed?' · '+failed+' failed':''),failed>0);
+  updateQuestionBulkToolbar();
+  if(reload)loadQuestions(questionPage,true,false);else loadQuestions(questionPage,false,false);
+}
+
 function renderList(){
   if(!Array.isArray(allQuestions)) allQuestions = [];
   const listContainer=document.getElementById('listContainer');
@@ -6124,10 +6237,9 @@ function renderList(){
   const typeF=fType ? fType.value : '';
   const assignedSubject=assignedSubjectFor(Auth.getUser());
   const filtered=allQuestions.filter(q=>q && (!assignedSubject||sameSubject(q.subject,assignedSubject))&&(!subjF||sameSubject(q.subject,subjF))&&(!classF||String(q.klass||'').replace(/^class\s*/i,'').trim()===classF)&&(!chapterF||q.chapter===chapterF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
-  const cl=document.getElementById('countLine');
-  if(cl) cl.textContent=questionTotal+' question'+(questionTotal===1?'':'s');
+  renderSavedQuestionCount();
   listContainer.innerHTML='';
-  if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';renderQuestionPagination();refreshViewerProtection();return;}
+  if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';renderQuestionPagination();updateQuestionBulkToolbar();refreshViewerProtection();return;}
 
   const canEdit = Auth.can('edit');
 const canDelete = Auth.can('delete');
@@ -6142,6 +6254,16 @@ const isAdmin = currentRole === 'admin';
     const item=document.createElement('div');item.className='list-item';item.dataset.id=q.id;
     if(q.qType==='match')item.classList.add('match-question');
     const top=document.createElement('div');top.className='li-top';
+    if(canDelete||isEditor||isAdmin){
+      const select=document.createElement('input');
+      select.type='checkbox';select.className='question-select';select.title='Select this question';
+      select.checked=selectedQuestionIds.has(String(q.id));
+      select.addEventListener('change',()=>{
+        if(select.checked)selectedQuestionIds.set(String(q.id),q);else selectedQuestionIds.delete(String(q.id));
+        updateQuestionBulkToolbar();
+      });
+      top.appendChild(select);
+    }
     const main=document.createElement('div');main.style.flex='1';
     const meta=document.createElement('div');meta.className='li-meta';
     meta.innerHTML=`<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(chapterDisplayName(q.subject,q.klass,q.chapter))} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
@@ -6485,6 +6607,7 @@ if(canDelete){
   });
   if(renderErrors>0) console.warn('[QBP] '+renderErrors+' question(s) failed to render. Check errors above.');
   renderQuestionPagination();
+  updateQuestionBulkToolbar();
   refreshViewerProtection();
 }
 
@@ -6614,6 +6737,19 @@ if(questionPrevPage)questionPrevPage.addEventListener('click',()=>{
 if(questionNextPage)questionNextPage.addEventListener('click',()=>{
   if(questionPage<questionTotalPages)loadQuestions(questionPage+1,false,true);
 });
+const selectVisibleQuestions=document.getElementById('selectVisibleQuestions');
+if(selectVisibleQuestions)selectVisibleQuestions.addEventListener('change',()=>{
+  selectableQuestionsOnPage().forEach(question=>{
+    const id=String(question.id);
+    if(selectVisibleQuestions.checked)selectedQuestionIds.set(id,question);
+    else selectedQuestionIds.delete(id);
+  });
+  renderList();
+});
+document.getElementById('bulkClearBtn')?.addEventListener('click',()=>{selectedQuestionIds.clear();renderList();});
+document.getElementById('bulkReviewBtn')?.addEventListener('click',bulkReviewQuestions);
+document.getElementById('bulkAcceptBtn')?.addEventListener('click',bulkAcceptQuestions);
+document.getElementById('bulkDeleteBtn')?.addEventListener('click',bulkDeleteQuestions);
 
 function setFieldFromRaw(id,raw){const el=document.getElementById(id);if(!el)return;el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
 function setEqFieldElFromRaw(el,raw){el.innerHTML='';el.appendChild(buildEquationFragment(raw||''));}
@@ -7697,8 +7833,10 @@ async function loadQuestions(page=1,refreshFacets=false,scrollToList=false){
   const loadSequence=++questionLoadSequence;
   const listContainer=document.getElementById('listContainer');
   if(listContainer)listContainer.innerHTML='<div class="empty-state">Loading questions…</div>';
+  const facetsPromise=(refreshFacets||!questionFacets.subjects.length)
+    ? loadQuestionFacets().catch(error=>console.warn('[QBP] Could not load question filters:',error.message))
+    : Promise.resolve();
   try{
-    if(refreshFacets||!questionFacets.subjects.length)await loadQuestionFacets();
     const params=new URLSearchParams({paged:'1',page:String(page),pageSize:String(questionPageSize)});
      
     const filterMap={subject:'fSubject',klass:'fClass',chapter:'fChapter',concept:'fConcept',qType:'fType',createdBy:'fContributor'};
@@ -7725,6 +7863,11 @@ if(searchText){
     if(loadSequence!==questionLoadSequence)return;
     if(!data||!Array.isArray(data.items))throw new Error('Questions API returned an unexpected data format.');
     allQuestions=data.items;
+    questionPage=Number(data.page)||1;
+    questionTotal=Number(data.total)||0;
+    questionTotalPages=Math.max(1,Number(data.totalPages)||1);
+    renderList();
+    if(scrollToList&&listContainer)listContainer.scrollIntoView({behavior:'smooth',block:'start'});
     const questionIds=allQuestions.map(question=>question.id).filter(Boolean);
     if(questionIds.length){
       try{
@@ -7745,9 +7888,8 @@ if(searchText){
         console.warn('[QBP] Could not load review status:',stateError.message);
       }
     }
-    questionPage=Number(data.page)||1;
-    questionTotal=Number(data.total)||0;
-    questionTotalPages=Math.max(1,Number(data.totalPages)||1);
+    if(loadSequence===questionLoadSequence)renderList();
+    await facetsPromise;
   } catch(e){
     if(loadSequence!==questionLoadSequence)return;
     allQuestions = [];
@@ -7755,9 +7897,8 @@ if(searchText){
     questionTotalPages=1;
     console.error('[QBP] loadQuestions error:', e);
     showToast('Could not load questions: '+e.message, true);
+    renderList();
   }
-  renderList();
-  if(scrollToList&&listContainer)listContainer.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 // ============================================================
