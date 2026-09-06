@@ -6057,6 +6057,57 @@ function renderFilterSubjects(){
   fContributor.value=contributors.some(contributor=>contributor.id===curContributor)?curContributor:'';
 }
 
+function setSavedFilterLoading(selectId,label){
+  const select=document.getElementById(selectId);
+  if(!select)return;
+
+  select.innerHTML='';
+
+  const option=document.createElement('option');
+  option.value='';
+  option.textContent=label;
+
+  select.appendChild(option);
+  select.value='';
+}
+
+function clearStaleSavedFilterOptions(changedFilterId){
+  if(changedFilterId==='fSubject'||changedFilterId==='fClass'){
+    setSavedFilterLoading('fChapter','Loading chaptersâ€¦');
+    setSavedFilterLoading('fConcept','Loading conceptsâ€¦');
+    setSavedFilterLoading('fContributor','Loading adders / adminsâ€¦');
+    return;
+  }
+
+  if(changedFilterId==='fChapter'){
+    setSavedFilterLoading('fConcept','Loading conceptsâ€¦');
+    setSavedFilterLoading('fContributor','Loading adders / adminsâ€¦');
+    return;
+  }
+
+  if(changedFilterId==='fConcept'||changedFilterId==='fType'){
+    setSavedFilterLoading('fContributor','Loading adders / adminsâ€¦');
+  }
+}
+
+// Capture phase runs before the existing select change handlers. This means
+// the user never keeps seeing chapters/concepts from the previous selection
+// while the already-existing question + facet requests are in flight.
+document.addEventListener('change',event=>{
+  const filterId=event.target?.id;
+
+  if(![
+    'fSubject',
+    'fClass',
+    'fChapter',
+    'fConcept',
+    'fType'
+  ].includes(filterId)){
+    return;
+  }
+
+  clearStaleSavedFilterOptions(filterId);
+},true);
 const savedFilterSubject=document.getElementById('fSubject');
 const savedFilterClass=document.getElementById('fClass');
 const savedFilterChapter=document.getElementById('fChapter');
@@ -7940,6 +7991,49 @@ const columnBMatch =
 };
 
 let questionFacetRequestSequence=0;
+const QUESTION_FACET_CLIENT_CACHE_TTL_MS=60*1000;
+const questionFacetResponseCache=new Map();
+
+function questionFacetCacheKey(params){
+  return params.toString();
+}
+
+function getCachedQuestionFacets(cacheKey){
+  const cached=questionFacetResponseCache.get(cacheKey);
+
+  if(!cached)return null;
+
+  if(cached.expiresAt<=Date.now()){
+    questionFacetResponseCache.delete(cacheKey);
+    return null;
+  }
+
+  return cached.data;
+}
+
+function rememberQuestionFacets(cacheKey,data){
+  questionFacetResponseCache.set(cacheKey,{
+    expiresAt:Date.now()+QUESTION_FACET_CLIENT_CACHE_TTL_MS,
+    data
+  });
+
+  // Keep the browser cache deliberately small.
+  if(questionFacetResponseCache.size>40){
+    const now=Date.now();
+
+    for(const [key,value] of questionFacetResponseCache){
+      if(value.expiresAt<=now){
+        questionFacetResponseCache.delete(key);
+      }
+    }
+
+    while(questionFacetResponseCache.size>40){
+      questionFacetResponseCache.delete(
+        questionFacetResponseCache.keys().next().value
+      );
+    }
+  }
+}
 
 async function loadQuestionFacets(){
   const requestSequence=++questionFacetRequestSequence;
@@ -7958,10 +8052,23 @@ async function loadQuestionFacets(){
   if(qType)params.set('qType',qType);
   if(createdBy)params.set('createdBy',createdBy);
 
+  const cacheKey=questionFacetCacheKey(params);
+  const cachedFacets=getCachedQuestionFacets(cacheKey);
+
+  // Selecting/deselecting a recently used combination can redraw the
+  // dropdowns immediately while a fresh request runs in the background.
+  if(cachedFacets && requestSequence===questionFacetRequestSequence){
+    questionFacets=cachedFacets;
+    renderFilterSubjects();
+  }
+
   const nextFacets=await apiRequest('/facets?'+params.toString());
 
-  // If the user changes a filter again before this request finishes,
-  // ignore this older response so the newest selection always wins.
+  // Keep useful results even when the user changed selection while this
+  // request was running; a later return to this combination becomes instant.
+  rememberQuestionFacets(cacheKey,nextFacets);
+
+  // Never allow an older response to overwrite a newer user selection.
   if(requestSequence!==questionFacetRequestSequence)return false;
 
   questionFacets=nextFacets;

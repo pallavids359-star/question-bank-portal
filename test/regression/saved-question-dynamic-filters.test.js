@@ -67,20 +67,38 @@ test('facet endpoint recalculates each dropdown from the other selected filters'
   );
 });
 
-test('facet loading remains metadata-only and keeps the existing cached read path', () => {
-  const start = questionRoutes.indexOf('async function readFacetRows()');
-  const end = questionRoutes.indexOf("router.get('/facets'", start);
+test('facet loading remains metadata-only and keeps the scoped cached read path', () => {
+  const start = questionRoutes.indexOf('async function firstFacetPage(');
+  const end = questionRoutes.indexOf(
+    'async function readFacetContributorUsers()',
+    start
+  );
 
-  assert.ok(start >= 0);
-  assert.ok(end > start);
+  assert.ok(start >= 0 && end > start);
 
   const reader = questionRoutes.slice(start, end);
 
   assert.match(
     reader,
-    /\.select\('subject, klass, chapter, topic, q_type, created_by, created_by_name'\)/
+    /subject, klass, chapter, topic, q_type, created_by, created_by_name/
   );
   assert.doesNotMatch(reader, /\.select\('\*'\)/);
   assert.doesNotMatch(reader, /solution_text/);
-  assert.match(reader, /facetCache\.expiresAt > Date\.now\(\)/);
+
+  assert.match(
+    questionRoutes,
+    /async function readFacetRows\(subject='', klass=''\)/
+  );
+  assert.match(
+    questionRoutes,
+    /const cached=facetCache\.get\(cacheKey\);/
+  );
+  assert.match(
+    questionRoutes,
+    /cached && cached\.expiresAt>Date\.now\(\)/
+  );
+  assert.match(
+    questionRoutes,
+    /const facetCacheLoads = new Map\(\);/
+  );
 });

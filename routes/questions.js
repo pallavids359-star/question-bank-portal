@@ -942,8 +942,18 @@ const DELETE_ROLES = [requireAuth, requireRole('admin', 'adder')];
 
 const FACET_PAGE_SIZE = 1000;
 const FACET_CACHE_TTL_MS = 60 * 1000;
-let facetCache = { expiresAt: 0, rows: [] };
+const FACET_READ_CONCURRENCY = 6;
+const FACET_CONTRIBUTOR_CACHE_TTL_MS = 60 * 1000;
 
+const facetCache = new Map();
+const facetCacheLoads = new Map();
+
+let facetContributorCache = {
+  expiresAt: 0,
+  rows: [],
+};
+
+let facetContributorCacheLoad = null;
 function applySubjectFilter(query, user, requestedSubject) {
   const userRole = String(user?.role || 'viewer').toLowerCase();
   const userSubject = canonicalSubject(user?.subject || 'All');
@@ -996,48 +1006,227 @@ function applyQuestionFilters(query, params) {
   return query;
 }
 
-async function readFacetRows() {
-  if (facetCache.expiresAt > Date.now()) return facetCache.rows;
+function facetCacheKey(subject, klass) {
+  return [
+    canonicalSubject(subject || '') || 'All',
+    normalizedQuestionClass(klass || '') || 'All',
+  ].join('|');
+}
 
-  const rows = [];
-  const sources = [
-    { client: supabase, skipMigratedShards: true },
-    { client: supabaseControl, skipMigratedShards: false },
-    { client: supabasePhysics11, skipMigratedShards: false },
-    { client: supabasePhysics12, skipMigratedShards: false },
-    { client: supabaseChemistry11, skipMigratedShards: false },
-    { client: supabaseChemistry12, skipMigratedShards: false },
-    { client: supabaseBiology11, skipMigratedShards: false },
-    { client: supabaseBiology12, skipMigratedShards: false },
-    { client: supabaseMathematics11, skipMigratedShards: false },
-    { client: supabaseMathematics12, skipMigratedShards: false },
-  ];
+function applyFacetScope(query, subject, klass) {
+  const normalizedSubject=canonicalSubject(subject || '');
+  const normalizedClass=normalizedQuestionClass(klass || '');
 
-  for (const source of sources) {
-    for (let from = 0; ; from += FACET_PAGE_SIZE) {
-      const { data, error } = await source.client
-        .from('questions')
-        .select('subject, klass, chapter, topic, q_type, created_by, created_by_name')
-        .range(from, from + FACET_PAGE_SIZE - 1);
-
-      if (error) throw error;
-
-      const page = data || [];
-      for (const row of page) {
-        if (source.skipMigratedShards && isMigratedQuestionShard(row.subject, row.klass)) continue;
-        rows.push(row);
-      }
-
-      if (page.length < FACET_PAGE_SIZE) break;
-    }
+  if(normalizedSubject && normalizedSubject!=='All'){
+    query=normalizedSubject==='Mathematics'
+      ? query.in('subject',['Mathematics','Maths'])
+      : query.eq('subject',normalizedSubject);
   }
 
-  facetCache = {
-    expiresAt: Date.now() + FACET_CACHE_TTL_MS,
-    rows,
-  };
+  if(normalizedClass){
+    query=query.in('klass',[
+      normalizedClass,
+      `Class ${normalizedClass}`,
+    ]);
+  }
 
-  return rows;
+  return query;
+}
+
+async function firstFacetPage(client, subject, klass) {
+  let query=client
+    .from('questions')
+    .select(
+      'subject, klass, chapter, topic, q_type, created_by, created_by_name',
+      {count:'exact'}
+    );
+
+  query=applyFacetScope(query,subject,klass);
+
+  const result=await query.range(
+    0,
+    FACET_PAGE_SIZE-1
+  );
+
+  if(result.error)throw result.error;
+
+  return {
+    client,
+    count:Math.max(0,Number(result.count)||0),
+    rows:result.data||[],
+  };
+}
+
+async function readFacetPage(client, subject, klass, from, to) {
+  let query=client
+    .from('questions')
+    .select('subject, klass, chapter, topic, q_type, created_by, created_by_name');
+
+  query=applyFacetScope(query,subject,klass);
+
+  const result=await query.range(from,to);
+
+  if(result.error)throw result.error;
+
+  return result.data||[];
+}
+
+async function readFacetRows(subject='', klass='') {
+  const cacheKey=facetCacheKey(subject,klass);
+  const cached=facetCache.get(cacheKey);
+
+  if(cached && cached.expiresAt>Date.now()){
+    return cached.rows;
+  }
+
+  if(facetCacheLoads.has(cacheKey)){
+    return facetCacheLoads.get(cacheKey);
+  }
+
+  const load=(async()=>{
+    // Use the exact same shard selection strategy as Saved Questions itself.
+    // Subject/Class combinations therefore avoid scanning unrelated databases.
+    const clients=questionReadSourcesFor(subject,klass);
+    const uniqueClients=[
+      ...new Set(clients)
+    ];
+
+    // First page + count for each relevant shard in parallel.
+    const firstPages=await Promise.all(
+      uniqueClients.map(client=>
+        firstFacetPage(
+          client,
+          subject,
+          klass
+        )
+      )
+    );
+
+    const rows=[];
+    const remainingPages=[];
+
+    for(const source of firstPages){
+      rows.push(...source.rows);
+
+      for(
+        let from=FACET_PAGE_SIZE;
+        from<source.count;
+        from+=FACET_PAGE_SIZE
+      ){
+        remainingPages.push({
+          client:source.client,
+          from,
+          to:Math.min(
+            source.count-1,
+            from+FACET_PAGE_SIZE-1
+          ),
+        });
+      }
+    }
+
+    // Read remaining metadata pages with a global concurrency cap. This is
+    // much quicker than one-page-at-a-time but avoids an uncontrolled burst.
+    for(
+      let index=0;
+      index<remainingPages.length;
+      index+=FACET_READ_CONCURRENCY
+    ){
+      const batch=remainingPages.slice(
+        index,
+        index+FACET_READ_CONCURRENCY
+      );
+
+      const batchRows=await Promise.all(
+        batch.map(page=>
+          readFacetPage(
+            page.client,
+            subject,
+            klass,
+            page.from,
+            page.to
+          )
+        )
+      );
+
+      batchRows.forEach(pageRows=>
+        rows.push(...pageRows)
+      );
+    }
+
+    facetCache.set(cacheKey,{
+      expiresAt:Date.now()+FACET_CACHE_TTL_MS,
+      rows,
+    });
+
+    // Keep the number of cached filter scopes bounded.
+    if(facetCache.size>24){
+      const now=Date.now();
+
+      for(const [key,value] of facetCache){
+        if(value.expiresAt<=now){
+          facetCache.delete(key);
+        }
+      }
+
+      while(facetCache.size>24){
+        facetCache.delete(
+          facetCache.keys().next().value
+        );
+      }
+    }
+
+    return rows;
+  })();
+
+  facetCacheLoads.set(cacheKey,load);
+
+  try{
+    return await load;
+  }finally{
+    facetCacheLoads.delete(cacheKey);
+  }
+}
+
+async function readFacetContributorUsers(){
+  if(
+    facetContributorCache.expiresAt>Date.now() &&
+    facetContributorCache.rows.length
+  ){
+    return facetContributorCache.rows;
+  }
+
+  if(facetContributorCacheLoad){
+    return facetContributorCacheLoad;
+  }
+
+  facetContributorCacheLoad=(async()=>{
+    const {
+      data,
+      error,
+    }=await supabaseControl
+      .from('users')
+      .select('id, name, role')
+      .in('role',['admin','adder']);
+
+    if(error)throw error;
+
+    const rows=data||[];
+
+    facetContributorCache={
+      expiresAt:
+        Date.now()+
+        FACET_CONTRIBUTOR_CACHE_TTL_MS,
+      rows,
+    };
+
+    return rows;
+  })();
+
+  try{
+    return await facetContributorCacheLoad;
+  }finally{
+    facetContributorCacheLoad=null;
+  }
 }
 // Lightweight values used by the cascading dropdowns. This intentionally
 // avoids downloading question text, options, solutions, and embedded images.
@@ -1056,7 +1245,7 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     const requestedType = String(req.query.qType || '').trim();
     const createdBy = String(req.query.createdBy || '').trim();
 
-    const allRows = await readFacetRows();
+    const allRows = await readFacetRows(subject, klass);
     const unique = values => [...new Set(values.filter(Boolean))]
       .sort((a, b) => String(a).localeCompare(String(b)));
 
@@ -1138,11 +1327,8 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       row => matchesFacetRow(row, 'createdBy')
     );
 
-    const { data: contributorUsers, error: contributorError } = await supabaseControl
-      .from('users')
-      .select('id, name, role')
-      .in('role', ['admin', 'adder']);
-    if (contributorError) throw contributorError;
+    const contributorUsers =
+      await readFacetContributorUsers();
 
     const contributorIds = new Set(
       contributorRows

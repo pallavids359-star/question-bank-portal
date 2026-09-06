@@ -20,21 +20,36 @@ test('Grand Test Full Syllabus routes directly to Control DB', () => {
 });
 
 test('Grand Test participates in duplicate checking and facets', () => {
+  // Duplicate checking still counts the Control DB directly.
   assert.match(questions, /grandTestCountResult/);
   assert.match(
     questions,
     /supabaseControl\.from\('questions'\)\.select\('id', \{ count: 'exact', head: true \}\)/
   );
 
-  const sourceMatches =
-    questions.match(/\{ client: supabaseControl, skipMigratedShards: false \},/g) || [];
+  // Optimized facet loading delegates source selection to the common
+  // questionReadSourcesFor() router instead of maintaining a second
+  // hard-coded source array.
+  assert.match(
+    questions,
+    /function questionReadSourcesFor\(subject, klass\)/
+  );
 
-  assert.ok(
-    sourceMatches.length >= 2,
-    'Control DB should be present in duplicate and facet source arrays'
+  assert.match(
+    questions,
+    /if \(normalizedClass\.toLowerCase\(\) === 'full syllabus'\) \{\s*return \[supabaseControl\];\s*\}/
+  );
+
+  assert.match(
+    questions,
+    /const clients=questionReadSourcesFor\(subject,klass\);/
+  );
+
+  assert.match(
+    questions,
+    /const allRows = await readFacetRows\(subject, klass\);/
   );
 });
-
 test('Grand Test can be found by id for open edit and delete', () => {
   assert.match(
     questions,
