@@ -6096,7 +6096,7 @@ if(savedFilterConcept) savedFilterConcept.addEventListener('change',()=>{
   questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterType) savedFilterType.addEventListener('change',()=>{questionPage=1;loadQuestions(1,true);});
-if(savedFilterContributor) savedFilterContributor.addEventListener('change',()=>{questionPage=1;loadQuestions(1,false);});
+if(savedFilterContributor) savedFilterContributor.addEventListener('change',()=>{questionPage=1;loadQuestions(1,true);});
    // ------------------------------------------------------------
 // SAVED QUESTION SEARCH
 // ------------------------------------------------------------
@@ -7939,22 +7939,35 @@ const columnBMatch =
   }
 };
 
+let questionFacetRequestSequence=0;
+
 async function loadQuestionFacets(){
+  const requestSequence=++questionFacetRequestSequence;
   const params=new URLSearchParams();
   const subject=document.getElementById('fSubject')?.value||'';
   const klass=document.getElementById('fClass')?.value||'';
   const chapter=document.getElementById('fChapter')?.value||'';
   const concept=document.getElementById('fConcept')?.value||'';
   const qType=document.getElementById('fType')?.value||'';
+  const createdBy=document.getElementById('fContributor')?.value||'';
+
   if(subject)params.set('subject',subject);
   if(klass)params.set('klass',klass);
   if(chapter)params.set('chapter',chapter);
   if(concept)params.set('concept',concept);
   if(qType)params.set('qType',qType);
-  questionFacets=await apiRequest('/facets?'+params.toString());
-  renderFilterSubjects();
-}
+  if(createdBy)params.set('createdBy',createdBy);
 
+  const nextFacets=await apiRequest('/facets?'+params.toString());
+
+  // If the user changes a filter again before this request finishes,
+  // ignore this older response so the newest selection always wins.
+  if(requestSequence!==questionFacetRequestSequence)return false;
+
+  questionFacets=nextFacets;
+  renderFilterSubjects();
+  return true;
+}
 async function loadQuestions(page=1,refreshFacets=false,scrollToList=false){
   const loadSequence=++questionLoadSequence;
   const listContainer=document.getElementById('listContainer');

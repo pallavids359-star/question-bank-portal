@@ -1047,12 +1047,14 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     const assigned = String(user?.role || '').toLowerCase() === 'admin'
       ? ''
       : canonicalSubject(user?.subject || 'All');
+
     const requestedSubject = canonicalSubject(req.query.subject || '');
     const subject = assigned && assigned !== 'All' ? assigned : requestedSubject;
     const klass = String(req.query.klass || '').replace(/^class\s*/i, '').trim();
     const chapter = String(req.query.chapter || '').trim();
     const concept = String(req.query.concept || '').trim();
     const requestedType = String(req.query.qType || '').trim();
+    const createdBy = String(req.query.createdBy || '').trim();
 
     const allRows = await readFacetRows();
     const unique = values => [...new Set(values.filter(Boolean))]
@@ -1061,20 +1063,79 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     const accessibleRows = assigned && assigned !== 'All'
       ? allRows.filter(row => canonicalSubject(row.subject) === assigned)
       : allRows;
-    const subjectRows = accessibleRows.filter(row =>
-      !subject || subject === 'All' || canonicalSubject(row.subject) === subject
+
+    const normalizeFacetClass = value =>
+      String(value || '').replace(/^class\s*/i, '').trim();
+
+    const matchesContributor = row => {
+      if (!createdBy) return true;
+
+      if (isValidUuid(createdBy)) {
+        return String(row.created_by || '') === createdBy;
+      }
+
+      return String(row.created_by_name || '').trim().toLowerCase() ===
+        createdBy.toLowerCase();
+    };
+
+    // Build each dropdown from all OTHER active filters.
+    // Therefore both selecting and deselecting a filter immediately narrows
+    // or broadens the valid choices in the remaining dropdowns.
+    const matchesFacetRow = (row, ignore = '') => {
+      if (
+        ignore !== 'subject' &&
+        subject &&
+        subject !== 'All' &&
+        canonicalSubject(row.subject) !== subject
+      ) return false;
+
+      if (
+        ignore !== 'klass' &&
+        klass &&
+        normalizeFacetClass(row.klass) !== klass
+      ) return false;
+
+      if (
+        ignore !== 'chapter' &&
+        chapter &&
+        String(row.chapter || '') !== chapter
+      ) return false;
+
+      if (
+        ignore !== 'concept' &&
+        concept &&
+        String(row.topic || '') !== concept
+      ) return false;
+
+      if (
+        ignore !== 'qType' &&
+        requestedType &&
+        normalizeQType(row.q_type) !== normalizeQType(requestedType)
+      ) return false;
+
+      if (
+        ignore !== 'createdBy' &&
+        createdBy &&
+        !matchesContributor(row)
+      ) return false;
+
+      return true;
+    };
+
+    const subjectRows = accessibleRows.filter(
+      row => matchesFacetRow(row, 'subject')
     );
-    const classRows = subjectRows.filter(row =>
-      !klass || String(row.klass || '').replace(/^class\s*/i, '').trim() === klass
+    const classRows = accessibleRows.filter(
+      row => matchesFacetRow(row, 'klass')
     );
-    const chapterRows = classRows.filter(row =>
-      !chapter || String(row.chapter || '') === chapter
+    const chapterRows = accessibleRows.filter(
+      row => matchesFacetRow(row, 'chapter')
     );
-    const conceptRows = chapterRows.filter(row =>
-      !concept || String(row.topic || '') === concept
+    const conceptRows = accessibleRows.filter(
+      row => matchesFacetRow(row, 'concept')
     );
-    const contributorRows = conceptRows.filter(row =>
-      !requestedType || normalizeQType(row.q_type) === normalizeQType(requestedType)
+    const contributorRows = accessibleRows.filter(
+      row => matchesFacetRow(row, 'createdBy')
     );
 
     const { data: contributorUsers, error: contributorError } = await supabaseControl
@@ -1083,8 +1144,17 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       .in('role', ['admin', 'adder']);
     if (contributorError) throw contributorError;
 
-    const contributorIds = new Set(contributorRows.map(row => String(row.created_by || '')).filter(Boolean));
-    const contributorNames = new Set(contributorRows.map(row => String(row.created_by_name || '').trim().toLowerCase()).filter(Boolean));
+    const contributorIds = new Set(
+      contributorRows
+        .map(row => String(row.created_by || ''))
+        .filter(Boolean)
+    );
+    const contributorNames = new Set(
+      contributorRows
+        .map(row => String(row.created_by_name || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
     const contributors = (contributorUsers || [])
       .map(contributor => ({
         id: String(contributor.id || ''),
@@ -1092,21 +1162,59 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
         role: String(contributor.role || '').toLowerCase(),
       }))
       .filter(contributor => contributor.id && contributor.name)
-      .filter(contributor => contributorIds.has(contributor.id) || contributorNames.has(contributor.name.toLowerCase()))
-      .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
+      .filter(contributor =>
+        contributorIds.has(contributor.id) ||
+        contributorNames.has(contributor.name.toLowerCase())
+      )
+      .sort((a, b) =>
+        a.role.localeCompare(b.role) ||
+        a.name.localeCompare(b.name)
+      );
 
     res.json({
       subjects: assigned && assigned !== 'All'
         ? [assigned]
-        : unique(accessibleRows.map(row => canonicalSubject(row.subject)).filter(value => value !== 'General')),
-      classes: unique(subjectRows.map(row => String(row.klass || '').replace(/^class\s*/i, '').trim())),
-      chapters: unique(classRows.map(row => row.chapter).filter(value => value !== 'General')),
-      concepts: unique(chapterRows.map(row => row.topic).filter(value => value !== 'General')),
-      types: ['mcq_single', 'assertion_reason', 'match', 'numerical', 'true_false', 'diagram_based', 'statement_based'],
+        : unique(
+            subjectRows
+              .map(row => canonicalSubject(row.subject))
+              .filter(value => value !== 'General')
+          ),
+
+      classes: unique(
+        classRows.map(row => normalizeFacetClass(row.klass))
+      ),
+
+      chapters: unique(
+        chapterRows
+          .map(row => row.chapter)
+          .filter(value => value !== 'General')
+      ),
+
+      concepts: unique(
+        conceptRows
+          .map(row => row.topic)
+          .filter(value => value !== 'General')
+      ),
+
+      // Preserve the portal's existing complete logical type list.
+      // readFacetRows intentionally remains metadata-only for speed/egress.
+      types: [
+        'mcq_single',
+        'assertion_reason',
+        'match',
+        'numerical',
+        'true_false',
+        'diagram_based',
+        'statement_based'
+      ],
+
       contributors,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to load question filters.', details: error.message });
+    res.status(500).json({
+      error: 'Failed to load question filters.',
+      details: error.message
+    });
   }
 });
 

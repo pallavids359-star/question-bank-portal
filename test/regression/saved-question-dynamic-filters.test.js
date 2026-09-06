@@ -1,0 +1,86 @@
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const root = path.join(__dirname, '..', '..');
+const frontend = fs.readFileSync(
+  path.join(root, 'public', 'index.html'),
+  'utf8'
+);
+const questionRoutes = fs.readFileSync(
+  path.join(root, 'routes', 'questions.js'),
+  'utf8'
+);
+
+test('rapid Saved Questions filter changes cannot be overwritten by stale facet responses', () => {
+  assert.match(frontend, /let questionFacetRequestSequence=0;/);
+  assert.match(frontend, /const requestSequence=\+\+questionFacetRequestSequence;/);
+  assert.match(
+    frontend,
+    /const createdBy=document\.getElementById\('fContributor'\)\?\.value\|\|'';/
+  );
+  assert.match(frontend, /if\(createdBy\)params\.set\('createdBy',createdBy\);/);
+  assert.match(
+    frontend,
+    /if\(requestSequence!==questionFacetRequestSequence\)return false;/
+  );
+});
+
+test('contributor selection and deselection refresh dependent dropdown facets', () => {
+  assert.match(
+    frontend,
+    /savedFilterContributor\.addEventListener\('change',\(\)=>\{questionPage=1;loadQuestions\(1,true\);\}\)/
+  );
+});
+
+test('facet endpoint recalculates each dropdown from the other selected filters', () => {
+  assert.match(
+    questionRoutes,
+    /const createdBy = String\(req\.query\.createdBy \|\| ''\)\.trim\(\);/
+  );
+  assert.match(
+    questionRoutes,
+    /const matchesFacetRow = \(row, ignore = ''\) =>/
+  );
+  assert.match(
+    questionRoutes,
+    /matchesFacetRow\(row, 'subject'\)/
+  );
+  assert.match(
+    questionRoutes,
+    /matchesFacetRow\(row, 'klass'\)/
+  );
+  assert.match(
+    questionRoutes,
+    /matchesFacetRow\(row, 'chapter'\)/
+  );
+  assert.match(
+    questionRoutes,
+    /matchesFacetRow\(row, 'concept'\)/
+  );
+  assert.match(
+    questionRoutes,
+    /matchesFacetRow\(row, 'createdBy'\)/
+  );
+});
+
+test('facet loading remains metadata-only and keeps the existing cached read path', () => {
+  const start = questionRoutes.indexOf('async function readFacetRows()');
+  const end = questionRoutes.indexOf("router.get('/facets'", start);
+
+  assert.ok(start >= 0);
+  assert.ok(end > start);
+
+  const reader = questionRoutes.slice(start, end);
+
+  assert.match(
+    reader,
+    /\.select\('subject, klass, chapter, topic, q_type, created_by, created_by_name'\)/
+  );
+  assert.doesNotMatch(reader, /\.select\('\*'\)/);
+  assert.doesNotMatch(reader, /solution_text/);
+  assert.match(reader, /facetCache\.expiresAt > Date\.now\(\)/);
+});
