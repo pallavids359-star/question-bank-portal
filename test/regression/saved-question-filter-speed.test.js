@@ -38,9 +38,9 @@ test('Saved Questions filters cache recent facet combinations in the browser', (
 
 test('stale dependent dropdown options are hidden immediately', () => {
   assert.match(frontend, /clearStaleSavedFilterOptions/);
-  assert.match(frontend, /Loading chaptersâ€¦/);
-  assert.match(frontend, /Loading conceptsâ€¦/);
-  assert.match(frontend, /Loading adders \/ adminsâ€¦/);
+  assert.match(frontend, /Loading chapters\.\.\./);
+  assert.match(frontend, /Loading concepts\.\.\./);
+  assert.match(frontend, /Loading adders \/ admins\.\.\./);
   assert.match(
     frontend,
     /document\.addEventListener\('change',event=>[\s\S]*?,true\);/

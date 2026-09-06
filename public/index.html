@@ -6073,20 +6073,20 @@ function setSavedFilterLoading(selectId,label){
 
 function clearStaleSavedFilterOptions(changedFilterId){
   if(changedFilterId==='fSubject'||changedFilterId==='fClass'){
-    setSavedFilterLoading('fChapter','Loading chaptersâ€¦');
-    setSavedFilterLoading('fConcept','Loading conceptsâ€¦');
-    setSavedFilterLoading('fContributor','Loading adders / adminsâ€¦');
+    setSavedFilterLoading('fChapter','Loading chapters...');
+    setSavedFilterLoading('fConcept','Loading concepts...');
+    setSavedFilterLoading('fContributor','Loading adders / admins...');
     return;
   }
 
   if(changedFilterId==='fChapter'){
-    setSavedFilterLoading('fConcept','Loading conceptsâ€¦');
-    setSavedFilterLoading('fContributor','Loading adders / adminsâ€¦');
+    setSavedFilterLoading('fConcept','Loading concepts...');
+    setSavedFilterLoading('fContributor','Loading adders / admins...');
     return;
   }
 
   if(changedFilterId==='fConcept'||changedFilterId==='fType'){
-    setSavedFilterLoading('fContributor','Loading adders / adminsâ€¦');
+    setSavedFilterLoading('fContributor','Loading adders / admins...');
   }
 }
 
