@@ -1320,9 +1320,17 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     const chapterRows = accessibleRows.filter(
       row => matchesFacetRow(row, 'chapter')
     );
-    const conceptRows = accessibleRows.filter(
-      row => matchesFacetRow(row, 'concept')
-    );
+    const conceptRows = accessibleRows.filter(row => {
+      if(
+        chapter &&
+        String(row.chapter || '') !== chapter
+      ){
+        return false;
+      }
+
+      return true;
+    });
+
     const contributorRows = accessibleRows.filter(
       row => matchesFacetRow(row, 'createdBy')
     );

@@ -5974,89 +5974,208 @@ function renderFilterSubjects(){
   const user=Auth.getUser()||{};
 
   function uniqueSorted(values){
-    return Array.from(new Set(values.filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b)));
+    return Array.from(
+      new Set(values.filter(Boolean))
+    ).sort(
+      (a,b)=>String(a).localeCompare(String(b))
+    );
   }
+
   function fillFilter(select,placeholder,values,current){
     select.innerHTML='';
+
     const allOpt=document.createElement('option');
     allOpt.value='';
     allOpt.textContent=placeholder;
     select.appendChild(allOpt);
+
     values.forEach(value=>{
       const option=document.createElement('option');
       option.value=value;
       option.textContent=value;
       select.appendChild(option);
     });
+
     select.value=values.includes(current)?current:'';
   }
+
+  function savedQuestionChapterOptions(subject,klass){
+    const selectedSubjects=
+      subject
+        ? [subject]
+        : SUBJECTS;
+
+    const selectedClasses=
+      klass
+        ? [klass]
+        : CLASSES;
+
+    const configured=[];
+
+    selectedSubjects.forEach(subjectName=>{
+      selectedClasses.forEach(className=>{
+        const key=
+          subjectName+'-'+className;
+
+        const chapters=
+          Array.isArray(NCERT_CHAPTERS[key])
+            ? NCERT_CHAPTERS[key]
+            : [];
+
+        configured.push(...chapters);
+      });
+    });
+
+    // Keep DB/custom chapter values too, so no previously stored content
+    // becomes unreachable merely because it is absent from the static list.
+    return uniqueSorted([
+      ...configured,
+      ...(questionFacets.chapters||[])
+    ]);
+  }
+
   const curSubject=fSubject.value;
   const curClass=fClass.value;
   const curChapter=fChapter.value;
   const curConcept=fConcept.value;
   const curType=fType.value;
   const curContributor=fContributor.value;
-  const subs=uniqueSorted(questionFacets.subjects||[]);
+
+  // Complete subject list for unrestricted users.
+  const subs=uniqueSorted(SUBJECTS);
   const assignedSubject=assignedSubjectFor(user);
+
   if(assignedSubject){
     fSubject.innerHTML='';
+
     const assignedOption=document.createElement('option');
     assignedOption.value=assignedSubject;
     assignedOption.textContent=assignedSubject;
+
     fSubject.appendChild(assignedOption);
     fSubject.value=assignedSubject;
-    fSubject.disabled = true;
+    fSubject.disabled=true;
   }else{
-    fillFilter(fSubject,'All Subjects',subs,curSubject);
-    fSubject.disabled = false;
+    fillFilter(
+      fSubject,
+      'All Subjects',
+      subs,
+      curSubject
+    );
+
+    fSubject.disabled=false;
   }
 
-  const classes=uniqueSorted(questionFacets.classes||[]);
-  fillFilter(fClass,'All Classes',classes,curClass);
-  Array.from(fClass.options).forEach(option=>{if(option.value)option.textContent='Class '+option.value;});
+  // Always expose Class 11 and Class 12.
+  const classes=uniqueSorted(CLASSES);
 
-  const chapters=uniqueSorted(questionFacets.chapters||[]);
-  fillFilter(fChapter,'All Chapters',chapters,curChapter);
+  fillFilter(
+    fClass,
+    'All Classes',
+    classes,
+    curClass
+  );
 
-  const concepts=uniqueSorted(questionFacets.concepts||[]);
-  fillFilter(fConcept,'All Concepts',concepts,curConcept);
+  Array.from(fClass.options).forEach(option=>{
+    if(option.value){
+      option.textContent='Class '+option.value;
+    }
+  });
 
-  const types=uniqueSorted(questionFacets.types||[]);
+  // Show the complete configured chapter list for the chosen upstream
+  // Subject/Class, not merely chapters that happen to exist in one facet page.
+  const chapters=savedQuestionChapterOptions(
+    fSubject.value,
+    fClass.value
+  );
+
+  fillFilter(
+    fChapter,
+    'All Chapters',
+    chapters,
+    curChapter
+  );
+
+  // Backend returns all concepts for the selected Subject/Class/Chapter,
+  // independent of Question Type and contributor selection.
+  const concepts=uniqueSorted(
+    questionFacets.concepts||[]
+  );
+
+  fillFilter(
+    fConcept,
+    'All Concepts',
+    concepts,
+    curConcept
+  );
+
+  // Always expose every configured question type.
+  const types=uniqueSorted(
+    Object.keys(QTYPE_LABELS)
+  );
+
   fType.innerHTML='';
+
   const allTypes=document.createElement('option');
   allTypes.value='';
   allTypes.textContent='All Question Types';
   fType.appendChild(allTypes);
+
   types.forEach(type=>{
     const option=document.createElement('option');
     option.value=type;
     option.textContent=QTYPE_LABELS[type]||type;
     fType.appendChild(option);
   });
-  fType.value=types.includes(curType)?curType:'';
 
-  const contributors=Array.isArray(questionFacets.contributors)?questionFacets.contributors:[];
+  fType.value=
+    types.includes(curType)
+      ? curType
+      : '';
+
+  // Contributors are intentionally not narrowed by the current question
+  // combination: every available Adder/Admin remains selectable.
+  const contributors=
+    Array.isArray(questionFacets.contributors)
+      ? questionFacets.contributors
+      : [];
+
   fContributor.innerHTML='';
+
   const allContributors=document.createElement('option');
   allContributors.value='';
   allContributors.textContent='All Adders / Admins';
   fContributor.appendChild(allContributors);
-  [['adder','Adders'],['admin','Admins']].forEach(([role,label])=>{
-    const roleContributors=contributors.filter(contributor=>contributor.role===role);
-    if(!roleContributors.length)return;
-    const group=document.createElement('optgroup');
-    group.label=label;
-    roleContributors.forEach(contributor=>{
-      const option=document.createElement('option');
-      option.value=contributor.id;
-      option.textContent=contributor.name;
-      group.appendChild(option);
-    });
-    fContributor.appendChild(group);
-  });
-  fContributor.value=contributors.some(contributor=>contributor.id===curContributor)?curContributor:'';
-}
 
+  [['adder','Adders'],['admin','Admins']]
+    .forEach(([role,label])=>{
+      const roleContributors=
+        contributors.filter(
+          contributor=>contributor.role===role
+        );
+
+      if(!roleContributors.length)return;
+
+      const group=document.createElement('optgroup');
+      group.label=label;
+
+      roleContributors.forEach(contributor=>{
+        const option=document.createElement('option');
+        option.value=contributor.id;
+        option.textContent=contributor.name;
+        group.appendChild(option);
+      });
+
+      fContributor.appendChild(group);
+    });
+
+  fContributor.value=
+    contributors.some(
+      contributor=>contributor.id===curContributor
+    )
+      ? curContributor
+      : '';
+}
 function setSavedFilterLoading(selectId,label){
   const select=document.getElementById(selectId);
   if(!select)return;

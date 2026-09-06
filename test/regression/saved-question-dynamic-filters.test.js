@@ -36,37 +36,75 @@ test('contributor selection and deselection refresh dependent dropdown facets', 
   );
 });
 
-test('facet endpoint recalculates each dropdown from the other selected filters', () => {
+test('facet endpoint keeps complete concept options for selected subject class and chapter', () => {
   assert.match(
     questionRoutes,
     /const createdBy = String\(req\.query\.createdBy \|\| ''\)\.trim\(\);/
   );
+
   assert.match(
     questionRoutes,
     /const matchesFacetRow = \(row, ignore = ''\) =>/
   );
+
+  // Subject / class / chapter still participate in cascading facet logic.
   assert.match(
     questionRoutes,
     /matchesFacetRow\(row, 'subject'\)/
   );
+
   assert.match(
     questionRoutes,
     /matchesFacetRow\(row, 'klass'\)/
   );
+
   assert.match(
     questionRoutes,
     /matchesFacetRow\(row, 'chapter'\)/
   );
-  assert.match(
-    questionRoutes,
-    /matchesFacetRow\(row, 'concept'\)/
+
+  // Concept options intentionally remain complete for the selected
+  // Subject/Class/Chapter and are not narrowed by Question Type or contributor.
+  const conceptStart = questionRoutes.indexOf(
+    'const conceptRows = accessibleRows.filter(row => {'
   );
+
+  const conceptEnd = questionRoutes.indexOf(
+    'const contributorRows = accessibleRows.filter(',
+    conceptStart
+  );
+
+  assert.ok(
+    conceptStart >= 0 && conceptEnd > conceptStart,
+    'Complete concept facet block should be present'
+  );
+
+  const conceptBlock = questionRoutes.slice(
+    conceptStart,
+    conceptEnd
+  );
+
+  assert.match(
+    conceptBlock,
+    /String\(row\.chapter \|\| ''\) !== chapter/
+  );
+
+  assert.doesNotMatch(
+    conceptBlock,
+    /requestedType/
+  );
+
+  assert.doesNotMatch(
+    conceptBlock,
+    /createdBy/
+  );
+
+  // Contributor filtering still remains independently supported.
   assert.match(
     questionRoutes,
     /matchesFacetRow\(row, 'createdBy'\)/
   );
 });
-
 test('facet loading remains metadata-only and keeps the scoped cached read path', () => {
   const start = questionRoutes.indexOf('async function firstFacetPage(');
   const end = questionRoutes.indexOf(
