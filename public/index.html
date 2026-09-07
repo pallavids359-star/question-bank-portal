@@ -829,9 +829,9 @@ textarea{resize:vertical;min-height:70px;}
 }
 
 .question-bulk-toolbar{
-  display:flex;
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(145px,1fr));
   align-items:center;
-  flex-wrap:wrap;
   gap:10px;
   margin:14px 0;
   padding:12px 14px;
@@ -851,6 +851,7 @@ textarea{resize:vertical;min-height:70px;}
   font-weight:600;
   white-space:nowrap;
   cursor:pointer;
+  justify-content:center;
 }
 .question-bulk-select input{
   width:18px;
@@ -859,17 +860,18 @@ textarea{resize:vertical;min-height:70px;}
 }
 
 .question-bulk-count{
-  min-width:78px;
+  min-width:0;
   color:var(--muted);
   font-size:13px;
   font-weight:600;
   white-space:nowrap;
+  text-align:center;
 }
 
 .question-bulk-toolbar .icon-btn,
 .question-bulk-toolbar .icon-btn.bulk-delete{
-  width:auto;
-  min-width:124px;
+  width:100%;
+  min-width:0;
   height:38px;
   padding:0 14px;
   display:inline-flex;
@@ -941,7 +943,6 @@ textarea{resize:vertical;min-height:70px;}
 
 @media(max-width:700px){
   .question-bulk-toolbar{
-    display:grid;
     grid-template-columns:repeat(2,minmax(0,1fr));
   }
   .question-bulk-select,
@@ -1793,7 +1794,11 @@ img,svg,canvas{max-width:100%;}
             </div>
             <div class="filters">
 
-  
+  <select id="fQuestionSet" title="Choose chapter-wise or Grand Test questions">
+    <option value="">All Question Sets</option>
+    <option value="chapter">Chapter-wise Questions</option>
+    <option value="grand_test">Grand Test Questions</option>
+  </select>
 
   <select id="fSubject">
     <option value="">All Subjects</option>
@@ -2490,6 +2495,7 @@ var questionFacets = { subjects:[], classes:[], chapters:[], concepts:[], types:
 var questionTimeframe = '';
 var questionLoadSequence = 0;
 var selectedQuestionIds = new Map();
+var editingGrandTest = null;
 
 // fillSelect: used by bulk-import.js
 function fillSelect(id, options, placeholder) {
@@ -5566,6 +5572,11 @@ fillDefaultPredef();
   // Subject & Class change → update chapters
   if (subjectEl) subjectEl.addEventListener('change', function() {
     updateExamOptionsForSubject(subjectEl.value);
+    if (editingGrandTest) {
+      const topicEl=document.getElementById('topic');
+      if(topicEl&&editingGrandTest.coverage==='Subject-wise')topicEl.value=subjectEl.value;
+      return;
+    }
     updateChapterOptions();
   });
   if (klassEl) klassEl.addEventListener('change', updateChapterOptions);
@@ -5772,6 +5783,58 @@ function updateCorrectOptionChoices(){
 function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
 function eqVal(id){const el=document.getElementById(id);return el?getFieldRaw(el).trim():'';}
 
+function grandTestMetadataFor(question){
+  const isGrandTest=String(question?.klass||'')
+    .replace(/^class\s*/i,'')
+    .trim()
+    .toLowerCase()==='full syllabus';
+  if(!isGrandTest)return null;
+  const metadata=question.grandTest&&typeof question.grandTest==='object'
+    ? question.grandTest
+    : {};
+  const storedCoverage=String(metadata.coverage||question.topic||'');
+  return {
+    paper:String(metadata.paper||question.source||''),
+    year:String(metadata.year||question.year||''),
+    coverage:['Subject-wise','PCM','PCB','PCMB'].includes(storedCoverage)
+      ? storedCoverage
+      : 'Subject-wise'
+  };
+}
+
+function setGrandTestEditMode(question){
+  editingGrandTest=question?grandTestMetadataFor(question):null;
+  const subject=document.getElementById('subject');
+  const klass=document.getElementById('klass');
+  const chapter=document.getElementById('chapter');
+  const topic=document.getElementById('topic');
+  const qType=document.getElementById('qType');
+  if(editingGrandTest){
+    if(klass&&!Array.from(klass.options).some(option=>option.value==='Full Syllabus')){
+      const option=document.createElement('option');
+      option.value='Full Syllabus';option.textContent='Full Syllabus';klass.appendChild(option);
+    }
+    if(klass){klass.value='Full Syllabus';klass.disabled=true;}
+    if(chapter){
+      if(!Array.from(chapter.options).some(option=>option.value==='Full Syllabus')){
+        const option=document.createElement('option');
+        option.value='Full Syllabus';option.textContent='Full Syllabus';chapter.appendChild(option);
+      }
+      chapter.value='Full Syllabus';chapter.disabled=true;
+    }
+    if(topic){topic.value=editingGrandTest.coverage;topic.disabled=true;}
+    if(qType)qType.disabled=true;
+    if(subject)subject.disabled=editingGrandTest.coverage!=='Subject-wise';
+    const title=document.getElementById('formTitle');
+    if(title)title.textContent='Edit Grand Test Question';
+    return;
+  }
+  if(klass)klass.disabled=false;
+  if(chapter)chapter.disabled=false;
+  if(topic)topic.disabled=false;
+  if(qType)qType.disabled=false;
+}
+
 function validate(){
   const subjectSel=document.getElementById('subject');
   const klassSel=document.getElementById('klass');
@@ -5858,9 +5921,11 @@ else if(isTF && !mainQuestionText){
 
   const record={
     subject:subjectSel.value,
-    klass:klassSel.value,
-    chapter:val('chapter'),
-    topic:val('topic'),
+    klass:editingGrandTest?'Full Syllabus':klassSel.value,
+    chapter:editingGrandTest?'Full Syllabus':val('chapter'),
+    topic:editingGrandTest
+      ? (editingGrandTest.coverage==='Subject-wise'?subjectSel.value:editingGrandTest.coverage)
+      : val('topic'),
     exams:activeExams,
     qType,
     question:mainQuestionText,
@@ -5880,7 +5945,14 @@ optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
     answer:isNum?eqVal('numAnswer'):'',
     correctOption:isNum?'':(document.getElementById('correctOption').value || 'A'),
     solutionText:eqVal('solutionText'),
-    difficulty:val('difficulty')||'Medium'
+    difficulty:val('difficulty')||'Medium',
+    source:editingGrandTest?editingGrandTest.paper:'',
+    year:editingGrandTest?editingGrandTest.year:'',
+    grandTest:editingGrandTest?{
+      paper:editingGrandTest.paper,
+      year:editingGrandTest.year,
+      coverage:editingGrandTest.coverage
+    }:null
   };
 
   try{
@@ -5934,6 +6006,7 @@ optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
 function resetForm(){
   setDifficultyOnlyMode(false);
   editingId=null;
+  setGrandTestEditMode(null);
   const ft=document.getElementById('formTitle');if(ft)ft.textContent='Add New Question';
   const sb=document.getElementById('saveBtn');if(sb)sb.textContent='Save Question';
   const user=Auth.getUser()||{};
@@ -6228,6 +6301,7 @@ document.addEventListener('change',event=>{
   clearStaleSavedFilterOptions(filterId);
 },true);
 const savedFilterSubject=document.getElementById('fSubject');
+const savedFilterQuestionSet=document.getElementById('fQuestionSet');
 const savedFilterClass=document.getElementById('fClass');
 const savedFilterChapter=document.getElementById('fChapter');
 const savedFilterConcept=document.getElementById('fConcept');
@@ -6240,6 +6314,20 @@ const savedFilterSearchClear =
   document.getElementById('fSearchClear');
 
 let savedQuestionSearchTimer = null;
+function syncSavedQuestionSetFilters(){
+  const grandTest=savedFilterQuestionSet?.value==='grand_test';
+  [savedFilterClass,savedFilterChapter,savedFilterConcept].forEach(select=>{
+    if(!select)return;
+    if(grandTest)select.value='';
+    select.disabled=grandTest;
+  });
+}
+if(savedFilterQuestionSet)savedFilterQuestionSet.addEventListener('change',()=>{
+  syncSavedQuestionSetFilters();
+  if(savedFilterType)savedFilterType.value='';
+  if(savedFilterContributor)savedFilterContributor.value='';
+  questionPage=1;loadQuestions(1,true);
+});
 if(savedFilterSubject) savedFilterSubject.addEventListener('change',()=>{
   if(savedFilterClass) savedFilterClass.value='';
   if(savedFilterChapter) savedFilterChapter.value='';
@@ -6526,13 +6614,25 @@ function renderList(){
   const fChapter=document.getElementById('fChapter');
   const fConcept=document.getElementById('fConcept');
   const fType=document.getElementById('fType');
+  const fQuestionSet=document.getElementById('fQuestionSet');
   const subjF=fSubject ? fSubject.value : '';
   const classF=fClass ? fClass.value : '';
   const chapterF=fChapter ? fChapter.value : '';
   const conceptF=fConcept ? fConcept.value : '';
   const typeF=fType ? fType.value : '';
+  const questionSetF=fQuestionSet ? fQuestionSet.value : '';
   const assignedSubject=assignedSubjectFor(Auth.getUser());
-  const filtered=allQuestions.filter(q=>q && (!assignedSubject||sameSubject(q.subject,assignedSubject))&&(!subjF||sameSubject(q.subject,subjF))&&(!classF||String(q.klass||'').replace(/^class\s*/i,'').trim()===classF)&&(!chapterF||q.chapter===chapterF)&&(!conceptF||q.topic===conceptF)&&(!typeF||q.qType===typeF));
+  const filtered=allQuestions.filter(q=>{
+    if(!q)return false;
+    const grandTest=Boolean(grandTestMetadataFor(q));
+    return (!assignedSubject||sameSubject(q.subject,assignedSubject))
+      &&(!subjF||sameSubject(q.subject,subjF))
+      &&(!classF||String(q.klass||'').replace(/^class\s*/i,'').trim()===classF)
+      &&(!chapterF||q.chapter===chapterF)
+      &&(!conceptF||q.topic===conceptF)
+      &&(!typeF||q.qType===typeF)
+      &&(!questionSetF||(questionSetF==='grand_test'?grandTest:!grandTest));
+  });
   renderSavedQuestionCount();
   listContainer.innerHTML='';
   if(filtered.length===0){listContainer.innerHTML='<div class="empty-state">No questions saved yet. Add one above.</div>';renderQuestionPagination();updateQuestionBulkToolbar();refreshViewerProtection();return;}
@@ -6564,6 +6664,13 @@ const isAdmin = currentRole === 'admin';
     const meta=document.createElement('div');meta.className='li-meta';
     meta.innerHTML=`<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(chapterDisplayName(q.subject,q.klass,q.chapter))} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
     main.appendChild(meta);
+    const grandTest=grandTestMetadataFor(q);
+    if(grandTest){
+      const gtMeta=document.createElement('div');
+      gtMeta.className='li-owner';
+      gtMeta.textContent='Grand Test · '+(grandTest.paper||'Paper')+(grandTest.year?' · '+grandTest.year:'')+' · '+grandTest.coverage;
+      main.appendChild(gtMeta);
+    }
    const reviewStatus = q.reviewStatus || 'pending';
 
 const statusLine = document.createElement('div');
@@ -7690,6 +7797,7 @@ if(sb) sb.textContent='Update Question';
     const normType = q.qType || 'mcq_single';
     if(qTypeSel) qTypeSel.value=normType;
     updateTypeVisibility();
+    setGrandTestEditMode(q);
 
    if(normType==='assertion_reason'){
 
@@ -8163,6 +8271,7 @@ async function loadQuestionFacets(){
   const concept=document.getElementById('fConcept')?.value||'';
   const qType=document.getElementById('fType')?.value||'';
   const createdBy=document.getElementById('fContributor')?.value||'';
+  const questionSet=document.getElementById('fQuestionSet')?.value||'';
 
   if(subject)params.set('subject',subject);
   if(klass)params.set('klass',klass);
@@ -8170,6 +8279,7 @@ async function loadQuestionFacets(){
   if(concept)params.set('concept',concept);
   if(qType)params.set('qType',qType);
   if(createdBy)params.set('createdBy',createdBy);
+  if(questionSet)params.set('questionSet',questionSet);
 
   const cacheKey=questionFacetCacheKey(params);
   const cachedFacets=getCachedQuestionFacets(cacheKey);
@@ -8223,6 +8333,8 @@ if(searchText){
       const value=document.getElementById(id)?.value||'';
       if(value)params.set(name,value);
     });
+    const questionSet=document.getElementById('fQuestionSet')?.value||'';
+    if(questionSet)params.set('questionSet',questionSet);
     if(questionTimeframe)params.set('timeframe',questionTimeframe);
     const data=await apiRequest('?'+params.toString());
     if(loadSequence!==questionLoadSequence)return;

@@ -866,9 +866,19 @@ function toApi(row) {
   const legacyDifficulty = readLegacyDifficulty(row.solution_text);
   const legacyQuestionType = readLegacyQuestionType(row.solution_text);
   const legacyData = readLegacyData(row.solution_text);
-  if (legacyData.grandTest) {
-    output.source = output.source || legacyData.grandTest.paper || '';
-    output.year = output.year || legacyData.grandTest.year || '';
+  const grandTestData = legacyData.grandTest || (isGrandTestKlass(row.klass)
+    ? {
+        paper: row.source || '',
+        year: row.year || '',
+        coverage: ['Subject-wise', 'PCM', 'PCB', 'PCMB'].includes(String(row.topic || ''))
+          ? row.topic
+          : 'Subject-wise',
+      }
+    : null);
+  if (grandTestData) {
+    output.grandTest = grandTestData;
+    output.source = output.source || grandTestData.paper || '';
+    output.year = output.year || grandTestData.year || '';
   }
   output.difficulty = row.difficulty || legacyDifficulty || 'Medium';
   output.qType = legacyQuestionType || output.qType;
@@ -974,8 +984,18 @@ function applyQuestionFilters(query, params) {
   const requestedType = String(params.qType || '').toLowerCase();
   const createdBy = String(params.createdBy || '').trim();
   const search = String(params.search || '').trim().slice(0, 200);
+  const questionSet = String(params.questionSet || '').trim().toLowerCase();
 
-  if (klass) query = query.in('klass', [klass, `Class ${klass}`]);
+  if (questionSet === 'grand_test') {
+    query = query.in('klass', ['Full Syllabus', 'Class Full Syllabus']);
+  } else {
+    if (klass) query = query.in('klass', [klass, `Class ${klass}`]);
+    if (questionSet === 'chapter') {
+      query = query
+        .neq('klass', 'Full Syllabus')
+        .neq('klass', 'Class Full Syllabus');
+    }
+  }
   if (chapter) query = query.eq('chapter', chapter);
   if (concept) query = query.eq('topic', concept);
   if (search) query = query.ilike('question', `%${search}%`);
@@ -1239,7 +1259,10 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
 
     const requestedSubject = canonicalSubject(req.query.subject || '');
     const subject = assigned && assigned !== 'All' ? assigned : requestedSubject;
-    const klass = String(req.query.klass || '').replace(/^class\s*/i, '').trim();
+    const questionSet = String(req.query.questionSet || '').trim().toLowerCase();
+    const klass = questionSet === 'grand_test'
+      ? 'Full Syllabus'
+      : String(req.query.klass || '').replace(/^class\s*/i, '').trim();
     const chapter = String(req.query.chapter || '').trim();
     const concept = String(req.query.concept || '').trim();
     const requestedType = String(req.query.qType || '').trim();
@@ -1432,7 +1455,9 @@ router.get('/', ...READ_ROLES, async (req, res) => {
       ? listUserSubject
       : canonicalSubject(req.query.subject || '');
 
-    const readSources = questionReadSourcesFor(listSubject, req.query.klass);
+    const readSources = String(req.query.questionSet || '').toLowerCase() === 'grand_test'
+      ? questionReadSourcesFor(listSubject, 'Full Syllabus')
+      : questionReadSourcesFor(listSubject, req.query.klass);
     const perSourceEnd = Math.max(0, offset + limit - 1);
 
     const sourceResults = await Promise.all(readSources.map(async questionClient => {
