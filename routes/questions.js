@@ -1496,16 +1496,21 @@ router.get('/', ...READ_ROLES, async (req, res) => {
         return String(b?.id || '').localeCompare(String(a?.id || ''));
       });
 
+    const total = paged
+      ? sourceResults.reduce((sum, result) => sum + result.count, 0)
+      : mergedRows.length;
+
+    // MQP numbering is computed from the current earliest-to-latest sequence.
+    // The list remains newest-first, so the newest question has the largest
+    // number. Deleting a question automatically closes the gap on reload.
     const questions = mergedRows
       .slice(offset, offset + limit)
-      .map(toApi);
+      .map((row, index) => ({
+        ...toApi(row),
+        mqpId: `mqp${Math.max(1, total - offset - index)}`,
+      }));
 
     if (!paged) return res.json(questions);
-
-    const total = sourceResults.reduce(
-      (sum, result) => sum + result.count,
-      0
-    );
 
     res.json({
       items: questions,

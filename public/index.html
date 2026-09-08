@@ -6514,6 +6514,13 @@ function renderSavedQuestionCount(){
     : questionTotal+' question'+(questionTotal===1?'':'s');
 }
 
+function renumberLoadedQuestions(){
+  const offset=(Math.max(1,questionPage)-1)*questionPageSize;
+  allQuestions.forEach((question,index)=>{
+    question.mqpId='mqp'+Math.max(1,questionTotal-offset-index);
+  });
+}
+
 function canReviewQuestions(){
   const role=String(Auth.getRole()||'').toLowerCase();
   return role==='admin'||role==='editor';
@@ -6593,16 +6600,23 @@ async function bulkDeleteQuestions(){
 
 function finishQuestionBatch(action,questions,results,reload=false){
   let succeeded=0;
+  const completedIds=new Set();
   results.forEach((result,index)=>{
     if(result.status==='fulfilled'){
       succeeded++;
-      selectedQuestionIds.delete(String(questions[index].id));
+      const completedId=String(questions[index].id);
+      completedIds.add(completedId);
+      selectedQuestionIds.delete(completedId);
     }
   });
   const failed=results.length-succeeded;
   showToast(succeeded+' question(s) '+action+(failed?' · '+failed+' failed':''),failed>0);
   updateQuestionBulkToolbar();
-  if(reload)loadQuestions(questionPage,true,false);else loadQuestions(questionPage,false,false);
+  if(reload){
+    const remainingOnPage=allQuestions.filter(question=>!completedIds.has(String(question.id))).length;
+    const targetPage=remainingOnPage===0&&questionPage>1?questionPage-1:questionPage;
+    loadQuestions(targetPage,true,false);
+  }else loadQuestions(questionPage,false,false);
 }
 
 function renderList(){
@@ -6662,7 +6676,7 @@ const isAdmin = currentRole === 'admin';
     }
     const main=document.createElement('div');main.style.flex='1';
     const meta=document.createElement('div');meta.className='li-meta';
-    meta.innerHTML=`<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(chapterDisplayName(q.subject,q.klass,q.chapter))} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
+    meta.innerHTML=`<strong style="color:var(--gold);">${escapeHtml(q.mqpId||'')}</strong>${q.mqpId?' &nbsp;•&nbsp; ':''}<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(chapterDisplayName(q.subject,q.klass,q.chapter))} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
     main.appendChild(meta);
     const grandTest=grandTestMetadataFor(q);
     if(grandTest){
@@ -8207,10 +8221,11 @@ const columnBMatch =
       await apiRequest('/'+encodeURIComponent(id),{method:'DELETE'});
       showToast('Question deleted.');
       const previousLength=allQuestions.length;
-      allQuestions=allQuestions.filter(q=>String(q.id)!==String(id));
+      allQuestions=allQuestions.filter(question=>String(question.id)!==String(id));
       if(allQuestions.length<previousLength){
         questionTotal=Math.max(0,questionTotal-1);
         questionTotalPages=Math.max(1,Math.ceil(questionTotal/questionPageSize));
+        renumberLoadedQuestions();
       }
       renderList();
     }catch(e){console.error('Delete failed:',e);showToast('Delete failed: '+e.message,true);}
