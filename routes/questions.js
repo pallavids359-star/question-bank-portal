@@ -1507,7 +1507,7 @@ router.get('/', ...READ_ROLES, async (req, res) => {
       .slice(offset, offset + limit)
       .map((row, index) => ({
         ...toApi(row),
-        mqpId: `mqp${Math.max(1, total - offset - index)}`,
+        mqpId: `MQP${Math.max(1, total - offset - index)}`,
       }));
 
     if (!paged) return res.json(questions);
