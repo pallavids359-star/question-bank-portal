@@ -6676,7 +6676,7 @@ const isAdmin = currentRole === 'admin';
     }
     const main=document.createElement('div');main.style.flex='1';
     const meta=document.createElement('div');meta.className='li-meta';
-    meta.innerHTML=`<strong style="color:var(--gold);">${escapeHtml(q.mqpId||'')}</strong>${q.mqpId?' &nbsp;•&nbsp; ':''}<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(chapterDisplayName(q.subject,q.klass,q.chapter))} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
+    meta.innerHTML=`<strong style="color:var(--gold);">${escapeHtml(String(q.mqpId||'').toUpperCase())}</strong>${q.mqpId?' &nbsp;•&nbsp; ':''}<span>${escapeHtml(q.subject||'')}</span> · Class ${escapeHtml(q.klass||'')} · ${escapeHtml(chapterDisplayName(q.subject,q.klass,q.chapter))} &nbsp;•&nbsp; ${QTYPE_LABELS[q.qType]||q.qType||'?'} &nbsp;•&nbsp; ${escapeHtml(q.difficulty||'Medium')}`;
     main.appendChild(meta);
     const grandTest=grandTestMetadataFor(q);
     if(grandTest){
