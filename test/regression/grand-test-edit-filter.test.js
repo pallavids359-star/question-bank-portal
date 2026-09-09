@@ -26,9 +26,10 @@ test('Grand Test API output retains paper year and coverage edit metadata', () =
 test('Grand Test edit preserves routing metadata and locks unrelated classification fields', () => {
   assert.match(frontend, /function setGrandTestEditMode\(question\)/);
   assert.match(frontend, /klass\.value='Full Syllabus';klass\.disabled=true/);
-  assert.match(frontend, /chapter\.value='Full Syllabus';chapter\.disabled=true/);
+  assert.match(frontend, /const paperChapter=editingPreviousYear\?'Previous Year Questions':'Full Syllabus'/);
+  assert.match(frontend, /chapter\.value=paperChapter;chapter\.disabled=true/);
   assert.match(frontend, /if\(qType\)qType\.disabled=true/);
-  assert.match(frontend, /subject\.disabled=editingGrandTest\.coverage!=='Subject-wise'/);
+  assert.match(frontend, /subject\.disabled=editingPaper\.coverage!=='Subject-wise'/);
   assert.match(frontend, /grandTest:editingGrandTest\?\{/);
 });
 

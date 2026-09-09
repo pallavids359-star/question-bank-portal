@@ -312,7 +312,7 @@ function storeLegacyMetadata(solutionText, difficulty, questionType, specialData
   if (['statement_based', 'match', 'true_false'].includes(normalizedType)) {
     markers.push(`[QBP_TYPE:${normalizedType}]`);
     markers.push(`[QBP_DATA:${encodeMarkerText(JSON.stringify(specialData || {}))}]`);
-  } else if (specialData?.grandTest) {
+  } else if (specialData?.grandTest || specialData?.previousYear) {
     markers.push(`[QBP_DATA:${encodeMarkerText(JSON.stringify(specialData))}]`);
   }
   markers.push(`[QBP_DIFFICULTY:${normalized}]`);
@@ -836,7 +836,8 @@ function toDatabase(input) {
       columnA: input.columnA || out.column_a || [],
       columnB: input.columnB || out.column_b || [],
       matchOptions: input.matchOptions || out.match_options || {},
-      grandTest: input.grandTest || null
+      grandTest: input.grandTest || null,
+      previousYear: input.previousYear || null
     }
   );
   delete out.difficulty;
@@ -866,7 +867,8 @@ function toApi(row) {
   const legacyDifficulty = readLegacyDifficulty(row.solution_text);
   const legacyQuestionType = readLegacyQuestionType(row.solution_text);
   const legacyData = readLegacyData(row.solution_text);
-  const grandTestData = legacyData.grandTest || (isGrandTestKlass(row.klass)
+  const previousYearData = legacyData.previousYear || null;
+  const grandTestData = legacyData.grandTest || (!previousYearData && isGrandTestKlass(row.klass)
     ? {
         paper: row.source || '',
         year: row.year || '',
@@ -879,6 +881,11 @@ function toApi(row) {
     output.grandTest = grandTestData;
     output.source = output.source || grandTestData.paper || '';
     output.year = output.year || grandTestData.year || '';
+  }
+  if (previousYearData) {
+    output.previousYear = previousYearData;
+    output.source = output.source || previousYearData.paper || '';
+    output.year = output.year || previousYearData.year || '';
   }
   output.difficulty = row.difficulty || legacyDifficulty || 'Medium';
   output.qType = legacyQuestionType || output.qType;
@@ -988,6 +995,11 @@ function applyQuestionFilters(query, params) {
 
   if (questionSet === 'grand_test') {
     query = query.in('klass', ['Full Syllabus', 'Class Full Syllabus']);
+    query = query.neq('chapter', 'Previous Year Questions');
+  } else if (questionSet === 'previous_year') {
+    query = query
+      .in('klass', ['Full Syllabus', 'Class Full Syllabus'])
+      .eq('chapter', 'Previous Year Questions');
   } else {
     if (klass) query = query.in('klass', [klass, `Class ${klass}`]);
     if (questionSet === 'chapter') {
@@ -1260,7 +1272,7 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     const requestedSubject = canonicalSubject(req.query.subject || '');
     const subject = assigned && assigned !== 'All' ? assigned : requestedSubject;
     const questionSet = String(req.query.questionSet || '').trim().toLowerCase();
-    const klass = questionSet === 'grand_test'
+    const klass = ['grand_test', 'previous_year'].includes(questionSet)
       ? 'Full Syllabus'
       : String(req.query.klass || '').replace(/^class\s*/i, '').trim();
     const chapter = String(req.query.chapter || '').trim();
@@ -1294,6 +1306,9 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     // Therefore both selecting and deselecting a filter immediately narrows
     // or broadens the valid choices in the remaining dropdowns.
     const matchesFacetRow = (row, ignore = '') => {
+      const isPreviousYear = String(row.chapter || '') === 'Previous Year Questions';
+      if (questionSet === 'grand_test' && isPreviousYear) return false;
+      if (questionSet === 'previous_year' && !isPreviousYear) return false;
       if (
         ignore !== 'subject' &&
         subject &&
@@ -1455,7 +1470,7 @@ router.get('/', ...READ_ROLES, async (req, res) => {
       ? listUserSubject
       : canonicalSubject(req.query.subject || '');
 
-    const readSources = String(req.query.questionSet || '').toLowerCase() === 'grand_test'
+    const readSources = ['grand_test', 'previous_year'].includes(String(req.query.questionSet || '').toLowerCase())
       ? questionReadSourcesFor(listSubject, 'Full Syllabus')
       : questionReadSourcesFor(listSubject, req.query.klass);
     const perSourceEnd = Math.max(0, offset + limit - 1);

@@ -42,9 +42,13 @@
     const importMode = val('bqImportMode') || 'chapter';
     const coverage = val('bqMetaCoverage') || 'Subject-wise';
 
+    const isGrandTest = importMode === 'grand_test';
+    const isPreviousYear = importMode === 'previous_year';
     return {
       importMode,
-      isGrandTest:     importMode === 'grand_test',
+      isGrandTest,
+      isPreviousYear,
+      isPaperSet:      isGrandTest || isPreviousYear,
       coverage,
       subject:        sEl && sEl.value ? sEl.value.trim() : 'Physics',
       klass:          kEl && kEl.value ? kEl.value.trim() : '',
@@ -67,13 +71,14 @@
 
   function selectedBulkChapter(meta) {
     if (meta.isGrandTest) return 'Full Syllabus';
+    if (meta.isPreviousYear) return 'Previous Year Questions';
     const key = `${meta.subject}-${meta.klass}`;
     const chapters = (window.BULK_NCERT_CHAPTERS && window.BULK_NCERT_CHAPTERS[key]) || [];
     return chapters.includes(meta.chapter) ? meta.chapter : '';
   }
 
   function selectedBulkClass(meta) {
-    if (meta.isGrandTest) return 'Full Syllabus';
+    if (meta.isPaperSet) return 'Full Syllabus';
     const classSelect = document.getElementById('bqMetaClass');
     if (!classSelect || !meta.klass) return '';
     return Array.from(classSelect.options).some(option => option.value === meta.klass)
@@ -647,13 +652,13 @@ const hasFlexibleMatchColumns =
       const opts = overrides.options || {};
 
       // Chapter assignment is intentionally controlled only by the metadata dropdown.
-      const finalSubject = meta.isGrandTest && meta.coverage === 'Subject-wise'
+      const finalSubject = meta.isPaperSet && meta.coverage === 'Subject-wise'
         ? meta.subject
         : (inline.subject || overrides.subject || meta.subject);
       const finalKlass   = selectedBulkClass(meta);
       const finalChapter = selectedBulkChapter(meta);
       
-      const detectedConcept = meta.isGrandTest
+      const detectedConcept = meta.isPaperSet
         ? { concept: meta.coverage === 'Subject-wise' ? finalSubject : meta.coverage, confidence: 100 }
         : detectConcept(qText, finalChapter, inline.concept);
       const { concept, confidence } = detectedConcept;
@@ -1356,7 +1361,7 @@ if (mode === 'col1') {
   // ================================================================
   function parseText(rawText) {
     const meta = getMeta();
-    const grandTestHeader = meta.isGrandTest
+    const grandTestHeader = meta.isPaperSet
       ? extractGrandTestHeader(rawText)
       : { paper: '', year: '', cleanText: rawText };
     
@@ -1368,14 +1373,16 @@ if (mode === 'col1') {
       const qType = detectBlockType(block);
       const parser = ParserRegistry.get(qType);
       const question = parser.parse(block, meta);
-      if (meta.isGrandTest) {
+      if (meta.isPaperSet) {
         question.source = grandTestHeader.paper;
         question.year = grandTestHeader.year;
-        question.grandTest = {
+        const paperMetadata = {
           paper: grandTestHeader.paper,
           year: grandTestHeader.year,
           coverage: meta.coverage,
         };
+        if (meta.isGrandTest) question.grandTest = paperMetadata;
+        if (meta.isPreviousYear) question.previousYear = paperMetadata;
       }
       return question;
     });
@@ -1394,13 +1401,13 @@ if (mode === 'col1') {
       if (!q.subject && !meta.subject) q.errors.push(`Question #${num}: Subject is required.`);
       if (!selectedClass) q.errors.push(`Question #${num}: Class must be selected from the dropdown.`);
       if (!selectedChapter) q.errors.push(`Question #${num}: Chapter must be selected from the dropdown.`);
-      if (meta.isGrandTest && !q.source) q.errors.push(`Question #${num}: @paper is required once at the top.`);
-      if (meta.isGrandTest && !q.year) q.errors.push(`Question #${num}: @year must be a four-digit year at the top.`);
-      if (meta.isGrandTest && meta.coverage !== 'Subject-wise' && !q.grandSubjectFromLatex) {
+      if (meta.isPaperSet && !q.source) q.errors.push(`Question #${num}: @paper is required once at the top.`);
+      if (meta.isPaperSet && !q.year) q.errors.push(`Question #${num}: @year must be a four-digit year at the top.`);
+      if (meta.isPaperSet && meta.coverage !== 'Subject-wise' && !q.grandSubjectFromLatex) {
         q.errors.push(`Question #${num}: @subject is required for ${meta.coverage} papers.`);
       }
       const allowedGrandSubjects = grandTestSubjects(meta.coverage);
-      if (meta.isGrandTest && allowedGrandSubjects.length && !allowedGrandSubjects.includes(q.subject)) {
+      if (meta.isPaperSet && allowedGrandSubjects.length && !allowedGrandSubjects.includes(q.subject)) {
         q.errors.push(`Question #${num}: ${q.subject} is not part of ${meta.coverage}.`);
       }
       if (!q.question || q.question.length < 5) q.errors.push(`Question #${num}: Question text is missing or too short.`);
@@ -2328,7 +2335,7 @@ Reason: Light is an electromagnetic wave and does not require a material medium 
 (D) A is false but R is true.
 Answer: A
 Solution: Electromagnetic waves self-propagate through electric and magnetic field oscillations.`;
-    const sample = sampleMeta.isGrandTest
+    const sample = sampleMeta.isPaperSet
       ? (sampleMeta.coverage === 'Subject-wise' ? subjectWiseGrandTestSample : grandTestSample)
       : chapterSample;
 
@@ -2533,6 +2540,7 @@ Solution: Electromagnetic waves self-propagate through electric and magnetic fie
       source: q.source || '',
       year: q.year || '',
       grandTest: q.grandTest || null,
+      previousYear: q.previousYear || null,
     };
 
     try {
@@ -2673,6 +2681,7 @@ if (duplicateKey) {
       source: q.source || '',
       year: q.year || '',
       grandTest: q.grandTest || null,
+      previousYear: q.previousYear || null,
     }));
 
     const payloadEntries = importList.map((q, index) => ({
