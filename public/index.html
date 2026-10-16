@@ -978,6 +978,24 @@ textarea{resize:vertical;min-height:70px;}
 .empty-state{text-align:center;color:var(--muted);padding:40px 0;font-size:14px;}
 .filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
 .filters select{width:auto;min-width:140px;padding:8px 30px 8px 12px;font-size:13px;}
+/* Multi-chapter dropdown (added). The original #fChapter select stays in the
+   page and keeps all its logic; it is only hidden behind this view. */
+.filters #fChapter{display:none;}
+.chapter-multi{position:relative;min-width:170px;}
+.chapter-multi-toggle{width:100%;height:100%;min-height:38px;display:flex;align-items:center;gap:8px;padding:8px 34px 8px 12px;font-size:13px;text-align:left;cursor:pointer;color:var(--text);background-color:var(--field);border:1px solid var(--border);border-radius:9px;font-family:inherit;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='9'><path d='M1 1l6 6 6-6' stroke='%238a8a8a' stroke-width='1.6' fill='none'/></svg>");background-repeat:no-repeat;background-position:right 14px center;}
+.chapter-multi-toggle:disabled{opacity:.5;cursor:not-allowed;}
+.chapter-multi-toggle.has-selection,.chapter-multi-toggle[aria-expanded=true]{border-color:var(--border-focus);}
+.chapter-multi-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;}
+.chapter-multi-panel{position:absolute;z-index:60;top:calc(100% + 4px);left:0;width:320px;max-width:90vw;padding:8px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.35);}
+.chapter-multi-panel[hidden]{display:none;}
+.chapter-multi-search{width:100%;box-sizing:border-box;padding:7px 10px;font-size:13px;margin-bottom:6px;}
+.chapter-multi-actions{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;}
+.chapter-multi-actions button{background:none;border:none;color:var(--gold);font-size:12px;cursor:pointer;padding:2px 4px;}
+.chapter-multi-options{max-height:260px;overflow-y:auto;}
+.chapter-multi-option{display:flex;align-items:flex-start;gap:8px;padding:6px;border-radius:6px;font-size:13px;cursor:pointer;line-height:1.3;}
+.chapter-multi-option:hover{background:rgba(127,127,127,.12);}
+.chapter-multi-option input{margin-top:2px;flex:0 0 auto;width:auto;accent-color:var(--gold);}
+.chapter-multi-empty{padding:8px 6px;font-size:12px;color:var(--muted);}
    /* Saved Question Search */
 .saved-question-search{
   position:relative;
@@ -1399,6 +1417,8 @@ img,svg,canvas{max-width:100%;}
   .recent-time{width:100%;padding-left:0;}
   .filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
   .filters select,#questionPageSelect{width:100%!important;min-width:0!important;}
+  .chapter-multi{width:100%!important;min-width:0!important;}
+  .chapter-multi-panel{width:100%;}
   .saved-question-search{grid-column:1/-1;width:100%;max-width:none;min-width:0;}
   .li-top{flex-direction:column;}
   .li-btns{width:100%;max-width:none;justify-content:flex-start;}
@@ -1808,6 +1828,20 @@ img,svg,canvas{max-width:100%;}
   <select id="fClass">
     <option value="">All Classes</option>
   </select>
+
+  <div class="chapter-multi" id="fChapterMulti">
+    <button type="button" class="chapter-multi-toggle" id="fChapterToggle" aria-haspopup="listbox" aria-expanded="false" title="Select one or more chapters">
+      <span class="chapter-multi-label" id="fChapterLabel">All Chapters</span>
+    </button>
+    <div class="chapter-multi-panel" id="fChapterPanel" hidden>
+      <input type="text" class="chapter-multi-search" id="fChapterSearch" placeholder="Search chapters..." autocomplete="off">
+      <div class="chapter-multi-actions">
+        <button type="button" id="fChapterSelectAll">Select all</button>
+        <button type="button" id="fChapterClear">Clear</button>
+      </div>
+      <div class="chapter-multi-options" id="fChapterOptions" role="listbox" aria-multiselectable="true"></div>
+    </div>
+  </div>
 
   <select id="fChapter">
     <option value="">All Chapters</option>
@@ -6384,6 +6418,240 @@ if(savedFilterConcept) savedFilterConcept.addEventListener('change',()=>{
 });
 if(savedFilterType) savedFilterType.addEventListener('change',()=>{questionPage=1;loadQuestions(1,true);});
 if(savedFilterContributor) savedFilterContributor.addEventListener('change',()=>{questionPage=1;loadQuestions(1,true);});
+
+// ── SAVED QUESTIONS: MULTI-CHAPTER FILTER (added) ───────────
+// The original <select id="fChapter"> and all of its existing logic are kept
+// as they are. This checkbox dropdown is a view on top of it:
+//   • 0 chapters ticked  -> fChapter.value=''          (same as before)
+//   • 1 chapter ticked   -> fChapter.value=<chapter>   (same as before)
+//   • 2+ chapters ticked -> fChapter.value='' and the extra chapters are sent
+//                           as a separate `chapters` parameter.
+// Any existing code that resets fChapter.value (subject/class change, reset
+// buttons, notifications, dashboard links...) also clears the ticked list.
+let savedChapterMulti=[];
+let savedChapterMultiInternal=false;
+let savedChapterMultiRendering=false;
+let savedChapterMultiTimer=null;
+
+function savedChapterMultiActive(){
+  return savedChapterMulti.length>1;
+}
+
+function appendSelectedSavedChapters(params){
+  if(!savedChapterMultiActive())return;
+  savedChapterMulti.forEach(chapter=>params.append('chapters',chapter));
+}
+
+function savedChapterMultiMatches(chapter){
+  return !savedChapterMultiActive()||savedChapterMulti.includes(chapter);
+}
+
+function savedChapterMultiSummary(){
+  if(!savedChapterMulti.length)return 'All Chapters';
+  if(savedChapterMulti.length===1)return savedChapterMulti[0];
+  return savedChapterMulti.length+' chapters selected';
+}
+
+function savedChapterAvailableOptions(){
+  const select=document.getElementById('fChapter');
+  if(!select)return [];
+  return Array.from(select.options).map(option=>option.value).filter(Boolean);
+}
+
+// Bring the ticked list in line with the original select after it changes.
+function syncSavedChapterMultiFromSelect(){
+  const select=document.getElementById('fChapter');
+  if(!select)return;
+  if(select.value){
+    savedChapterMulti=[select.value];
+  }else if(savedChapterMultiActive()){
+    const available=savedChapterAvailableOptions();
+    savedChapterMulti=savedChapterMulti.filter(chapter=>available.includes(chapter));
+    if(savedChapterMulti.length<2)savedChapterMulti=[];
+  }else{
+    savedChapterMulti=[];
+  }
+}
+
+function renderSavedChapterMulti(){
+  const select=document.getElementById('fChapter');
+  const toggle=document.getElementById('fChapterToggle');
+  const label=document.getElementById('fChapterLabel');
+  const list=document.getElementById('fChapterOptions');
+  const search=document.getElementById('fChapterSearch');
+  if(!select||!toggle||!label||!list)return;
+
+  const available=savedChapterAvailableOptions();
+  const placeholder=select.options[0]&&!select.options[0].value
+    ? select.options[0].textContent
+    : 'All Chapters';
+  const loading=!available.length&&/loading/i.test(placeholder);
+
+  toggle.disabled=select.disabled;
+  toggle.classList.toggle('has-selection',savedChapterMulti.length>0);
+  label.textContent=loading?placeholder:savedChapterMultiSummary();
+  toggle.title=savedChapterMultiActive()
+    ? savedChapterMulti.join('\n')
+    : 'Select one or more chapters';
+  if(select.disabled)closeSavedChapterPanel();
+
+  const term=String(search?.value||'').trim().toLowerCase();
+  const visible=available.filter(chapter=>!term||chapter.toLowerCase().includes(term));
+
+  list.innerHTML='';
+  if(!visible.length){
+    const empty=document.createElement('div');
+    empty.className='chapter-multi-empty';
+    empty.textContent=loading?placeholder:'No chapters found.';
+    list.appendChild(empty);
+    return;
+  }
+
+  visible.forEach(chapter=>{
+    const row=document.createElement('label');
+    row.className='chapter-multi-option';
+    const box=document.createElement('input');
+    box.type='checkbox';
+    box.checked=savedChapterMulti.includes(chapter);
+    box.addEventListener('change',()=>{
+      savedChapterMulti=box.checked
+        ? [...savedChapterMulti,chapter]
+        : savedChapterMulti.filter(item=>item!==chapter);
+      onSavedChapterMultiChanged();
+    });
+    const text=document.createElement('span');
+    text.textContent=chapter;
+    row.append(box,text);
+    list.appendChild(row);
+  });
+}
+
+// Push the ticked list into the original select, then fire its existing
+// change handler. Debounced so ticking several chapters reloads only once.
+function onSavedChapterMultiChanged(){
+  const label=document.getElementById('fChapterLabel');
+  const toggle=document.getElementById('fChapterToggle');
+  if(label)label.textContent=savedChapterMultiSummary();
+  if(toggle)toggle.classList.toggle('has-selection',savedChapterMulti.length>0);
+  clearTimeout(savedChapterMultiTimer);
+  savedChapterMultiTimer=setTimeout(applySavedChapterMulti,350);
+}
+
+function applySavedChapterMulti(){
+  clearTimeout(savedChapterMultiTimer);
+  savedChapterMultiTimer=null;
+  const select=document.getElementById('fChapter');
+  if(!select)return;
+  savedChapterMultiInternal=true;
+  select.value=savedChapterMulti.length===1?savedChapterMulti[0]:'';
+  savedChapterMultiInternal=false;
+  select.dispatchEvent(new Event('change',{bubbles:true}));
+}
+
+function openSavedChapterPanel(){
+  const panel=document.getElementById('fChapterPanel');
+  const toggle=document.getElementById('fChapterToggle');
+  const search=document.getElementById('fChapterSearch');
+  if(!panel||!toggle||toggle.disabled)return;
+  panel.hidden=false;
+  toggle.setAttribute('aria-expanded','true');
+  renderSavedChapterMulti();
+  if(search)search.focus();
+}
+
+function closeSavedChapterPanel(){
+  const panel=document.getElementById('fChapterPanel');
+  const toggle=document.getElementById('fChapterToggle');
+  if(!panel||panel.hidden)return;
+  panel.hidden=true;
+  if(toggle)toggle.setAttribute('aria-expanded','false');
+  // Apply a pending selection as soon as the panel closes.
+  if(savedChapterMultiTimer)applySavedChapterMulti();
+}
+
+(function initSavedChapterMulti(){
+  const wrap=document.getElementById('fChapterMulti');
+  const toggle=document.getElementById('fChapterToggle');
+  const panel=document.getElementById('fChapterPanel');
+  const search=document.getElementById('fChapterSearch');
+  const select=document.getElementById('fChapter');
+  if(!wrap||!toggle||!panel||!select)return;
+
+  // Notice when existing code assigns fChapter.value directly (resets),
+  // without changing any of that code.
+  const valueDescriptor=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value');
+  if(valueDescriptor&&valueDescriptor.set){
+    Object.defineProperty(select,'value',{
+      configurable:true,
+      get(){return valueDescriptor.get.call(this);},
+      set(next){
+        valueDescriptor.set.call(this,next);
+        if(!savedChapterMultiInternal&&!savedChapterMultiRendering){
+          savedChapterMulti=this.value?[this.value]:[];
+          renderSavedChapterMulti();
+        }
+      }
+    });
+  }
+
+  // The existing renderFilterSubjects() rebuilds the chapter options; keep
+  // the ticked list through that rebuild instead of treating it as a reset.
+  if(typeof renderFilterSubjects==='function'){
+    const originalRenderFilterSubjects=renderFilterSubjects;
+    renderFilterSubjects=function(...args){
+      savedChapterMultiRendering=true;
+      try{
+        return originalRenderFilterSubjects.apply(this,args);
+      }finally{
+        savedChapterMultiRendering=false;
+        syncSavedChapterMultiFromSelect();
+        renderSavedChapterMulti();
+      }
+    };
+  }
+
+  // Option list replaced (e.g. "Loading chapters...") or select disabled for
+  // Grand Test / Previous Year: refresh the dropdown view.
+  new MutationObserver(()=>{
+    if(savedChapterMultiRendering)return;
+    syncSavedChapterMultiFromSelect();
+    renderSavedChapterMulti();
+  }).observe(select,{childList:true,attributes:true,attributeFilter:['disabled']});
+
+  toggle.addEventListener('click',()=>{
+    if(panel.hidden)openSavedChapterPanel();
+    else closeSavedChapterPanel();
+  });
+  if(search)search.addEventListener('input',()=>renderSavedChapterMulti());
+
+  document.getElementById('fChapterSelectAll')?.addEventListener('click',()=>{
+    // Respects the search box: ticks only the chapters currently shown.
+    const term=String(search?.value||'').trim().toLowerCase();
+    savedChapterAvailableOptions().forEach(chapter=>{
+      if((!term||chapter.toLowerCase().includes(term))&&!savedChapterMulti.includes(chapter)){
+        savedChapterMulti.push(chapter);
+      }
+    });
+    renderSavedChapterMulti();
+    onSavedChapterMultiChanged();
+  });
+  document.getElementById('fChapterClear')?.addEventListener('click',()=>{
+    savedChapterMulti=[];
+    renderSavedChapterMulti();
+    onSavedChapterMultiChanged();
+  });
+
+  document.addEventListener('mousedown',event=>{
+    if(!panel.hidden&&!wrap.contains(event.target))closeSavedChapterPanel();
+  });
+  wrap.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){
+      closeSavedChapterPanel();
+      toggle.focus();
+    }
+  });
+  renderSavedChapterMulti();
+})();
    // ------------------------------------------------------------
 // SAVED QUESTION SEARCH
 // ------------------------------------------------------------
@@ -6679,6 +6947,7 @@ function renderList(){
       &&(!chapterF||q.chapter===chapterF)
       &&(!conceptF||q.topic===conceptF)
       &&(!typeF||q.qType===typeF)
+      &&savedChapterMultiMatches(q.chapter)
       &&matchesQuestionSet;
   });
   renderSavedQuestionCount();
@@ -8337,6 +8606,7 @@ async function loadQuestionFacets(){
   if(createdBy)params.set('createdBy',createdBy);
   if(questionSet)params.set('questionSet',questionSet);
 
+  appendSelectedSavedChapters(params);
   const cacheKey=questionFacetCacheKey(params);
   const cachedFacets=getCachedQuestionFacets(cacheKey);
 
@@ -8389,6 +8659,7 @@ if(searchText){
       const value=document.getElementById(id)?.value||'';
       if(value)params.set(name,value);
     });
+    appendSelectedSavedChapters(params);
     const questionSet=document.getElementById('fQuestionSet')?.value||'';
     if(questionSet)params.set('questionSet',questionSet);
     if(questionTimeframe)params.set('timeframe',questionTimeframe);

@@ -984,6 +984,19 @@ function applySubjectFilter(query, user, requestedSubject) {
     : query.eq('subject', subject);
 }
 
+// Multi-chapter filter (added). The existing single `chapter` param is left
+// untouched; when two or more chapters are chosen the client sends them as
+// repeated `chapters` params instead (?chapters=A&chapters=B).
+const MAX_CHAPTER_FILTERS = 100;
+function parseChapterList(value) {
+  const values = Array.isArray(value) ? value : [value];
+  return [...new Set(
+    values
+      .map(item => String(item ?? '').trim())
+      .filter(Boolean)
+  )].slice(0, MAX_CHAPTER_FILTERS);
+}
+
 function applyQuestionFilters(query, params) {
   const klass = String(params.klass || '').replace(/^class\s*/i, '').trim();
   const chapter = String(params.chapter || '').trim();
@@ -1009,6 +1022,8 @@ function applyQuestionFilters(query, params) {
     }
   }
   if (chapter) query = query.eq('chapter', chapter);
+  const chapterList = parseChapterList(params.chapters);
+  if (chapterList.length) query = query.in('chapter', chapterList);
   if (concept) query = query.eq('topic', concept);
   if (search) query = query.ilike('question', `%${search}%`);
   if (createdBy) {
@@ -1276,6 +1291,7 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       ? 'Full Syllabus'
       : String(req.query.klass || '').replace(/^class\s*/i, '').trim();
     const chapter = String(req.query.chapter || '').trim();
+    const chapterList = new Set(parseChapterList(req.query.chapters));
     const concept = String(req.query.concept || '').trim();
     const requestedType = String(req.query.qType || '').trim();
     const createdBy = String(req.query.createdBy || '').trim();
@@ -1329,6 +1345,12 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       ) return false;
 
       if (
+        ignore !== 'chapter' &&
+        chapterList.size &&
+        !chapterList.has(String(row.chapter || ''))
+      ) return false;
+
+      if (
         ignore !== 'concept' &&
         concept &&
         String(row.topic || '') !== concept
@@ -1362,6 +1384,13 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       if(
         chapter &&
         String(row.chapter || '') !== chapter
+      ){
+        return false;
+      }
+
+      if(
+        chapterList.size &&
+        !chapterList.has(String(row.chapter || ''))
       ){
         return false;
       }
