@@ -997,6 +997,48 @@ function parseChapterList(value) {
   )].slice(0, MAX_CHAPTER_FILTERS);
 }
 
+// Saved Questions exam-type filter (added). 'NEET/JEE' combined questions
+// belong to both NEET and JEE, so they match either exam.
+const SAVED_QUESTION_EXAMS = ['NEET', 'JEE', 'KCET', 'NEET/JEE'];
+function examFilterValues(exam) {
+  const value = String(exam || '').trim();
+  if (!SAVED_QUESTION_EXAMS.includes(value)) return [];
+  if (value === 'NEET' || value === 'JEE') return [value, 'NEET/JEE'];
+  return [value];
+}
+
+function isPaperQuestionSet(questionSet) {
+  return ['grand_test', 'previous_year'].includes(String(questionSet || '').trim().toLowerCase());
+}
+
+// Grand Test / Previous Year questions keep their real class and chapter only
+// inside the paper metadata (the DB columns hold 'Full Syllabus' /
+// 'Previous Year Questions'), so those two filters are applied in memory.
+function paperSetMetadataFilters(params) {
+  if (!isPaperQuestionSet(params.questionSet)) return null;
+  const klass = String(params.klass || '').replace(/^class\s*/i, '').trim();
+  const chapters = parseChapterList([
+    ...(params.chapter ? [params.chapter] : []),
+    ...parseChapterList(params.chapters),
+  ]);
+  if (!klass && !chapters.length) return null;
+  return { klass, chapters: new Set(chapters) };
+}
+
+function paperMetadataOf(question) {
+  return question?.previousYear || question?.grandTest || {};
+}
+
+function matchesPaperSetMetadata(question, filters) {
+  if (!filters) return true;
+  const metadata = paperMetadataOf(question);
+  const klass = String(metadata.klass || '').replace(/^class\s*/i, '').trim();
+  const chapter = String(metadata.chapter || '').trim();
+  if (filters.klass && klass !== filters.klass) return false;
+  if (filters.chapters.size && !filters.chapters.has(chapter)) return false;
+  return true;
+}
+
 function applyQuestionFilters(query, params) {
   const klass = String(params.klass || '').replace(/^class\s*/i, '').trim();
   const chapter = String(params.chapter || '').trim();
@@ -1005,6 +1047,9 @@ function applyQuestionFilters(query, params) {
   const createdBy = String(params.createdBy || '').trim();
   const search = String(params.search || '').trim().slice(0, 200);
   const questionSet = String(params.questionSet || '').trim().toLowerCase();
+  const paperSet = isPaperQuestionSet(questionSet);
+  const examValues = examFilterValues(params.exam);
+  const year = String(params.year || '').trim();
 
   if (questionSet === 'grand_test') {
     query = query.in('klass', ['Full Syllabus', 'Class Full Syllabus']);
@@ -1021,9 +1066,12 @@ function applyQuestionFilters(query, params) {
         .neq('klass', 'Class Full Syllabus');
     }
   }
-  if (chapter) query = query.eq('chapter', chapter);
-  const chapterList = parseChapterList(params.chapters);
+  // Paper sets: class/chapter come from metadata (see paperSetMetadataFilters).
+  if (!paperSet && chapter) query = query.eq('chapter', chapter);
+  const chapterList = paperSet ? [] : parseChapterList(params.chapters);
   if (chapterList.length) query = query.in('chapter', chapterList);
+  if (examValues.length) query = query.overlaps('exams', examValues);
+  if (questionSet === 'previous_year' && /^\d{4}$/.test(year)) query = query.eq('year', year);
   if (concept) query = query.eq('topic', concept);
   if (search) query = query.ilike('question', `%${search}%`);
   if (createdBy) {
@@ -1275,6 +1323,35 @@ async function readFacetContributorUsers(){
     facetContributorCacheLoad=null;
   }
 }
+// Distinct years of saved Previous Year questions, newest first (added).
+// Reads only the year column; a failure just leaves the Year dropdown empty.
+async function readPreviousYearFacetYears(subject) {
+  try {
+    const years = new Set();
+    for (const client of new Set(questionReadSourcesFor(subject, 'Full Syllabus'))) {
+      for (let from = 0; ; from += FACET_PAGE_SIZE) {
+        let query = client
+          .from('questions')
+          .select('year')
+          .in('klass', ['Full Syllabus', 'Class Full Syllabus'])
+          .eq('chapter', 'Previous Year Questions')
+          .range(from, from + FACET_PAGE_SIZE - 1);
+        query = applyFacetScope(query, subject, '');
+        const { data, error } = await query;
+        if (error) throw error;
+        (data || []).forEach(row => {
+          const year = String(row?.year || '').trim();
+          if (/^\d{4}$/.test(year)) years.add(year);
+        });
+        if (!data || data.length < FACET_PAGE_SIZE) break;
+      }
+    }
+    return [...years].sort((a, b) => b.localeCompare(a));
+  } catch (_) {
+    return [];
+  }
+}
+
 // Lightweight values used by the cascading dropdowns. This intentionally
 // avoids downloading question text, options, solutions, and embedded images.
 router.get('/facets', ...READ_ROLES, async (req, res) => {
@@ -1290,8 +1367,9 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     const klass = ['grand_test', 'previous_year'].includes(questionSet)
       ? 'Full Syllabus'
       : String(req.query.klass || '').replace(/^class\s*/i, '').trim();
-    const chapter = String(req.query.chapter || '').trim();
-    const chapterList = new Set(parseChapterList(req.query.chapters));
+    // Paper-set chapters live in metadata, not in the chapter column.
+    const chapter = isPaperQuestionSet(questionSet) ? '' : String(req.query.chapter || '').trim();
+    const chapterList = new Set(isPaperQuestionSet(questionSet) ? [] : parseChapterList(req.query.chapters));
     const concept = String(req.query.concept || '').trim();
     const requestedType = String(req.query.qType || '').trim();
     const createdBy = String(req.query.createdBy || '').trim();
@@ -1470,6 +1548,10 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       ],
 
       contributors,
+
+      years: questionSet === 'previous_year'
+        ? await readPreviousYearFacetYears(subject)
+        : [],
     });
   } catch (error) {
     res.status(500).json({
@@ -1503,6 +1585,66 @@ router.get('/', ...READ_ROLES, async (req, res) => {
       ? questionReadSourcesFor(listSubject, 'Full Syllabus')
       : questionReadSourcesFor(listSubject, req.query.klass);
     const perSourceEnd = Math.max(0, offset + limit - 1);
+
+    // Grand Test / Previous Year with a Class or Chapter filter: those values
+    // live in the paper metadata, so read the (already narrowed) paper rows,
+    // filter them in memory, then paginate. Every other request uses the
+    // unchanged database-paginated path below.
+    const paperFilters = paperSetMetadataFilters(req.query);
+    if (paperFilters) {
+      const PAPER_READ_PAGE = 1000;
+      const paperRows = [];
+      for (const questionClient of readSources) {
+        for (let from = 0; ; from += PAPER_READ_PAGE) {
+          let query = questionClient
+            .from('questions')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, from + PAPER_READ_PAGE - 1);
+          query = applySubjectFilter(query, effectiveUser, req.query.subject);
+          query = applyQuestionFilters(query, req.query);
+          const { data, error } = await query;
+          if (error) throw error;
+          paperRows.push(...(data || []));
+          if (!data || data.length < PAPER_READ_PAGE) break;
+        }
+      }
+
+      const seenPaperIds = new Set();
+      const matchingPaperQuestions = paperRows
+        .filter(row => {
+          const id = String(row?.id || '');
+          if (!id || seenPaperIds.has(id)) return false;
+          seenPaperIds.add(id);
+          return true;
+        })
+        .sort((a, b) => {
+          const aTime = Date.parse(a?.created_at || '') || 0;
+          const bTime = Date.parse(b?.created_at || '') || 0;
+          if (aTime !== bTime) return bTime - aTime;
+          return String(b?.id || '').localeCompare(String(a?.id || ''));
+        })
+        .map(row => toApi(row))
+        .filter(question => matchesPaperSetMetadata(question, paperFilters));
+
+      const paperTotal = matchingPaperQuestions.length;
+      const paperQuestions = matchingPaperQuestions
+        .slice(offset, offset + limit)
+        .map((question, index) => ({
+          ...question,
+          mqpId: `MQP${Math.max(1, paperTotal - offset - index)}`,
+        }));
+
+      if (!paged) return res.json(paperQuestions);
+      return res.json({
+        items: paperQuestions,
+        page,
+        pageSize,
+        total: paperTotal,
+        totalPages: Math.max(1, Math.ceil(paperTotal / pageSize)),
+      });
+    }
 
     const sourceResults = await Promise.all(readSources.map(async questionClient => {
       let query = questionClient

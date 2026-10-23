@@ -1378,14 +1378,19 @@ if (mode === 'col1') {
         const paperYear = meta.isPreviousYear ? grandTestHeader.year : '';
         // Per-question @chapter is stored inside the paper metadata only; the
         // saved chapter column stays 'Full Syllabus' / 'Previous Year Questions'.
-        const paperChapter = extractInlineMetadata(block.lines).chapter || '';
+        const paperInline = extractInlineMetadata(block.lines);
+        const paperChapter = paperInline.chapter || '';
+        // Per-question @class (11 / 12) is stored the same way as @chapter.
+        const paperClass = String(paperInline.klass || '').replace(/^class\s*/i, '').trim();
         question.source = grandTestHeader.paper;
         question.year = paperYear;
         question.paperChapter = paperChapter;
+        question.paperClass = paperClass;
         const paperMetadata = {
           paper: grandTestHeader.paper,
           year: paperYear,
           coverage: meta.coverage,
+          klass: paperClass,
           chapter: paperChapter,
         };
         if (meta.isGrandTest) question.grandTest = paperMetadata;
@@ -1410,6 +1415,7 @@ if (mode === 'col1') {
       if (!selectedChapter) q.errors.push(`Question #${num}: Chapter must be selected from the dropdown.`);
       if (meta.isPaperSet && !q.source) q.errors.push(`Question #${num}: @paper is required once at the top.`);
       if (meta.isPreviousYear && !q.year) q.errors.push(`Question #${num}: @year must be a four-digit year at the top.`);
+      if (meta.isPaperSet && !['11', '12'].includes(q.paperClass)) q.errors.push(`Question #${num}: @class must be 11 or 12 for every question.`);
       if (meta.isPaperSet && !q.paperChapter) q.errors.push(`Question #${num}: @chapter is required for every question.`);
       if (meta.isPaperSet && meta.coverage !== 'Subject-wise' && !q.grandSubjectFromLatex) {
         q.errors.push(`Question #${num}: @subject is required for ${meta.coverage} papers.`);
@@ -1785,7 +1791,7 @@ async function checkPreviousImports(questions, requestId) {
     const visibleChapter = q.paperChapter ? q.paperChapter : typeof window.chapterDisplayName === 'function'
       ? window.chapterDisplayName(q.subject, q.klass, q.chapter)
       : (q.chapter || '');
-    metaLine.textContent = (q.subject || '') + ' · Class ' + (q.klass || '') + ' · Chapter: ' + visibleChapter + (q.concept ? ' · Concept: ' + q.concept : '');
+    metaLine.textContent = (q.subject || '') + ' · Class ' + (q.paperClass || q.klass || '') + ' · Chapter: ' + visibleChapter + (q.concept ? ' · Concept: ' + q.concept : '');
     card.appendChild(metaLine);
 
     if (q.collapsed) return card;
@@ -2251,6 +2257,7 @@ function scheduleHistorySave() {
     const grandTestSample = `${paperHeader}
 
 @subject: Physics
+@class: 12
 @chapter: Current Electricity
 @type: Standard MCQ
 @difficulty: Medium
@@ -2266,6 +2273,7 @@ Solution: Using Ohm's law, I = V/R = 220/110 = 2 A.
 ---
 
 @subject: Chemistry
+@class: 11
 @chapter: Classification of Elements and Periodicity in Properties
 @type: Standard MCQ
 @difficulty: Medium
@@ -2281,6 +2289,7 @@ Solution: Fluorine has the highest electronegativity in the periodic table.`;
     const subjectWiseGrandTestSample = `${paperHeader}
 
 @subject: ${sampleMeta.subject}
+@class: 12
 @chapter: Paste the chapter name here
 @type: Standard MCQ
 @difficulty: Medium

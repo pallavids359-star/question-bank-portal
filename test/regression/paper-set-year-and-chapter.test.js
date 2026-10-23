@@ -16,7 +16,8 @@ test('Grand Test papers do not carry a year; Previous Year papers require one', 
 });
 
 test('Every Grand Test / Previous Year question requires its own @chapter', () => {
-  assert.match(bulk, /const paperChapter = extractInlineMetadata\(block\.lines\)\.chapter \|\| ''/);
+  assert.match(bulk, /const paperInline = extractInlineMetadata\(block\.lines\)/);
+  assert.match(bulk, /const paperChapter = paperInline\.chapter \|\| ''/);
   assert.match(bulk, /chapter: paperChapter,/);
   assert.match(bulk, /if \(meta\.isPaperSet && !q\.paperChapter\) q\.errors\.push\(`Question #\$\{num\}: @chapter is required for every question\.`\)/);
 });
@@ -30,4 +31,12 @@ test('Editing a paper question preserves its per-question chapter', () => {
   assert.match(frontend, /chapter:String\(metadata\.chapter\|\|''\)/);
   assert.match(frontend, /chapter:editingGrandTest\.chapter/);
   assert.match(frontend, /chapter:editingPreviousYear\.chapter/);
+});
+
+test('Every Grand Test / Previous Year question requires its own @class (11 or 12)', () => {
+  assert.match(bulk, /klass: paperClass,/);
+  assert.match(bulk, /@class must be 11 or 12 for every question\./);
+  assert.match(frontend, /klass:String\(metadata\.klass\|\|''\)/);
+  assert.match(frontend, /klass:editingGrandTest\.klass/);
+  assert.match(frontend, /klass:editingPreviousYear\.klass/);
 });

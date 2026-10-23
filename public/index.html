@@ -1821,6 +1821,14 @@ img,svg,canvas{max-width:100%;}
     <option value="previous_year">Previous Year Questions</option>
   </select>
 
+  <select id="fExam" title="Filter by exam type">
+    <option value="">All Exam Types</option>
+  </select>
+
+  <select id="fYear" title="Filter Previous Year questions by year" style="display:none;">
+    <option value="">All Years</option>
+  </select>
+
   <select id="fSubject">
     <option value="">All Subjects</option>
   </select>
@@ -1999,7 +2007,7 @@ img,svg,canvas{max-width:100%;}
             </div>
           </div>
           <div id="bqGrandTestHint" style="display:none;margin-top:10px;font-size:11px;color:#8f9bba;">
-            Add <code>@paper: ReNEET</code> once at the top. For Previous Year papers, also add <code>@year: 2024</code> (required); Grand Test papers do not need a year. Add <code>@chapter:</code> to every question. For PCMB, PCM or PCB papers, add <code>@subject:</code> to every question.
+            Add <code>@paper: ReNEET</code> once at the top. For Previous Year papers, also add <code>@year: 2024</code> (required); Grand Test papers do not need a year. Add <code>@class:</code> (11 or 12) and <code>@chapter:</code> to every question. For PCMB, PCM or PCB papers, add <code>@subject:</code> to every question.
           </div>
         </div>
 
@@ -3661,6 +3669,8 @@ function navigateToQuestions(focusTarget) {
   if (fConcept) fConcept.value = '';
   if (fType)    fType.value = '';
   if (fContributor) fContributor.value = '';
+  if (document.getElementById('fExam')) document.getElementById('fExam').value = '';
+  if (document.getElementById('fYear')) document.getElementById('fYear').value = '';
    if(fSearch){
   fSearch.value='';
 }
@@ -3699,6 +3709,8 @@ function filterQuestionsByTimeframe(tf) {
   if (fConcept) fConcept.value = '';
   if (fType)    fType.value = '';
   if (fContributor) fContributor.value = '';
+  if (document.getElementById('fExam')) document.getElementById('fExam').value = '';
+  if (document.getElementById('fYear')) document.getElementById('fYear').value = '';
   showPage('pageQuestions');
   questionTimeframe=tf;
   questionPage=1;
@@ -5837,6 +5849,7 @@ function grandTestMetadataFor(question){
   return {
     paper:String(metadata.paper||question.source||''),
     year:String(metadata.year||question.year||''),
+    klass:String(metadata.klass||''),
     chapter:String(metadata.chapter||''),
     coverage:['Subject-wise','PCM','PCB','PCMB'].includes(storedCoverage)
       ? storedCoverage
@@ -5851,6 +5864,7 @@ function previousYearMetadataFor(question){
   return {
     paper:String(metadata.paper||question.source||''),
     year:String(metadata.year||question.year||''),
+    klass:String(metadata.klass||''),
     chapter:String(metadata.chapter||''),
     coverage:['Subject-wise','PCM','PCB','PCMB'].includes(storedCoverage)
       ? storedCoverage
@@ -6012,12 +6026,14 @@ optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
       paper:editingGrandTest.paper,
       year:editingGrandTest.year,
       coverage:editingGrandTest.coverage,
+      klass:editingGrandTest.klass,
       chapter:editingGrandTest.chapter
     }:null,
     previousYear:editingPreviousYear?{
       paper:editingPreviousYear.paper,
       year:editingPreviousYear.year,
       coverage:editingPreviousYear.coverage,
+      klass:editingPreviousYear.klass,
       chapter:editingPreviousYear.chapter
     }:null
   };
@@ -6168,10 +6184,15 @@ function renderFilterSubjects(){
 
     // Keep DB/custom chapter values too, so no previously stored content
     // becomes unreachable merely because it is absent from the static list.
+    const paperSetSelected=['grand_test','previous_year'].includes(
+      document.getElementById('fQuestionSet')?.value||''
+    );
     return uniqueSorted([
       ...configured,
       ...(questionFacets.chapters||[])
-    ]);
+    ]).filter(chapter=>
+      !paperSetSelected||!['Full Syllabus','Previous Year Questions'].includes(chapter)
+    );
   }
 
   const curSubject=fSubject.value;
@@ -6315,6 +6336,34 @@ function renderFilterSubjects(){
     )
       ? curContributor
       : '';
+
+  // Exam type: exams allowed for the chosen subject (all exams otherwise).
+  const fExam=document.getElementById('fExam');
+  if(fExam){
+    const examOptions=fSubject.value
+      ? allowedExamsForSubject(fSubject.value)
+      : EXAMS.slice();
+    fillFilter(fExam,'All Exam Types',examOptions,fExam.value);
+  }
+
+  // Year: distinct years of saved Previous Year questions.
+  const fYear=document.getElementById('fYear');
+  if(fYear){
+    const yearOptions=Array.isArray(questionFacets.years)?questionFacets.years:[];
+    const curYear=fYear.value;
+    fYear.innerHTML='';
+    const allYears=document.createElement('option');
+    allYears.value='';
+    allYears.textContent='All Years';
+    fYear.appendChild(allYears);
+    yearOptions.forEach(year=>{
+      const option=document.createElement('option');
+      option.value=year;
+      option.textContent=year;
+      fYear.appendChild(option);
+    });
+    fYear.value=yearOptions.includes(curYear)?curYear:'';
+  }
 }
 function setSavedFilterLoading(selectId,label){
   const select=document.getElementById(selectId);
@@ -6383,11 +6432,23 @@ const savedFilterSearchClear =
 let savedQuestionSearchTimer = null;
 function syncSavedQuestionSetFilters(){
   const paperSet=['grand_test','previous_year'].includes(savedFilterQuestionSet?.value);
-  [savedFilterClass,savedFilterChapter,savedFilterConcept].forEach(select=>{
+  // Grand Test / Previous Year questions can be filtered by their own Class
+  // and Chapter (stored in paper metadata); Concept stays disabled for them.
+  [savedFilterClass,savedFilterChapter].forEach(select=>{
     if(!select)return;
-    if(paperSet)select.value='';
-    select.disabled=paperSet;
+    select.value='';
+    select.disabled=false;
   });
+  if(savedFilterConcept){
+    if(paperSet)savedFilterConcept.value='';
+    savedFilterConcept.disabled=paperSet;
+  }
+  const savedFilterYear=document.getElementById('fYear');
+  if(savedFilterYear){
+    const previousYearSet=savedFilterQuestionSet?.value==='previous_year';
+    if(!previousYearSet)savedFilterYear.value='';
+    savedFilterYear.style.display=previousYearSet?'':'none';
+  }
 }
 if(savedFilterQuestionSet)savedFilterQuestionSet.addEventListener('change',()=>{
   syncSavedQuestionSetFilters();
@@ -6421,6 +6482,10 @@ if(savedFilterConcept) savedFilterConcept.addEventListener('change',()=>{
   questionPage=1;loadQuestions(1,true);
 });
 if(savedFilterType) savedFilterType.addEventListener('change',()=>{questionPage=1;loadQuestions(1,true);});
+['fExam','fYear'].forEach(id=>{
+  const select=document.getElementById(id);
+  if(select)select.addEventListener('change',()=>{questionPage=1;loadQuestions(1,true);});
+});
 if(savedFilterContributor) savedFilterContributor.addEventListener('change',()=>{questionPage=1;loadQuestions(1,true);});
 
 // ── SAVED QUESTIONS: MULTI-CHAPTER FILTER (added) ───────────
@@ -6936,22 +7001,39 @@ function renderList(){
   const conceptF=fConcept ? fConcept.value : '';
   const typeF=fType ? fType.value : '';
   const questionSetF=fQuestionSet ? fQuestionSet.value : '';
+  const examF=document.getElementById('fExam')?.value||'';
+  const yearF=questionSetF==='previous_year'?(document.getElementById('fYear')?.value||''):'';
   const assignedSubject=assignedSubjectFor(Auth.getUser());
   const filtered=allQuestions.filter(q=>{
     if(!q)return false;
-    const previousYear=Boolean(previousYearMetadataFor(q));
-    const grandTest=!previousYear&&Boolean(grandTestMetadataFor(q));
+    const previousYearMeta=previousYearMetadataFor(q);
+    const previousYear=Boolean(previousYearMeta);
+    const grandTestMeta=previousYear?null:grandTestMetadataFor(q);
+    const grandTest=Boolean(grandTestMeta);
+    // Paper questions are filtered by the class/chapter in their metadata.
+    const paperMeta=['grand_test','previous_year'].includes(questionSetF)
+      ? (previousYearMeta||grandTestMeta)
+      : null;
+    const qClass=paperMeta?paperMeta.klass:q.klass;
+    const qChapter=paperMeta?paperMeta.chapter:q.chapter;
+    const qExams=Array.isArray(q.exams)?q.exams:[];
+    const matchesExam=!examF
+      ||qExams.includes(examF)
+      ||(['NEET','JEE'].includes(examF)&&qExams.includes('NEET/JEE'));
+    const matchesYear=!yearF||String((previousYearMeta&&previousYearMeta.year)||q.year||'')===yearF;
     const matchesQuestionSet=!questionSetF
       ||(questionSetF==='grand_test'&&grandTest)
       ||(questionSetF==='previous_year'&&previousYear)
       ||(questionSetF==='chapter'&&!grandTest&&!previousYear);
     return (!assignedSubject||sameSubject(q.subject,assignedSubject))
       &&(!subjF||sameSubject(q.subject,subjF))
-      &&(!classF||String(q.klass||'').replace(/^class\s*/i,'').trim()===classF)
-      &&(!chapterF||q.chapter===chapterF)
+      &&(!classF||String(qClass||'').replace(/^class\s*/i,'').trim()===classF)
+      &&(!chapterF||qChapter===chapterF)
       &&(!conceptF||q.topic===conceptF)
       &&(!typeF||q.qType===typeF)
-      &&savedChapterMultiMatches(q.chapter)
+      &&savedChapterMultiMatches(qChapter)
+      &&matchesExam
+      &&matchesYear
       &&matchesQuestionSet;
   });
   renderSavedQuestionCount();
@@ -6990,13 +7072,13 @@ const isAdmin = currentRole === 'admin';
     if(grandTest){
       const gtMeta=document.createElement('div');
       gtMeta.className='li-owner';
-      gtMeta.textContent='Grand Test · '+(grandTest.paper||'Paper')+(grandTest.year?' · '+grandTest.year:'')+' · '+grandTest.coverage+(grandTest.chapter?' · '+grandTest.chapter:'');
+      gtMeta.textContent='Grand Test · '+(grandTest.paper||'Paper')+(grandTest.year?' · '+grandTest.year:'')+' · '+grandTest.coverage+(grandTest.klass?' · Class '+grandTest.klass:'')+(grandTest.chapter?' · '+grandTest.chapter:'');
       main.appendChild(gtMeta);
     }
     if(previousYear){
       const pyqMeta=document.createElement('div');
       pyqMeta.className='li-owner';
-      pyqMeta.textContent='Previous Year Question · '+(previousYear.paper||'Paper')+(previousYear.year?' · '+previousYear.year:'')+' · '+previousYear.coverage+(previousYear.chapter?' · '+previousYear.chapter:'');
+      pyqMeta.textContent='Previous Year Question · '+(previousYear.paper||'Paper')+(previousYear.year?' · '+previousYear.year:'')+' · '+previousYear.coverage+(previousYear.klass?' · Class '+previousYear.klass:'')+(previousYear.chapter?' · '+previousYear.chapter:'');
       main.appendChild(pyqMeta);
     }
    const reviewStatus = q.reviewStatus || 'pending';
@@ -8666,6 +8748,10 @@ if(searchText){
     appendSelectedSavedChapters(params);
     const questionSet=document.getElementById('fQuestionSet')?.value||'';
     if(questionSet)params.set('questionSet',questionSet);
+    const examFilter=document.getElementById('fExam')?.value||'';
+    if(examFilter)params.set('exam',examFilter);
+    const yearFilter=questionSet==='previous_year'?(document.getElementById('fYear')?.value||''):'';
+    if(yearFilter)params.set('year',yearFilter);
     if(questionTimeframe)params.set('timeframe',questionTimeframe);
     const data=await apiRequest('?'+params.toString());
     if(loadSequence!==questionLoadSequence)return;
