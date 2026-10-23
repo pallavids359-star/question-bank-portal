@@ -1999,7 +1999,7 @@ img,svg,canvas{max-width:100%;}
             </div>
           </div>
           <div id="bqGrandTestHint" style="display:none;margin-top:10px;font-size:11px;color:#8f9bba;">
-            Add <code>@paper: ReNEET</code> and <code>@year: 2026</code> in the pasted text. For PCMB, PCM or PCB papers, add <code>@subject:</code> to every question.
+            Add <code>@paper: ReNEET</code> once at the top. For Previous Year papers, also add <code>@year: 2024</code> (required); Grand Test papers do not need a year. Add <code>@chapter:</code> to every question. For PCMB, PCM or PCB papers, add <code>@subject:</code> to every question.
           </div>
         </div>
 
@@ -5837,6 +5837,7 @@ function grandTestMetadataFor(question){
   return {
     paper:String(metadata.paper||question.source||''),
     year:String(metadata.year||question.year||''),
+    chapter:String(metadata.chapter||''),
     coverage:['Subject-wise','PCM','PCB','PCMB'].includes(storedCoverage)
       ? storedCoverage
       : 'Subject-wise'
@@ -5850,6 +5851,7 @@ function previousYearMetadataFor(question){
   return {
     paper:String(metadata.paper||question.source||''),
     year:String(metadata.year||question.year||''),
+    chapter:String(metadata.chapter||''),
     coverage:['Subject-wise','PCM','PCB','PCMB'].includes(storedCoverage)
       ? storedCoverage
       : 'Subject-wise'
@@ -6009,12 +6011,14 @@ optD:(isMatch||isNum||isTF)?'':eqVal('optD'),
     grandTest:editingGrandTest?{
       paper:editingGrandTest.paper,
       year:editingGrandTest.year,
-      coverage:editingGrandTest.coverage
+      coverage:editingGrandTest.coverage,
+      chapter:editingGrandTest.chapter
     }:null,
     previousYear:editingPreviousYear?{
       paper:editingPreviousYear.paper,
       year:editingPreviousYear.year,
-      coverage:editingPreviousYear.coverage
+      coverage:editingPreviousYear.coverage,
+      chapter:editingPreviousYear.chapter
     }:null
   };
 
@@ -6986,13 +6990,13 @@ const isAdmin = currentRole === 'admin';
     if(grandTest){
       const gtMeta=document.createElement('div');
       gtMeta.className='li-owner';
-      gtMeta.textContent='Grand Test · '+(grandTest.paper||'Paper')+(grandTest.year?' · '+grandTest.year:'')+' · '+grandTest.coverage;
+      gtMeta.textContent='Grand Test · '+(grandTest.paper||'Paper')+(grandTest.year?' · '+grandTest.year:'')+' · '+grandTest.coverage+(grandTest.chapter?' · '+grandTest.chapter:'');
       main.appendChild(gtMeta);
     }
     if(previousYear){
       const pyqMeta=document.createElement('div');
       pyqMeta.className='li-owner';
-      pyqMeta.textContent='Previous Year Question · '+(previousYear.paper||'Paper')+(previousYear.year?' · '+previousYear.year:'')+' · '+previousYear.coverage;
+      pyqMeta.textContent='Previous Year Question · '+(previousYear.paper||'Paper')+(previousYear.year?' · '+previousYear.year:'')+' · '+previousYear.coverage+(previousYear.chapter?' · '+previousYear.chapter:'');
       main.appendChild(pyqMeta);
     }
    const reviewStatus = q.reviewStatus || 'pending';

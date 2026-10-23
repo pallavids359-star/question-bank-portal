@@ -1374,12 +1374,19 @@ if (mode === 'col1') {
       const parser = ParserRegistry.get(qType);
       const question = parser.parse(block, meta);
       if (meta.isPaperSet) {
+        // Grand Test papers carry no year; Previous Year papers keep the @year header.
+        const paperYear = meta.isPreviousYear ? grandTestHeader.year : '';
+        // Per-question @chapter is stored inside the paper metadata only; the
+        // saved chapter column stays 'Full Syllabus' / 'Previous Year Questions'.
+        const paperChapter = extractInlineMetadata(block.lines).chapter || '';
         question.source = grandTestHeader.paper;
-        question.year = grandTestHeader.year;
+        question.year = paperYear;
+        question.paperChapter = paperChapter;
         const paperMetadata = {
           paper: grandTestHeader.paper,
-          year: grandTestHeader.year,
+          year: paperYear,
           coverage: meta.coverage,
+          chapter: paperChapter,
         };
         if (meta.isGrandTest) question.grandTest = paperMetadata;
         if (meta.isPreviousYear) question.previousYear = paperMetadata;
@@ -1402,7 +1409,8 @@ if (mode === 'col1') {
       if (!selectedClass) q.errors.push(`Question #${num}: Class must be selected from the dropdown.`);
       if (!selectedChapter) q.errors.push(`Question #${num}: Chapter must be selected from the dropdown.`);
       if (meta.isPaperSet && !q.source) q.errors.push(`Question #${num}: @paper is required once at the top.`);
-      if (meta.isPaperSet && !q.year) q.errors.push(`Question #${num}: @year must be a four-digit year at the top.`);
+      if (meta.isPreviousYear && !q.year) q.errors.push(`Question #${num}: @year must be a four-digit year at the top.`);
+      if (meta.isPaperSet && !q.paperChapter) q.errors.push(`Question #${num}: @chapter is required for every question.`);
       if (meta.isPaperSet && meta.coverage !== 'Subject-wise' && !q.grandSubjectFromLatex) {
         q.errors.push(`Question #${num}: @subject is required for ${meta.coverage} papers.`);
       }
@@ -1774,7 +1782,7 @@ async function checkPreviousImports(questions, requestId) {
 
     const metaLine = document.createElement('div');
     metaLine.className = 'bq-card-meta';
-    const visibleChapter = typeof window.chapterDisplayName === 'function'
+    const visibleChapter = q.paperChapter ? q.paperChapter : typeof window.chapterDisplayName === 'function'
       ? window.chapterDisplayName(q.subject, q.klass, q.chapter)
       : (q.chapter || '');
     metaLine.textContent = (q.subject || '') + ' · Class ' + (q.klass || '') + ' · Chapter: ' + visibleChapter + (q.concept ? ' · Concept: ' + q.concept : '');
@@ -2238,10 +2246,12 @@ function scheduleHistorySave() {
 
   function restoreSample() {
     const sampleMeta = getMeta();
-    const grandTestSample = `@paper: ReNEET
-@year: 2026
+    const paperHeader = sampleMeta.isPreviousYear ? `@paper: NEET
+@year: 2024` : `@paper: ReNEET`;
+    const grandTestSample = `${paperHeader}
 
 @subject: Physics
+@chapter: Current Electricity
 @type: Standard MCQ
 @difficulty: Medium
 
@@ -2256,6 +2266,7 @@ Solution: Using Ohm's law, I = V/R = 220/110 = 2 A.
 ---
 
 @subject: Chemistry
+@chapter: Classification of Elements and Periodicity in Properties
 @type: Standard MCQ
 @difficulty: Medium
 
@@ -2267,10 +2278,10 @@ Solution: Using Ohm's law, I = V/R = 220/110 = 2 A.
 Answer: A
 Solution: Fluorine has the highest electronegativity in the periodic table.`;
 
-    const subjectWiseGrandTestSample = `@paper: ReNEET
-@year: 2026
+    const subjectWiseGrandTestSample = `${paperHeader}
 
 @subject: ${sampleMeta.subject}
+@chapter: Paste the chapter name here
 @type: Standard MCQ
 @difficulty: Medium
 
