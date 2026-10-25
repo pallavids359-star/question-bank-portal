@@ -106,6 +106,31 @@
     return { paper, year, cleanText: cleanLines.join('\n') };
   }
 
+  // Assertion/Reason label clean-up (added). Runs before the unchanged
+  // detection and parsing pipeline and only rewrites lines that START with a
+  // wrapped or combined Assertion/Reason label, e.g.
+  //   \textbf{Assertion (A):} text   -> Assertion (A): text
+  //   **Reason (R):** text            -> Reason (R): text
+  //   Assertion (A): x  Reason (R): y -> two separate lines
+  // Every other line is returned exactly as written.
+  const AR_WRAPPED_LABEL_RE = /^(\s*(?:\d{1,4}\s*[.)]\s*)?)(?:\\textbf\s*\{|\*\*|__)\s*((?:Assertion|Reason)(?:\s*\([AR]\))?\s*[:.\-–—]?)\s*(?:\}|\*\*|__)\s*([:.\-–—])?\s*/i;
+  const AR_SAME_LINE_RE = /^(\s*(?:\d{1,4}\s*[.)]\s*)?Assertion(?:\s*\(A\))?\s*[:.\-–—].*?\S)\s+(Reason(?:\s*\(R\))?\s*[:.\-–—]\s*\S.*)$/;
+
+  function normalizeAssertionReasonLabels(rawText) {
+    return String(rawText || '').split('\n').map(line => {
+      let out = line;
+      const wrapped = out.match(AR_WRAPPED_LABEL_RE);
+      if (wrapped) {
+        let label = wrapped[2].trim();
+        if (!/[:.\-–—]$/.test(label)) label += wrapped[3] || ':';
+        out = wrapped[1] + label + ' ' + out.slice(wrapped[0].length);
+      }
+      const sameLine = out.match(AR_SAME_LINE_RE);
+      if (sameLine) out = sameLine[1] + '\n' + sameLine[2];
+      return out;
+    }).join('\n');
+  }
+
   function grandTestSubjects(coverage) {
     return {
       PCMB: ['Physics', 'Chemistry', 'Mathematics', 'Biology'],
@@ -508,6 +533,13 @@
 
     if (hasExplicitStatementOne && hasExplicitStatementTwo) return 'statement_based';
     if (hasExplicitAssertion && hasExplicitReason) return 'assertion_reason';
+
+    // Short "A: ... / R: ..." labels (added): only when both exist and there
+    // is no "B:" line, so ordinary A:/B:/C:/D: option lists are unaffected.
+    const shortLabel = letter => rawLines.some(line =>
+      new RegExp('^\\s*(?:\\d{1,4}\\s*[.)]\\s*)?' + letter + '\\s*:', '').test(line)
+    );
+    if (shortLabel('A') && shortLabel('R') && !shortLabel('B')) return 'assertion_reason';
 
     if (inline.type) {
       const rawType = inline.type.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
@@ -1361,6 +1393,7 @@ if (mode === 'col1') {
   // ================================================================
   function parseText(rawText) {
     const meta = getMeta();
+    rawText = normalizeAssertionReasonLabels(rawText);
     const grandTestHeader = meta.isPaperSet
       ? extractGrandTestHeader(rawText)
       : { paper: '', year: '', cleanText: rawText };

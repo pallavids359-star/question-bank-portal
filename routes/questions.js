@@ -999,7 +999,7 @@ function parseChapterList(value) {
 
 // Saved Questions exam-type filter (added). 'NEET/JEE' combined questions
 // belong to both NEET and JEE, so they match either exam.
-const SAVED_QUESTION_EXAMS = ['NEET', 'JEE', 'KCET', 'NEET/JEE'];
+const SAVED_QUESTION_EXAMS = ['NEET', 'JEE', 'NEET/JEE'];
 function examFilterValues(exam) {
   const value = String(exam || '').trim();
   if (!SAVED_QUESTION_EXAMS.includes(value)) return [];
@@ -1039,7 +1039,15 @@ function matchesPaperSetMetadata(question, filters) {
   return true;
 }
 
+// Saved Questions hides KCET-only questions for every subject (added).
+// Questions also tagged NEET or JEE stay visible. Only the Saved Questions
+// list and its dropdowns use this; stored data is not changed.
+function excludeKcetOnlyQuestions(query) {
+  return query.neq('exams', '{KCET}');
+}
+
 function applyQuestionFilters(query, params) {
+  query = excludeKcetOnlyQuestions(query);
   const klass = String(params.klass || '').replace(/^class\s*/i, '').trim();
   const chapter = String(params.chapter || '').trim();
   const concept = String(params.concept || params.topic || '').trim();
@@ -1109,6 +1117,7 @@ function facetCacheKey(subject, klass) {
 }
 
 function applyFacetScope(query, subject, klass) {
+  query=excludeKcetOnlyQuestions(query);
   const normalizedSubject=canonicalSubject(subject || '');
   const normalizedClass=normalizedQuestionClass(klass || '');
 

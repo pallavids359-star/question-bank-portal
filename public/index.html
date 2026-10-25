@@ -6340,9 +6340,10 @@ function renderFilterSubjects(){
   // Exam type: exams allowed for the chosen subject (all exams otherwise).
   const fExam=document.getElementById('fExam');
   if(fExam){
-    const examOptions=fSubject.value
+    // KCET questions are hidden in Saved Questions, so KCET is not offered.
+    const examOptions=(fSubject.value
       ? allowedExamsForSubject(fSubject.value)
-      : EXAMS.slice();
+      : EXAMS.slice()).filter(exam=>exam!=='KCET');
     fillFilter(fExam,'All Exam Types',examOptions,fExam.value);
   }
 
@@ -7020,6 +7021,9 @@ function renderList(){
     const matchesExam=!examF
       ||qExams.includes(examF)
       ||(['NEET','JEE'].includes(examF)&&qExams.includes('NEET/JEE'));
+    // Hide KCET-only questions in Saved Questions for every subject.
+    const kcetOnly=qExams.length>0&&qExams.every(exam=>String(exam).trim()==='KCET');
+    if(kcetOnly)return false;
     const matchesYear=!yearF||String((previousYearMeta&&previousYearMeta.year)||q.year||'')===yearF;
     const matchesQuestionSet=!questionSetF
       ||(questionSetF==='grand_test'&&grandTest)
