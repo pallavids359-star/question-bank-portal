@@ -61,10 +61,9 @@ test('A:/B:/C:/D: option lists are not treated as Assertion-Reason', () => {
   assert.notEqual(q.qType, 'assertion_reason');
 });
 
-test('Saved Questions hides KCET-only questions for every subject', () => {
-  assert.match(questions, /function excludeKcetOnlyQuestions\(query\) \{\n  return query\.neq\('exams', '\{KCET\}'\);/);
-  assert.match(questions, /function applyQuestionFilters\(query, params\) \{\n  query = excludeKcetOnlyQuestions\(query\);/);
-  assert.match(questions, /function applyFacetScope\(query, subject, klass\) \{\n  query=excludeKcetOnlyQuestions\(query\);/);
-  assert.match(html, /if\(kcetOnly\)return false;/);
-  assert.match(html, /\.filter\(exam=>exam!=='KCET'\)/);
+test('Saved Questions shows KCET questions and offers KCET as an exam type', () => {
+  assert.doesNotMatch(questions, /excludeKcetOnlyQuestions/);
+  assert.doesNotMatch(html, /if\(kcetOnly\)return false;/);
+  assert.doesNotMatch(html, /\.filter\(exam=>exam!=='KCET'\)/);
+  assert.match(questions, /const SAVED_QUESTION_EXAMS = \['NEET', 'JEE', 'KCET', 'NEET\/JEE'\]/);
 });
