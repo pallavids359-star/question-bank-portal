@@ -26,7 +26,8 @@ test('Year dropdown appears only for Previous Year questions', () => {
 
 test('Grand Test and Previous Year keep Class and Chapter dropdowns enabled', () => {
   assert.match(frontend, /\[savedFilterClass,savedFilterChapter\]\.forEach\(select=>\{/);
-  assert.match(frontend, /savedFilterConcept\.disabled=paperSet/);
+  // Concept is now enabled for paper sets (filled from paper metadata).
+  assert.match(frontend, /savedFilterConcept\.disabled=false/);
   assert.match(frontend, /const qChapter=paperMeta\?paperMeta\.chapter:q\.chapter/);
 });
 

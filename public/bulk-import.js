@@ -20,6 +20,9 @@
   debounceTimer: null,
   duplicateRequestId: 0,
   duplicateCheckPromise: Promise.resolve(),
+  // Grand Test papers are named automatically (GT1, GT2…) by the server.
+  autoGrandTestPaper: '',
+  autoGrandTestPaperLoad: null,
   wordWrap: true,
   filterSearch: '',
   filterType: '',
@@ -129,6 +132,46 @@
       if (sameLine) out = sameLine[1] + '\n' + sameLine[2];
       return out;
     }).join('\n');
+  }
+
+  // ── AUTOMATIC GRAND TEST PAPER NAME (added) ──────────────────────
+  // Grand Test papers are not named in the LaTeX: the server returns the
+  // next unique name (GT1, GT2, GT3…). Previous Year papers keep @paper/@year.
+  function renderGrandTestPaperName() {
+    const el = document.getElementById('bqGrandTestPaperName');
+    if (!el) return;
+    const isGrandTest = val('bqImportMode') === 'grand_test';
+    el.style.display = isGrandTest ? '' : 'none';
+    el.textContent = state.autoGrandTestPaper
+      ? `Paper name (assigned automatically): ${state.autoGrandTestPaper}`
+      : 'Paper name: assigning…';
+  }
+
+  async function fetchGrandTestPaperName(force) {
+    if (!force && state.autoGrandTestPaper) return state.autoGrandTestPaper;
+    if (!force && state.autoGrandTestPaperLoad) return state.autoGrandTestPaperLoad;
+    const load = (async () => {
+      const result = await apiReq('/api/questions/grand-test/next-paper');
+      const paper = String(result?.paper || '').trim();
+      if (!/^GT\d+$/.test(paper)) throw new Error('Could not assign a Grand Test paper name.');
+      state.autoGrandTestPaper = paper;
+      return paper;
+    })();
+    state.autoGrandTestPaperLoad = load;
+    try {
+      return await load;
+    } finally {
+      if (state.autoGrandTestPaperLoad === load) state.autoGrandTestPaperLoad = null;
+      renderGrandTestPaperName();
+    }
+  }
+
+  function applyGrandTestPaperName(questions, paper) {
+    (questions || []).forEach(q => {
+      if (!q || !q.grandTest) return;
+      q.source = paper;
+      q.grandTest.paper = paper;
+    });
   }
 
   function grandTestSubjects(coverage) {
@@ -1415,17 +1458,24 @@ if (mode === 'col1') {
         const paperChapter = paperInline.chapter || '';
         // Per-question @class (11 / 12) is stored the same way as @chapter.
         const paperClass = String(paperInline.klass || '').replace(/^class\s*/i, '').trim();
-        question.source = grandTestHeader.paper;
+        // Grand Test: the paper name is assigned automatically (GT1, GT2…);
+        // any @paper line is ignored. Previous Year keeps @paper as written.
+        const paperName = meta.isGrandTest ? state.autoGrandTestPaper : grandTestHeader.paper;
+        // Per-question @concept (NCERT concept) is stored in the paper metadata.
+        const paperConcept = String(paperInline.concept || '').trim();
+        question.source = paperName;
         question.year = paperYear;
         question.paperChapter = paperChapter;
         question.paperClass = paperClass;
+        question.paperConcept = paperConcept;
         const paperMetadata = {
-          paper: grandTestHeader.paper,
+          paper: paperName,
           year: paperYear,
           coverage: meta.coverage,
           klass: paperClass,
           chapter: paperChapter,
         };
+        if (paperConcept) paperMetadata.concept = paperConcept;
         if (meta.isGrandTest) question.grandTest = paperMetadata;
         if (meta.isPreviousYear) question.previousYear = paperMetadata;
       }
@@ -1446,7 +1496,9 @@ if (mode === 'col1') {
       if (!q.subject && !meta.subject) q.errors.push(`Question #${num}: Subject is required.`);
       if (!selectedClass) q.errors.push(`Question #${num}: Class must be selected from the dropdown.`);
       if (!selectedChapter) q.errors.push(`Question #${num}: Chapter must be selected from the dropdown.`);
-      if (meta.isPaperSet && !q.source) q.errors.push(`Question #${num}: @paper is required once at the top.`);
+      if (meta.isPreviousYear && !q.source) q.errors.push(`Question #${num}: @paper is required once at the top.`);
+      if (meta.isGrandTest && !q.source) q.errors.push(`Question #${num}: Grand Test paper name (GT) is still being assigned. Please wait a moment.`);
+      if (meta.isGrandTest && !q.paperConcept) q.errors.push(`Question #${num}: @concept (NCERT concept) is required for every question.`);
       if (meta.isPreviousYear && !q.year) q.errors.push(`Question #${num}: @year must be a four-digit year at the top.`);
       if (meta.isPaperSet && !['11', '12'].includes(q.paperClass)) q.errors.push(`Question #${num}: @class must be 11 or 12 for every question.`);
       if (meta.isPaperSet && !q.paperChapter) q.errors.push(`Question #${num}: @chapter is required for every question.`);
@@ -1824,7 +1876,7 @@ async function checkPreviousImports(questions, requestId) {
     const visibleChapter = q.paperChapter ? q.paperChapter : typeof window.chapterDisplayName === 'function'
       ? window.chapterDisplayName(q.subject, q.klass, q.chapter)
       : (q.chapter || '');
-    metaLine.textContent = (q.subject || '') + ' · Class ' + (q.paperClass || q.klass || '') + ' · Chapter: ' + visibleChapter + (q.concept ? ' · Concept: ' + q.concept : '');
+    metaLine.textContent = (q.subject || '') + ' · Class ' + (q.paperClass || q.klass || '') + ' · Chapter: ' + visibleChapter + ((q.paperConcept || q.concept) ? ' · Concept: ' + (q.paperConcept || q.concept) : '') + (q.grandTest && q.source ? ' · Paper: ' + q.source : '');
     card.appendChild(metaLine);
 
     if (q.collapsed) return card;
@@ -2081,6 +2133,7 @@ async function checkPreviousImports(questions, requestId) {
     const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
     if (!ta) return;
     const text = ta.value;
+    renderGrandTestPaperName();
     if (!text.trim()) {
       state.duplicateRequestId++;
       state.duplicateCheckPromise = Promise.resolve();
@@ -2088,6 +2141,15 @@ async function checkPreviousImports(questions, requestId) {
       renderCards();
       return;
     }
+
+    // Grand Test: get the automatic paper name first, then parse again.
+    if (val('bqImportMode') === 'grand_test' && !state.autoGrandTestPaper && !state.autoGrandTestPaperLoad) {
+      fetchGrandTestPaperName(false)
+        .then(() => runParse(), err => {
+          if (typeof showToast === 'function') showToast('Could not assign Grand Test paper name: ' + (err?.message || err), true);
+        });
+    }
+    renderGrandTestPaperName();
 
     const questions = parseText(text);
     validateAll(questions);
@@ -2287,6 +2349,39 @@ function scheduleHistorySave() {
     const sampleMeta = getMeta();
     const paperHeader = sampleMeta.isPreviousYear ? `@paper: NEET
 @year: 2024` : `@paper: ReNEET`;
+    // Grand Test: paper name is automatic (GT1, GT2…), every question has
+    // its own @concept. Previous Year sample is unchanged.
+    const grandTestOnlySample = `@subject: Physics
+@class: 12
+@chapter: Current Electricity
+@concept: Ohm's Law
+@type: Standard MCQ
+@difficulty: Medium
+
+1. A 220 V battery is connected across a 110 ohm resistor. What is the current?
+(A) 0.5 A
+(B) 1 A
+(C) 2 A
+(D) 4 A
+Answer: C
+Solution: Using Ohm's law, I = V/R = 220/110 = 2 A.
+
+---
+
+@subject: Chemistry
+@class: 11
+@chapter: Classification of Elements and Periodicity in Properties
+@concept: Electronegativity
+@type: Standard MCQ
+@difficulty: Medium
+
+2. Which of the following has the highest electronegativity?
+(A) F
+(B) Cl
+(C) Br
+(D) I
+Answer: A
+Solution: Fluorine has the highest electronegativity in the periodic table.`;
     const grandTestSample = `${paperHeader}
 
 @subject: Physics
@@ -2388,7 +2483,9 @@ Reason: Light is an electromagnetic wave and does not require a material medium 
 (D) A is false but R is true.
 Answer: A
 Solution: Electromagnetic waves self-propagate through electric and magnetic field oscillations.`;
-    const sample = sampleMeta.isPaperSet
+    const sample = sampleMeta.isGrandTest
+      ? grandTestOnlySample
+      : sampleMeta.isPaperSet
       ? (sampleMeta.coverage === 'Subject-wise' ? subjectWiseGrandTestSample : grandTestSample)
       : chapterSample;
 
@@ -2697,7 +2794,22 @@ if (duplicateKey) {
     }
 
     const newQuestionCount = importList.length - overwriteList.length;
-    if (!confirm(`Update ${overwriteList.length} existing question(s) and import ${newQuestionCount} new question(s)?`)) return;
+
+    // Grand Test: re-check the automatic name right before saving so two
+    // papers never share a GT number, and use it for every question here.
+    let grandTestPaperNote = '';
+    if (meta.isGrandTest) {
+      try {
+        const paper = await fetchGrandTestPaperName(true);
+        applyGrandTestPaperName(importList, paper);
+        grandTestPaperNote = ` as Grand Test paper ${paper}`;
+      } catch (err) {
+        if (typeof showToast === 'function') showToast('Could not assign Grand Test paper name: ' + (err?.message || err), true);
+        return;
+      }
+    }
+
+    if (!confirm(`Update ${overwriteList.length} existing question(s) and import ${newQuestionCount} new question(s)${grandTestPaperNote}?`)) return;
 
     const btn = document.getElementById('bqImportBtn') || document.getElementById('bulkImportBtn');
     if (btn) {
@@ -2821,6 +2933,11 @@ for (const item of savedRows) {
   }
 }
 
+
+// The next Grand Test paper gets a fresh GT number.
+if (meta.isGrandTest) {
+  state.autoGrandTestPaper = '';
+}
 
 // Clear textarea only AFTER cache refresh
 const ta =

@@ -16,6 +16,13 @@ const { toLogicalUser } = require('../lib/user-role');
 
 const router = express.Router();
 
+// Any write may add/rename/remove a Grand Test or Previous Year paper, so the
+// small Paper dropdown cache is dropped (added; other caches are unchanged).
+router.use((req, res, next) => {
+  if (req.method !== 'GET') paperFacetCache.clear();
+  next();
+});
+
 // â”€â”€ field map: API camelCase â†” DB snake_case â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const fieldMap = {
   subject:       'subject',
@@ -1021,8 +1028,13 @@ function paperSetMetadataFilters(params) {
     ...(params.chapter ? [params.chapter] : []),
     ...parseChapterList(params.chapters),
   ]);
-  if (!klass && !chapters.length) return null;
-  return { klass, chapters: new Set(chapters) };
+  // Paper name (GT1, GT2… / Previous Year paper) and per-question concept
+  // also live in the paper metadata (added).
+  const paper = String(params.paper || '').trim();
+  const paperYear = String(params.paperYear || '').trim();
+  const concept = String(params.concept || '').trim();
+  if (!klass && !chapters.length && !paper && !concept) return null;
+  return { klass, chapters: new Set(chapters), paper, paperYear, concept };
 }
 
 function paperMetadataOf(question) {
@@ -1036,7 +1048,50 @@ function matchesPaperSetMetadata(question, filters) {
   const chapter = String(metadata.chapter || '').trim();
   if (filters.klass && klass !== filters.klass) return false;
   if (filters.chapters.size && !filters.chapters.has(chapter)) return false;
+  if (filters.paper && String(metadata.paper || question?.source || '').trim() !== filters.paper) return false;
+  if (filters.paperYear && String(metadata.year || question?.year || '').trim() !== filters.paperYear) return false;
+  if (filters.concept && String(metadata.concept || '').trim() !== filters.concept) return false;
   return true;
+}
+
+// ── Grand Test paper names (added) ──────────────────────────────────────
+// Grand Test papers are named GT1, GT2, GT3… automatically. The next number
+// is one more than both the number of distinct Grand Test papers and the
+// highest existing GT number, so a name is never reused (even after deletes
+// or alongside older papers with custom names such as "ReNEET").
+const GT_PAPER_NAME_RE = /^GT\s*(\d+)$/i;
+
+async function readGrandTestPaperNames() {
+  const names = new Set();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseControl
+      .from('questions')
+      .select('source')
+      .in('klass', ['Full Syllabus', 'Class Full Syllabus'])
+      .neq('chapter', 'Previous Year Questions')
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    (data || []).forEach(row => {
+      const name = String(row?.source || '').trim();
+      if (name) names.add(name);
+    });
+    if (!data || data.length < PAGE) break;
+  }
+  return names;
+}
+
+function nextGrandTestPaperName(existingNames) {
+  const names = existingNames instanceof Set ? existingNames : new Set(existingNames || []);
+  const upper = new Set([...names].map(name => String(name).trim().toUpperCase().replace(/\s+/g, '')));
+  let highest = 0;
+  names.forEach(name => {
+    const match = String(name).trim().match(GT_PAPER_NAME_RE);
+    if (match) highest = Math.max(highest, Number(match[1]) || 0);
+  });
+  let next = Math.max(highest, names.size) + 1;
+  while (upper.has(`GT${next}`)) next += 1;
+  return `GT${next}`;
 }
 
 function applyQuestionFilters(query, params) {
@@ -1072,7 +1127,11 @@ function applyQuestionFilters(query, params) {
   if (chapterList.length) query = query.in('chapter', chapterList);
   if (examValues.length) query = query.overlaps('exams', examValues);
   if (questionSet === 'previous_year' && /^\d{4}$/.test(year)) query = query.eq('year', year);
-  if (concept) query = query.eq('topic', concept);
+  // Paper sets: concept lives in metadata (see paperSetMetadataFilters).
+  if (concept && !paperSet) query = query.eq('topic', concept);
+  // Paper name is also a real column (source), so narrow the read with it.
+  const paperName = paperSet ? String(params.paper || '').trim() : '';
+  if (paperName) query = query.eq('source', paperName);
   if (search) query = query.ilike('question', `%${search}%`);
   if (createdBy) {
     query = isValidUuid(createdBy)
@@ -1352,6 +1411,111 @@ async function readPreviousYearFacetYears(subject) {
   }
 }
 
+// Paper-set dropdown values (added): paper name, and the class / chapter /
+// concept stored in each question's paper metadata. Reads only the control
+// DB paper rows, cached briefly like the other facets. A failure just leaves
+// the Paper / Concept dropdowns empty.
+const paperFacetCache = new Map();
+
+async function readPaperFacetRows(subject, questionSet) {
+  const cacheKey = `${canonicalSubject(subject || '') || 'All'}|${questionSet}`;
+  const cached = paperFacetCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.rows;
+  const rows = [];
+  const PAGE = 500;
+  for (const client of new Set(questionReadSourcesFor(subject, 'Full Syllabus'))) {
+    for (let from = 0; ; from += PAGE) {
+      let query = client
+        .from('questions')
+        .select('id, subject, klass, chapter, source, year, solution_text')
+        .in('klass', ['Full Syllabus', 'Class Full Syllabus'])
+        .range(from, from + PAGE - 1);
+      query = questionSet === 'previous_year'
+        ? query.eq('chapter', 'Previous Year Questions')
+        : query.neq('chapter', 'Previous Year Questions');
+      query = applyFacetScope(query, subject, '');
+      const { data, error } = await query;
+      if (error) throw error;
+      (data || []).forEach(row => {
+        const legacyData = readLegacyData(row.solution_text);
+        const metadata = (questionSet === 'previous_year'
+          ? legacyData.previousYear
+          : legacyData.grandTest) || {};
+        rows.push({
+          subject: canonicalSubject(row.subject),
+          paper: String(metadata.paper || row.source || '').trim(),
+          year: String(metadata.year || row.year || '').trim(),
+          klass: String(metadata.klass || '').replace(/^class\s*/i, '').trim(),
+          chapter: String(metadata.chapter || '').trim(),
+          concept: String(metadata.concept || '').trim(),
+        });
+      });
+      if (!data || data.length < PAGE) break;
+    }
+  }
+  paperFacetCache.set(cacheKey, { expiresAt: Date.now() + FACET_CACHE_TTL_MS, rows });
+  if (paperFacetCache.size > 24) paperFacetCache.delete(paperFacetCache.keys().next().value);
+  return rows;
+}
+
+function paperSortKey(name) {
+  const match = String(name || '').match(GT_PAPER_NAME_RE);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+}
+
+async function readPaperFacets(subject, questionSet, params) {
+  try {
+    const rows = await readPaperFacetRows(subject, questionSet);
+    const klass = String(params.klass || '').replace(/^class\s*/i, '').trim();
+    const chapters = new Set(parseChapterList([
+      ...(params.chapter ? [params.chapter] : []),
+      ...parseChapterList(params.chapters),
+    ]));
+    const paper = String(params.paper || '').trim();
+    const paperYear = String(params.paperYear || '').trim();
+    const year = String(params.year || '').trim();
+
+    const papers = new Map();
+    rows.forEach(row => {
+      if (!row.paper) return;
+      if (questionSet === 'previous_year' && /^\d{4}$/.test(year) && row.year !== year) return;
+      const key = `${row.paper}|${questionSet === 'previous_year' ? row.year : ''}`;
+      if (!papers.has(key)) papers.set(key, { paper: row.paper, year: questionSet === 'previous_year' ? row.year : '' });
+    });
+
+    const concepts = new Set();
+    rows.forEach(row => {
+      if (!row.concept) return;
+      if (paper && row.paper !== paper) return;
+      if (paperYear && row.year !== paperYear) return;
+      if (klass && row.klass !== klass) return;
+      if (chapters.size && !chapters.has(row.chapter)) return;
+      concepts.add(row.concept);
+    });
+
+    return {
+      papers: [...papers.values()].sort((a, b) =>
+        questionSet === 'grand_test'
+          ? (paperSortKey(a.paper) - paperSortKey(b.paper)) || a.paper.localeCompare(b.paper)
+          : (b.year.localeCompare(a.year) || a.paper.localeCompare(b.paper))
+      ),
+      paperConcepts: [...concepts].sort((a, b) => a.localeCompare(b)),
+    };
+  } catch (_) {
+    return { papers: [], paperConcepts: [] };
+  }
+}
+
+// Next automatic Grand Test paper name, e.g. "GT4" (added).
+router.get('/grand-test/next-paper', ...CREATE_ROLES, async (req, res) => {
+  try {
+    const names = await readGrandTestPaperNames();
+    res.json({ paper: nextGrandTestPaperName(names), existingPapers: names.size });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to assign Grand Test paper name.', details: error.message });
+  }
+});
+
 // Lightweight values used by the cascading dropdowns. This intentionally
 // avoids downloading question text, options, solutions, and embedded images.
 router.get('/facets', ...READ_ROLES, async (req, res) => {
@@ -1370,7 +1534,8 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     // Paper-set chapters live in metadata, not in the chapter column.
     const chapter = isPaperQuestionSet(questionSet) ? '' : String(req.query.chapter || '').trim();
     const chapterList = new Set(isPaperQuestionSet(questionSet) ? [] : parseChapterList(req.query.chapters));
-    const concept = String(req.query.concept || '').trim();
+    // Paper-set concepts live in metadata too (see readPaperFacets).
+    const concept = isPaperQuestionSet(questionSet) ? '' : String(req.query.concept || '').trim();
     const requestedType = String(req.query.qType || '').trim();
     const createdBy = String(req.query.createdBy || '').trim();
 
@@ -1552,6 +1717,12 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       years: questionSet === 'previous_year'
         ? await readPreviousYearFacetYears(subject)
         : [],
+
+      // Grand Test / Previous Year only (added): Paper dropdown values and
+      // the concepts stored in the selected papers' metadata.
+      ...(isPaperQuestionSet(questionSet)
+        ? await readPaperFacets(subject, questionSet, req.query)
+        : { papers: [], paperConcepts: [] }),
     });
   } catch (error) {
     res.status(500).json({
