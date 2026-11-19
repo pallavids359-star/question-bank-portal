@@ -1707,7 +1707,8 @@ img,svg,canvas{max-width:100%;}
               </div>
               <div class="field">
                 <label class="field-label">Topic <span class="req">*</span></label>
-                <input type="text" id="topic" placeholder="Enter topic">
+                <input type="text" id="topic" placeholder="Enter topic" list="topicSuggestions">
+                <datalist id="topicSuggestions"></datalist>
               </div>
               <div class="field">
                 <label class="field-label">Exam Category <span class="req">*</span></label>
@@ -2372,6 +2373,63 @@ Solution: Zn loses two 4s electrons and forms configuration [Ar]3d10..." style="
         </div>
       </div>
 
+      <!-- ── CHAPTERS & CONCEPTS (added) ───────────────────── -->
+      <div id="pageTaxonomy" class="page-section">
+        <div class="page-header">
+          <h2>Chapters &amp; Concepts</h2>
+          <p>Add, rename, merge or delete chapter and concept names. Rename and merge move every saved question (chapter-wise, Grand Test and Previous Year) to the new name. Delete works only when no question uses the name.</p>
+        </div>
+        <div id="taxNotice" class="card" style="display:none;color:var(--danger);"></div>
+        <div class="card">
+          <div class="tax-toolbar">
+            <label>Subject <select id="taxSubject"></select></label>
+            <label>Class
+              <select id="taxClass"><option value="11">Class 11</option><option value="12">Class 12</option></select>
+            </label>
+          </div>
+        </div>
+        <div class="tax-grid">
+          <div class="card">
+            <div class="section-title">Chapters</div>
+            <div class="tax-add">
+              <input type="text" id="taxNewChapter" maxlength="150" placeholder="New chapter name">
+              <button class="btn btn-primary btn-sm" id="taxAddChapterBtn">+ Add chapter</button>
+            </div>
+            <div id="taxChapterAction" class="tax-action" style="display:none;"></div>
+            <div id="taxChapterList" class="tax-list"></div>
+          </div>
+          <div class="card">
+            <div class="section-title">Concepts</div>
+            <div class="tax-toolbar">
+              <label>Chapter <select id="taxConceptChapter"></select></label>
+            </div>
+            <div class="tax-add">
+              <input type="text" id="taxNewConcept" maxlength="150" placeholder="New concept name (NCERT)">
+              <button class="btn btn-primary btn-sm" id="taxAddConceptBtn">+ Add concept</button>
+            </div>
+            <div id="taxConceptAction" class="tax-action" style="display:none;"></div>
+            <div id="taxConceptList" class="tax-list"><div class="tax-empty">Choose a chapter.</div></div>
+          </div>
+        </div>
+      </div>
+      <style>
+        .tax-toolbar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;}
+        .tax-toolbar label{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);}
+        .tax-toolbar select,.tax-add input,.tax-action input,.tax-action select{background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;min-width:0;}
+        .tax-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+        .tax-add{display:flex;gap:8px;margin:10px 0;}
+        .tax-add input{flex:1;}
+        .tax-action{border:1px solid #2e364a;border-radius:8px;padding:10px;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;}
+        .tax-action input,.tax-action select{flex:1;min-width:160px;}
+        .tax-list{max-height:520px;overflow:auto;}
+        .tax-row{display:flex;gap:8px;align-items:center;padding:8px 4px;border-bottom:1px solid #1f2533;font-size:13px;}
+        .tax-row .tax-name{flex:1;min-width:0;overflow-wrap:anywhere;}
+        .tax-row .tax-count{font-size:11px;color:var(--muted);white-space:nowrap;}
+        .tax-row button{padding:4px 9px;font-size:11px;}
+        .tax-empty{font-size:12px;color:var(--muted);padding:10px 4px;}
+        @media (max-width:900px){.tax-grid{grid-template-columns:1fr;}}
+      </style>
+
       <!-- ── PROFILE ────────────────────────────────────────── -->
       <div id="pageProfile" class="page-section">
         <div class="page-header"><h2>My Profile</h2></div>
@@ -2836,6 +2894,10 @@ function showPage(id) {
     loadProfile();
   }
 
+  else if (id === 'pageTaxonomy') {
+    openTaxonomyManager();
+  }
+
   else if (id === 'pageBulkImport') {
     if (window.BulkModule) {
       window.BulkModule.init();
@@ -2928,6 +2990,7 @@ function buildSidebar() {
       { icon:'📚', text:'Questions',           page:'pageQuestions',  roles:['admin','adder','editor','viewer'] },
       { icon:'✅', text:'Review Dashboard',     page:'pageReviewDashboard', roles:['admin','editor'] },
       { icon:'📥', text:'Bulk Question Import', page:'pageBulkImport', roles:['admin','adder'] },
+      { icon:'🗂️', text:'Chapters & Concepts', page:'pageTaxonomy', roles:['admin','adder'] },
     ]},
     { label: 'Administration', items: [
       { icon:'👥', text:'User Management',   page:'pageUsers',     roles:['admin'] },
@@ -3056,6 +3119,7 @@ async function initializeAuthenticatedApp() {
     updateSidebarUser();
     applyRoleRestrictions();
     renderFilterSubjects();
+    loadTaxonomyOverrides();
   } catch (error) {
     clearUserSpecificState(); Auth.clearAuth(); showLoginPage();
     showToast('Unable to verify your account. Please sign in again.', true);
@@ -4968,6 +5032,360 @@ window.BULK_NCERT_CHAPTERS = BULK_NCERT_CHAPTERS;
 window.CHAPTER_NAME_ALIASES = CHAPTER_NAME_ALIASES;
 window.chapterDisplayName = chapterDisplayName;
 window.EXAMS = EXAMS;
+
+// ── CHAPTER / CONCEPT LIST CHANGES (added) ──────────────────────────────
+// Admin/Adder changes from "Chapters & Concepts" are applied on top of the
+// built-in NCERT lists. With no saved changes the lists are exactly as before.
+var TAXONOMY_BASE_CHAPTERS = null;
+var TAXONOMY_OVERRIDES = [];
+var TAXONOMY_CONCEPT_SUGGESTIONS = {};
+
+function taxonomyChapterKeys(subject, klass) {
+  var keys = [subject + '-' + klass];
+  if (subject === 'Mathematics') keys.push('Maths-' + klass);
+  return keys;
+}
+
+function applyTaxonomyOverrides(overrides) {
+  TAXONOMY_OVERRIDES = Array.isArray(overrides) ? overrides : [];
+  if (!TAXONOMY_BASE_CHAPTERS) {
+    TAXONOMY_BASE_CHAPTERS = { ncert: {}, bulk: {} };
+    Object.keys(NCERT_CHAPTERS).forEach(function(key) { TAXONOMY_BASE_CHAPTERS.ncert[key] = NCERT_CHAPTERS[key].slice(); });
+    Object.keys(BULK_NCERT_CHAPTERS).forEach(function(key) { TAXONOMY_BASE_CHAPTERS.bulk[key] = BULK_NCERT_CHAPTERS[key].slice(); });
+  }
+  [[NCERT_CHAPTERS, TAXONOMY_BASE_CHAPTERS.ncert], [BULK_NCERT_CHAPTERS, TAXONOMY_BASE_CHAPTERS.bulk]].forEach(function(pair) {
+    var lists = pair[0], base = pair[1];
+    Object.keys(base).forEach(function(key) {
+      if (!lists[key]) lists[key] = [];
+      lists[key].splice(0, lists[key].length);
+      Array.prototype.push.apply(lists[key], base[key]);
+    });
+    TAXONOMY_OVERRIDES.forEach(function(item) {
+      if (item.kind !== 'chapter') return;
+      taxonomyChapterKeys(canonicalSubject(item.subject), String(item.klass || '')).forEach(function(key) {
+        if (!lists[key]) {
+          if (key.indexOf('Maths-') === 0) return;
+          lists[key] = [];
+        }
+        var index = lists[key].indexOf(item.name);
+        if (item.state === 'removed' && index >= 0) lists[key].splice(index, 1);
+        if (item.state === 'added' && index < 0) lists[key].push(item.name);
+      });
+    });
+  });
+  TAXONOMY_CONCEPT_SUGGESTIONS = {};
+  TAXONOMY_OVERRIDES.forEach(function(item) {
+    if (item.kind !== 'concept' || item.state !== 'added') return;
+    var key = canonicalSubject(item.subject) + '-' + item.klass + '-' + item.chapter;
+    (TAXONOMY_CONCEPT_SUGGESTIONS[key] = TAXONOMY_CONCEPT_SUGGESTIONS[key] || []).push(item.name);
+  });
+  try { updateChapterOptions(); } catch (_) {}
+  try { updateBulkChapterOptions(); } catch (_) {}
+  try { updateTopicSuggestions(); } catch (_) {}
+}
+
+function updateTopicSuggestions() {
+  var list = document.getElementById('topicSuggestions');
+  if (!list) return;
+  var subject = canonicalSubject(document.getElementById('subject')?.value || '');
+  var klass = String(document.getElementById('klass')?.value || '').replace(/^class\s*/i, '').trim();
+  var chapter = document.getElementById('chapter')?.value || '';
+  var names = TAXONOMY_CONCEPT_SUGGESTIONS[subject + '-' + klass + '-' + chapter] || [];
+  list.innerHTML = '';
+  names.forEach(function(name) {
+    var option = document.createElement('option');
+    option.value = name;
+    list.appendChild(option);
+  });
+}
+['subject', 'klass', 'chapter'].forEach(function(id) {
+  document.addEventListener('change', function(event) {
+    if (event.target && event.target.id === id) updateTopicSuggestions();
+  });
+});
+
+// ── Chapters & Concepts manager page (added) ─────────────────────────────
+var taxonomyManagerWired = false;
+var taxonomyConcepts = [];
+var taxonomyBusy = false;
+
+function taxEl(id) { return document.getElementById(id); }
+function taxScope() {
+  return { subject: taxEl('taxSubject')?.value || '', klass: taxEl('taxClass')?.value || '' };
+}
+function taxChapters() {
+  var scope = taxScope();
+  return (NCERT_CHAPTERS[scope.subject + '-' + scope.klass] || []).slice();
+}
+function taxPost(path, body) {
+  return apiReq('/api/questions/taxonomy/' + path, { method: 'POST', body: JSON.stringify(body) });
+}
+function taxUsageText(usage) {
+  return usage.total + ' question(s) — ' + usage.chapterWise + ' chapter-wise, ' +
+    usage.grandTest + ' Grand Test, ' + usage.previousYear + ' Previous Year';
+}
+function taxButton(label, className, onClick) {
+  var button = document.createElement('button');
+  button.className = 'btn btn-sm ' + className;
+  button.textContent = label;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+async function openTaxonomyManager() {
+  var subjectSelect = taxEl('taxSubject');
+  if (!subjectSelect) return;
+  var assigned = assignedSubjectFor(Auth.getUser());
+  var current = subjectSelect.value;
+  subjectSelect.innerHTML = '';
+  (assigned ? [assigned] : SUBJECTS).forEach(function(subject) {
+    var option = document.createElement('option');
+    option.value = subject; option.textContent = subject;
+    subjectSelect.appendChild(option);
+  });
+  subjectSelect.value = (assigned ? [assigned] : SUBJECTS).includes(current) ? current : subjectSelect.options[0].value;
+  subjectSelect.disabled = Boolean(assigned);
+
+  if (!taxonomyManagerWired) {
+    taxonomyManagerWired = true;
+    subjectSelect.addEventListener('change', renderTaxonomyManager);
+    taxEl('taxClass').addEventListener('change', renderTaxonomyManager);
+    taxEl('taxConceptChapter').addEventListener('change', loadTaxonomyConcepts);
+    taxEl('taxAddChapterBtn').addEventListener('click', addTaxonomyChapter);
+    taxEl('taxAddConceptBtn').addEventListener('click', addTaxonomyConcept);
+  }
+  var result = await loadTaxonomyOverrides();
+  var notice = taxEl('taxNotice');
+  if (notice) {
+    notice.style.display = result.available === false ? '' : 'none';
+    notice.textContent = result.available === false
+      ? 'List storage is not set up yet: run migrations/08_taxonomy_overrides.sql in the control Supabase project. Rename and merge of saved questions still need it.'
+      : '';
+  }
+  renderTaxonomyManager();
+}
+
+function renderTaxonomyManager() {
+  hideTaxonomyAction('taxChapterAction');
+  hideTaxonomyAction('taxConceptAction');
+  renderTaxonomyChapters();
+  var chapterSelect = taxEl('taxConceptChapter');
+  var current = chapterSelect.value;
+  chapterSelect.innerHTML = '<option value="">Select Chapter</option>';
+  taxChapters().forEach(function(chapter) {
+    var option = document.createElement('option');
+    option.value = chapter; option.textContent = chapter;
+    chapterSelect.appendChild(option);
+  });
+  chapterSelect.value = taxChapters().includes(current) ? current : '';
+  loadTaxonomyConcepts();
+}
+
+function renderTaxonomyChapters() {
+  var list = taxEl('taxChapterList');
+  list.innerHTML = '';
+  var chapters = taxChapters();
+  if (!chapters.length) {
+    list.innerHTML = '<div class="tax-empty">No chapters for this subject and class.</div>';
+    return;
+  }
+  chapters.forEach(function(chapter) {
+    var row = document.createElement('div');
+    row.className = 'tax-row';
+    var name = document.createElement('div');
+    name.className = 'tax-name'; name.textContent = chapter;
+    var count = document.createElement('span');
+    count.className = 'tax-count';
+    count.appendChild(taxButton('Count', 'btn-ghost', async function() {
+      count.textContent = 'Counting…';
+      try {
+        var usage = await apiReq('/api/questions/taxonomy/usage?' + new URLSearchParams({ kind: 'chapter', ...taxScope(), name: chapter }));
+        count.textContent = taxUsageText(usage);
+      } catch (error) { count.textContent = 'Could not count'; showToast(error.message, true); }
+    }));
+    row.appendChild(name);
+    row.appendChild(count);
+    row.appendChild(taxButton('Rename', 'btn-ghost', function() { showTaxonomyAction('chapter', 'rename', chapter); }));
+    row.appendChild(taxButton('Merge', 'btn-ghost', function() { showTaxonomyAction('chapter', 'merge', chapter); }));
+    row.appendChild(taxButton('Delete', 'btn-danger', function() { deleteTaxonomyName('chapter', chapter); }));
+    list.appendChild(row);
+  });
+}
+
+async function loadTaxonomyConcepts() {
+  hideTaxonomyAction('taxConceptAction');
+  var list = taxEl('taxConceptList');
+  var chapter = taxEl('taxConceptChapter').value;
+  taxonomyConcepts = [];
+  if (!chapter) { list.innerHTML = '<div class="tax-empty">Choose a chapter.</div>'; return; }
+  list.innerHTML = '<div class="tax-empty">Loading concepts…</div>';
+  var requestedChapter = chapter;
+  try {
+    var result = await apiReq('/api/questions/taxonomy/concepts?' + new URLSearchParams({ ...taxScope(), chapter: chapter }));
+    if (taxEl('taxConceptChapter').value !== requestedChapter) return;
+    taxonomyConcepts = Array.isArray(result.concepts) ? result.concepts : [];
+  } catch (error) {
+    list.innerHTML = '<div class="tax-empty">Could not load concepts.</div>';
+    showToast(error.message, true);
+    return;
+  }
+  list.innerHTML = '';
+  if (!taxonomyConcepts.length) {
+    list.innerHTML = '<div class="tax-empty">No concepts yet for this chapter.</div>';
+    return;
+  }
+  taxonomyConcepts.forEach(function(concept) {
+    var row = document.createElement('div');
+    row.className = 'tax-row';
+    var name = document.createElement('div');
+    name.className = 'tax-name'; name.textContent = concept.name;
+    var count = document.createElement('span');
+    count.className = 'tax-count';
+    count.textContent = concept.total + ' Q' + (concept.grandTest || concept.previousYear
+      ? ' (' + concept.chapterWise + ' CW · ' + concept.grandTest + ' GT · ' + concept.previousYear + ' PYQ)'
+      : '');
+    row.appendChild(name);
+    row.appendChild(count);
+    row.appendChild(taxButton('Rename', 'btn-ghost', function() { showTaxonomyAction('concept', 'rename', concept.name); }));
+    row.appendChild(taxButton('Merge', 'btn-ghost', function() { showTaxonomyAction('concept', 'merge', concept.name); }));
+    row.appendChild(taxButton('Delete', 'btn-danger', function() { deleteTaxonomyName('concept', concept.name); }));
+    list.appendChild(row);
+  });
+}
+
+function hideTaxonomyAction(id) {
+  var panel = taxEl(id);
+  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+}
+
+function taxonomyNamesFor(kind) {
+  return kind === 'chapter' ? taxChapters() : taxonomyConcepts.map(function(concept) { return concept.name; });
+}
+
+function showTaxonomyAction(kind, action, fromName) {
+  var panel = taxEl(kind === 'chapter' ? 'taxChapterAction' : 'taxConceptAction');
+  panel.innerHTML = '';
+  panel.style.display = '';
+  var label = document.createElement('span');
+  label.textContent = (action === 'rename' ? 'Rename "' : 'Merge "') + fromName + (action === 'rename' ? '" to' : '" into');
+  panel.appendChild(label);
+  var field;
+  if (action === 'rename') {
+    field = document.createElement('input');
+    field.type = 'text'; field.maxLength = 150; field.value = fromName;
+  } else {
+    field = document.createElement('select');
+    var targets = taxonomyNamesFor(kind).filter(function(name) { return name !== fromName; });
+    field.innerHTML = '<option value="">Select ' + kind + '</option>';
+    targets.forEach(function(name) {
+      var option = document.createElement('option');
+      option.value = name; option.textContent = name;
+      field.appendChild(option);
+    });
+  }
+  panel.appendChild(field);
+  panel.appendChild(taxButton(action === 'rename' ? 'Rename' : 'Merge', 'btn-primary', function() {
+    moveTaxonomyName(kind, action, fromName, String(field.value || '').replace(/\s+/g, ' ').trim());
+  }));
+  panel.appendChild(taxButton('Cancel', 'btn-ghost', function() { hideTaxonomyAction(panel.id); }));
+  field.focus();
+}
+
+async function moveTaxonomyName(kind, action, fromName, toName) {
+  if (taxonomyBusy) return;
+  if (!toName) { showToast('Enter or choose the new ' + kind + ' name.', true); return; }
+  if (toName === fromName) { showToast('The new name is the same as the old name.', true); return; }
+  var existing = taxonomyNamesFor(kind);
+  if (action === 'rename' && existing.includes(toName)) {
+    showToast('"' + toName + '" already exists. Use Merge to combine them.', true);
+    return;
+  }
+  var scope = { kind: kind, ...taxScope(), chapter: kind === 'concept' ? taxEl('taxConceptChapter').value : '' };
+  taxonomyBusy = true;
+  try {
+    var usage = await apiReq('/api/questions/taxonomy/usage?' + new URLSearchParams({ ...scope, name: fromName }));
+    var message = (action === 'rename' ? 'Rename' : 'Merge') + ' ' + kind + ' "' + fromName + '" ' +
+      (action === 'rename' ? 'to' : 'into') + ' "' + toName + '"?\n\n' +
+      'This moves ' + taxUsageText(usage) + ' to "' + toName + '".' +
+      (kind === 'chapter' ? '\n"' + fromName + '" will be removed from the chapter lists.' : '');
+    if (!confirm(message)) return;
+    var result = await taxPost('move', { ...scope, action: action, from: fromName, to: toName });
+    showToast((action === 'rename' ? 'Renamed' : 'Merged') + ': ' + (result.moved ? result.moved.total : 0) + ' question(s) moved to "' + toName + '".');
+    await afterTaxonomyChange(kind);
+  } catch (error) {
+    showToast(error.message, true);
+    await afterTaxonomyChange(kind);
+  } finally {
+    taxonomyBusy = false;
+  }
+}
+
+async function deleteTaxonomyName(kind, name) {
+  if (taxonomyBusy) return;
+  var scope = { kind: kind, ...taxScope(), chapter: kind === 'concept' ? taxEl('taxConceptChapter').value : '' };
+  taxonomyBusy = true;
+  try {
+    var usage = await apiReq('/api/questions/taxonomy/usage?' + new URLSearchParams({ ...scope, name: name }));
+    if (usage.total > 0) {
+      showToast('Cannot delete "' + name + '": ' + taxUsageText(usage) + ' still use it. Merge it into another ' + kind + ' first.', true);
+      return;
+    }
+    if (!confirm('Delete ' + kind + ' "' + name + '"? No questions use it.')) return;
+    await taxPost('delete', { ...scope, name: name });
+    showToast('Deleted ' + kind + ' "' + name + '".');
+    await afterTaxonomyChange(kind);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    taxonomyBusy = false;
+  }
+}
+
+async function addTaxonomyChapter() {
+  var input = taxEl('taxNewChapter');
+  var name = String(input.value || '').replace(/\s+/g, ' ').trim();
+  if (!name) { showToast('Enter a chapter name.', true); return; }
+  if (taxChapters().includes(name)) { showToast('"' + name + '" already exists.', true); return; }
+  try {
+    await taxPost('add', { kind: 'chapter', ...taxScope(), name: name });
+    input.value = '';
+    showToast('Added chapter "' + name + '".');
+    await afterTaxonomyChange('chapter');
+  } catch (error) { showToast(error.message, true); }
+}
+
+async function addTaxonomyConcept() {
+  var input = taxEl('taxNewConcept');
+  var chapter = taxEl('taxConceptChapter').value;
+  var name = String(input.value || '').replace(/\s+/g, ' ').trim();
+  if (!chapter) { showToast('Choose a chapter first.', true); return; }
+  if (!name) { showToast('Enter a concept name.', true); return; }
+  if (taxonomyNamesFor('concept').includes(name)) { showToast('"' + name + '" already exists.', true); return; }
+  try {
+    await taxPost('add', { kind: 'concept', ...taxScope(), chapter: chapter, name: name });
+    input.value = '';
+    showToast('Added concept "' + name + '".');
+    await afterTaxonomyChange('concept');
+  } catch (error) { showToast(error.message, true); }
+}
+
+async function afterTaxonomyChange(kind) {
+  await loadTaxonomyOverrides();
+  if (kind === 'chapter') renderTaxonomyManager();
+  else await loadTaxonomyConcepts();
+  try { renderFilterSubjects(); } catch (_) {}
+}
+
+async function loadTaxonomyOverrides() {
+  try {
+    var result = await apiReq('/api/questions/taxonomy');
+    applyTaxonomyOverrides(result && result.overrides);
+    return result || { available: false, overrides: [] };
+  } catch (error) {
+    console.warn('[QBP] Could not load chapter/concept list changes:', error.message);
+    return { available: false, overrides: [] };
+  }
+}
 
 function allowedExamsForSubject(subject) {
   return EXAMS_BY_SUBJECT[canonicalSubject(subject)] || EXAMS.slice();

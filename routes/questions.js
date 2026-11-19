@@ -1506,6 +1506,405 @@ async function readPaperFacets(subject, questionSet, params) {
   }
 }
 
+// ── CHAPTER / CONCEPT NAME MANAGEMENT (added) ───────────────────────────
+// Admins and Adders (Adders only in their assigned subject) can add, rename,
+// merge and delete chapter and concept names for one Subject + Class.
+//  • Rename / Merge move every saved question from the old name to the new
+//    one: chapter-wise rows (chapter / topic column in the subject shard) and
+//    Grand Test / Previous Year rows (chapter / concept inside paper metadata).
+//  • Delete is refused while any question still uses the name.
+//  • List changes are stored in control DB table taxonomy_overrides
+//    (migrations/08_taxonomy_overrides.sql). No rows = unchanged behaviour.
+const TAXONOMY_SUBJECTS = ['Physics', 'Chemistry', 'Biology', 'Mathematics'];
+const TAXONOMY_CLASSES = ['11', '12'];
+
+function cleanTaxonomyName(value) {
+  return String(value || '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 150);
+}
+
+function taxonomySubjectVariants(subject) {
+  return subject === 'Mathematics' ? ['Mathematics', 'Maths'] : [subject];
+}
+
+function readTaxonomyScope(input) {
+  const kind = String(input?.kind || '').trim().toLowerCase();
+  const subject = canonicalSubject(input?.subject || '');
+  const klass = String(input?.klass || '').replace(/^class\s*/i, '').trim();
+  const chapter = cleanTaxonomyName(input?.chapter);
+  if (!['chapter', 'concept'].includes(kind)) return { error: 'Choose chapter or concept.' };
+  if (!TAXONOMY_SUBJECTS.includes(subject)) return { error: 'Choose a valid subject.' };
+  if (!TAXONOMY_CLASSES.includes(klass)) return { error: 'Choose Class 11 or 12.' };
+  if (kind === 'concept' && !chapter) return { error: 'Choose the chapter this concept belongs to.' };
+  return { kind, subject, klass, chapter: kind === 'concept' ? chapter : '' };
+}
+
+function isMissingTaxonomyTable(error) {
+  const text = `${error?.code || ''} ${error?.message || ''}`;
+  return /42P01|PGRST205|taxonomy_overrides/i.test(text);
+}
+
+const TAXONOMY_TABLE_MESSAGE =
+  'Chapter/concept list storage is not set up yet. Run migrations/08_taxonomy_overrides.sql in the control Supabase project.';
+
+// Every Grand Test / Previous Year row of this subject whose metadata matches.
+async function readMatchingPaperRows(scope, name) {
+  const matches = [];
+  const PAGE = 500;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseControl
+      .from('questions')
+      .select('id, subject, solution_text')
+      .in('klass', ['Full Syllabus', 'Class Full Syllabus'])
+      .in('subject', taxonomySubjectVariants(scope.subject))
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    (data || []).forEach(row => {
+      const legacyData = readLegacyData(row.solution_text);
+      ['grandTest', 'previousYear'].forEach(setKey => {
+        const metadata = legacyData[setKey];
+        if (!metadata || typeof metadata !== 'object') return;
+        const klass = String(metadata.klass || '').replace(/^class\s*/i, '').trim();
+        if (klass !== scope.klass) return;
+        const chapter = String(metadata.chapter || '').trim();
+        const concept = String(metadata.concept || '').trim();
+        const hit = scope.kind === 'chapter'
+          ? chapter === name
+          : chapter === scope.chapter && concept === name;
+        if (hit) matches.push({ row, legacyData, setKey });
+      });
+    });
+    if (!data || data.length < PAGE) break;
+  }
+  return matches;
+}
+
+async function countTaxonomyUsage(scope, name) {
+  const client = questionClientFor(scope.subject, scope.klass);
+  let query = client
+    .from('questions')
+    .select('id', { count: 'exact', head: true })
+    .in('subject', taxonomySubjectVariants(scope.subject))
+    .in('klass', [scope.klass, `Class ${scope.klass}`]);
+  query = scope.kind === 'chapter'
+    ? query.eq('chapter', name)
+    : query.eq('chapter', scope.chapter).eq('topic', name);
+  const { count, error } = await query;
+  if (error) throw error;
+  const paperRows = await readMatchingPaperRows(scope, name);
+  const grandTest = paperRows.filter(item => item.setKey === 'grandTest').length;
+  const previousYear = paperRows.filter(item => item.setKey === 'previousYear').length;
+  const chapterWise = Number(count) || 0;
+  return { chapterWise, grandTest, previousYear, total: chapterWise + grandTest + previousYear };
+}
+
+// Moves questions from one name to another. Re-running it is safe: anything
+// already moved no longer matches the old name.
+async function moveTaxonomyQuestions(scope, fromName, toName, user) {
+  const client = questionClientFor(scope.subject, scope.klass);
+  const update = scope.kind === 'chapter' ? { chapter: toName } : { topic: toName };
+  if (isValidUuid(user?.userId)) update.updated_by = user.userId;
+  update.updated_by_name = user?.name || '';
+  let query = client
+    .from('questions')
+    .update(update)
+    .in('subject', taxonomySubjectVariants(scope.subject))
+    .in('klass', [scope.klass, `Class ${scope.klass}`]);
+  query = scope.kind === 'chapter'
+    ? query.eq('chapter', fromName)
+    : query.eq('chapter', scope.chapter).eq('topic', fromName);
+  const { data, error } = await query.select('id');
+  if (error) throw error;
+  const chapterWise = (data || []).length;
+
+  // Paper metadata lives in the [QBP_DATA:…] marker of solution_text. Only
+  // that marker is rewritten; question text and solution stay byte-identical.
+  const paperMatches = await readMatchingPaperRows(scope, fromName);
+  const changedRows = new Map();
+  paperMatches.forEach(({ row, legacyData, setKey }) => {
+    const entry = changedRows.get(row.id) || { row, legacyData };
+    const metadata = { ...entry.legacyData[setKey] };
+    if (scope.kind === 'chapter') metadata.chapter = toName;
+    else metadata.concept = toName;
+    entry.legacyData = { ...entry.legacyData, [setKey]: metadata };
+    changedRows.set(row.id, entry);
+  });
+  let paper = 0;
+  for (const { row, legacyData } of changedRows.values()) {
+    const marker = `[QBP_DATA:${encodeMarkerText(JSON.stringify(legacyData))}]`;
+    const solutionText = String(row.solution_text || '').replace(DATA_MARKER_RE, () => marker);
+    const paperUpdate = { solution_text: solutionText, updated_by_name: user?.name || '' };
+    if (isValidUuid(user?.userId)) paperUpdate.updated_by = user.userId;
+    const { error: paperError } = await supabaseControl
+      .from('questions')
+      .update(paperUpdate)
+      .eq('id', row.id);
+    if (paperError) {
+      const failure = new Error(`Stopped after moving ${chapterWise + paper} question(s): ${paperError.message}. Run the same action again to finish.`);
+      failure.partial = true;
+      throw failure;
+    }
+    paper += 1;
+  }
+  return { chapterWise, paper, total: chapterWise + paper };
+}
+
+async function upsertTaxonomyOverride(scope, name, state, user) {
+  const row = {
+    kind: scope.kind,
+    subject: scope.subject,
+    klass: scope.klass,
+    chapter: scope.chapter,
+    name,
+    state,
+    created_by_name: user?.name || '',
+    updated_at: new Date().toISOString(),
+  };
+  if (isValidUuid(user?.userId)) row.created_by = user.userId;
+  const { error } = await supabaseControl
+    .from('taxonomy_overrides')
+    .upsert(row, { onConflict: 'kind,subject,klass,chapter,name' });
+  if (error) throw error;
+}
+
+async function deleteTaxonomyOverride(scope, name) {
+  const { data, error } = await supabaseControl
+    .from('taxonomy_overrides')
+    .delete()
+    .eq('kind', scope.kind)
+    .eq('subject', scope.subject)
+    .eq('klass', scope.klass)
+    .eq('chapter', scope.chapter)
+    .eq('name', name)
+    .select('id');
+  if (error) throw error;
+  return (data || []).length;
+}
+
+// Concept suggestions saved under a renamed chapter move with it.
+async function moveConceptOverridesToChapter(scope, fromChapter, toChapter, user) {
+  const { data, error } = await supabaseControl
+    .from('taxonomy_overrides')
+    .select('name, state')
+    .eq('kind', 'concept')
+    .eq('subject', scope.subject)
+    .eq('klass', scope.klass)
+    .eq('chapter', fromChapter);
+  if (error) throw error;
+  for (const item of data || []) {
+    const conceptScope = { ...scope, kind: 'concept', chapter: toChapter };
+    await upsertTaxonomyOverride(conceptScope, item.name, item.state, user);
+    await deleteTaxonomyOverride({ ...scope, kind: 'concept', chapter: fromChapter }, item.name);
+  }
+}
+
+async function taxonomyActor(req, res, subject) {
+  const effectiveUser = await getEffectiveUser(req.user);
+  if (!hasSubjectAccess(effectiveUser, subject)) {
+    res.status(403).json({ error: 'You can manage chapters and concepts only in your assigned subject.' });
+    return null;
+  }
+  return { userId: req.user?.userId, name: req.user?.name || effectiveUser?.name || '' };
+}
+
+function clearQuestionFacetCaches() {
+  facetCache.clear();
+  paperFacetCache.clear();
+}
+
+// All list overrides; read by every signed-in user to build the dropdowns.
+router.get('/taxonomy', ...READ_ROLES, async (req, res) => {
+  try {
+    const { data, error } = await supabaseControl
+      .from('taxonomy_overrides')
+      .select('kind, subject, klass, chapter, name, state')
+      .order('created_at', { ascending: true });
+    if (error) {
+      if (isMissingTaxonomyTable(error)) return res.json({ available: false, overrides: [] });
+      throw error;
+    }
+    res.json({ available: true, overrides: data || [] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load chapter/concept lists.', details: error.message });
+  }
+});
+
+// Concepts of one chapter with their question counts (manager page).
+router.get('/taxonomy/concepts', ...CREATE_ROLES, async (req, res) => {
+  try {
+    const scope = readTaxonomyScope({ ...req.query, kind: 'concept' });
+    if (scope.error) return res.status(400).json({ error: scope.error });
+    if (!(await taxonomyActor(req, res, scope.subject))) return;
+
+    const counts = new Map();
+    const bump = (name, field) => {
+      const clean = String(name || '').trim();
+      if (!clean) return;
+      const entry = counts.get(clean) || { name: clean, chapterWise: 0, grandTest: 0, previousYear: 0, added: false };
+      entry[field] += 1;
+      counts.set(clean, entry);
+    };
+    const client = questionClientFor(scope.subject, scope.klass);
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await client
+        .from('questions')
+        .select('topic')
+        .in('subject', taxonomySubjectVariants(scope.subject))
+        .in('klass', [scope.klass, `Class ${scope.klass}`])
+        .eq('chapter', scope.chapter)
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      (data || []).forEach(row => bump(row.topic, 'chapterWise'));
+      if (!data || data.length < PAGE) break;
+    }
+    const paperRows = await readMatchingPaperRows({ ...scope, kind: 'chapter' }, scope.chapter);
+    paperRows.forEach(({ legacyData, setKey }) => bump(legacyData[setKey]?.concept, setKey));
+
+    const overrides = await supabaseControl
+      .from('taxonomy_overrides')
+      .select('name')
+      .eq('kind', 'concept')
+      .eq('subject', scope.subject)
+      .eq('klass', scope.klass)
+      .eq('chapter', scope.chapter)
+      .eq('state', 'added');
+    if (overrides.error && !isMissingTaxonomyTable(overrides.error)) throw overrides.error;
+    (overrides.data || []).forEach(row => {
+      const clean = String(row.name || '').trim();
+      if (!clean) return;
+      const entry = counts.get(clean) || { name: clean, chapterWise: 0, grandTest: 0, previousYear: 0, added: false };
+      entry.added = true;
+      counts.set(clean, entry);
+    });
+
+    const concepts = [...counts.values()]
+      .map(entry => ({ ...entry, total: entry.chapterWise + entry.grandTest + entry.previousYear }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ concepts });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load concepts.', details: error.message });
+  }
+});
+
+// How many questions use a chapter / concept name.
+router.get('/taxonomy/usage', ...CREATE_ROLES, async (req, res) => {
+  try {
+    const scope = readTaxonomyScope(req.query);
+    if (scope.error) return res.status(400).json({ error: scope.error });
+    const name = cleanTaxonomyName(req.query.name);
+    if (!name) return res.status(400).json({ error: 'Name is required.' });
+    if (!(await taxonomyActor(req, res, scope.subject))) return;
+    res.json(await countTaxonomyUsage(scope, name));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to count questions.', details: error.message });
+  }
+});
+
+router.post('/taxonomy/add', ...CREATE_ROLES, async (req, res) => {
+  try {
+    const scope = readTaxonomyScope(req.body);
+    if (scope.error) return res.status(400).json({ error: scope.error });
+    const name = cleanTaxonomyName(req.body?.name);
+    if (!name) return res.status(400).json({ error: 'Name is required.' });
+    const actor = await taxonomyActor(req, res, scope.subject);
+    if (!actor) return;
+    await upsertTaxonomyOverride(scope, name, 'added', actor);
+    clearQuestionFacetCaches();
+    await writeAuditLog({
+      userId: actor.userId, userName: actor.name, action: `TAXONOMY_ADD_${scope.kind.toUpperCase()}`,
+      resourceType: 'taxonomy', resourceId: name, details: { ...scope, name },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    if (isMissingTaxonomyTable(error)) return res.status(503).json({ error: TAXONOMY_TABLE_MESSAGE });
+    res.status(500).json({ error: 'Failed to add name.', details: error.message });
+  }
+});
+
+// action = 'rename' (new name) or 'merge' (into an existing name). Both move
+// every question; the old name is then hidden from the lists.
+router.post('/taxonomy/move', ...CREATE_ROLES, async (req, res) => {
+  try {
+    const scope = readTaxonomyScope(req.body);
+    if (scope.error) return res.status(400).json({ error: scope.error });
+    const action = String(req.body?.action || '').toLowerCase() === 'merge' ? 'merge' : 'rename';
+    const fromName = cleanTaxonomyName(req.body?.from);
+    const toName = cleanTaxonomyName(req.body?.to);
+    if (!fromName || !toName) return res.status(400).json({ error: 'Both the old and the new name are required.' });
+    if (fromName === toName) return res.status(400).json({ error: 'The new name is the same as the old name.' });
+    const actor = await taxonomyActor(req, res, scope.subject);
+    if (!actor) return;
+
+    // Check list storage first so a missing table never leaves a half-done move.
+    const probe = await supabaseControl.from('taxonomy_overrides').select('id').limit(1);
+    if (probe.error && isMissingTaxonomyTable(probe.error)) {
+      return res.status(503).json({ error: TAXONOMY_TABLE_MESSAGE });
+    }
+
+    const moved = await moveTaxonomyQuestions(scope, fromName, toName, actor);
+    clearQuestionFacetCaches();
+
+    if (scope.kind === 'chapter') {
+      await upsertTaxonomyOverride(scope, toName, 'added', actor);
+      await upsertTaxonomyOverride(scope, fromName, 'removed', actor);
+      await moveConceptOverridesToChapter(scope, fromName, toName, actor);
+    } else {
+      const removed = await deleteTaxonomyOverride(scope, fromName);
+      if (removed || action === 'rename') await upsertTaxonomyOverride(scope, toName, 'added', actor);
+    }
+
+    await writeAuditLog({
+      userId: actor.userId, userName: actor.name,
+      action: `TAXONOMY_${action.toUpperCase()}_${scope.kind.toUpperCase()}`,
+      resourceType: 'taxonomy', resourceId: fromName,
+      details: { ...scope, from: fromName, to: toName, moved },
+    });
+    res.json({ ok: true, moved });
+  } catch (error) {
+    clearQuestionFacetCaches();
+    if (isMissingTaxonomyTable(error)) return res.status(503).json({ error: TAXONOMY_TABLE_MESSAGE });
+    res.status(500).json({ error: error.partial ? error.message : 'Failed to move questions.', details: error.message });
+  }
+});
+
+router.post('/taxonomy/delete', ...CREATE_ROLES, async (req, res) => {
+  try {
+    const scope = readTaxonomyScope(req.body);
+    if (scope.error) return res.status(400).json({ error: scope.error });
+    const name = cleanTaxonomyName(req.body?.name);
+    if (!name) return res.status(400).json({ error: 'Name is required.' });
+    const actor = await taxonomyActor(req, res, scope.subject);
+    if (!actor) return;
+
+    const usage = await countTaxonomyUsage(scope, name);
+    if (usage.total > 0) {
+      return res.status(409).json({
+        error: `${usage.total} question(s) still use "${name}". Merge it into another ${scope.kind} first.`,
+        usage,
+      });
+    }
+
+    if (scope.kind === 'chapter') {
+      await upsertTaxonomyOverride(scope, name, 'removed', actor);
+    } else {
+      await deleteTaxonomyOverride(scope, name);
+    }
+    clearQuestionFacetCaches();
+    await writeAuditLog({
+      userId: actor.userId, userName: actor.name, action: `TAXONOMY_DELETE_${scope.kind.toUpperCase()}`,
+      resourceType: 'taxonomy', resourceId: name, details: { ...scope, name },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    if (isMissingTaxonomyTable(error)) return res.status(503).json({ error: TAXONOMY_TABLE_MESSAGE });
+    res.status(500).json({ error: 'Failed to delete name.', details: error.message });
+  }
+});
+
 // Next automatic Grand Test paper name, e.g. "GT4" (added).
 router.get('/grand-test/next-paper', ...CREATE_ROLES, async (req, res) => {
   try {
