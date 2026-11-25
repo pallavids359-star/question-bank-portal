@@ -10,11 +10,14 @@ const questions = fs.readFileSync(path.join(__dirname, '..', '..', 'routes', 'qu
 
 test('Saved Questions has explicit chapter-wise and Grand Test views', () => {
   assert.match(frontend, /id="fQuestionSet"/);
-  assert.match(frontend, /value="chapter">Chapter-wise Questions/);
+  // Chapter-wise is the default; there is no "All Question Sets" view.
+  assert.match(frontend, /value="chapter" selected>Chapter-wise Questions/);
+  assert.doesNotMatch(frontend, />All Question Sets</);
   assert.match(frontend, /value="grand_test">Grand Test Questions/);
   assert.match(frontend, /params\.set\('questionSet',questionSet\)/);
   assert.match(questions, /questionSet === 'grand_test'/);
-  assert.match(questions, /questionSet === 'chapter'/);
+  // Default and chapter-wise views always exclude Grand Test / Previous Year rows.
+  assert.match(questions, /Chapter-wise \(and the default, no set chosen\)/);
 });
 
 test('Grand Test API output retains paper year and coverage edit metadata', () => {

@@ -1816,8 +1816,7 @@ img,svg,canvas{max-width:100%;}
             <div class="filters">
 
   <select id="fQuestionSet" title="Choose chapter-wise, Grand Test, or Previous Year questions">
-    <option value="">All Question Sets</option>
-    <option value="chapter">Chapter-wise Questions</option>
+    <option value="chapter" selected>Chapter-wise Questions</option>
     <option value="grand_test">Grand Test Questions</option>
     <option value="previous_year">Previous Year Questions</option>
   </select>
@@ -1929,8 +1928,8 @@ img,svg,canvas{max-width:100%;}
       <!-- ── BULK QUESTION IMPORT ─────────────────────────── -->
       <div id="pageBulkImport" class="page-section">
         <div class="page-header">
-          <h2>Bulk Question Import</h2>
-          <p>Import thousands of questions at once from PDF, OCR, Word or LaTeX text with intelligent auto-detection.</p>
+          <h2 id="bqPageTitle">Bulk Question Import</h2>
+          <p id="bqPageDesc">Import thousands of questions at once from PDF, OCR, Word or LaTeX text with intelligent auto-detection.</p>
         </div>
 
         <!-- TOP PANEL: METADATA & DEFAULTS -->
@@ -1940,7 +1939,8 @@ img,svg,canvas{max-width:100%;}
             <span style="font-weight:400;font-size:11px;color:var(--muted);">(Applied to all imported questions)</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:12px;">
-            <div class="form-group" style="margin:0;">
+            <!-- Import type is chosen from the sidebar (Chapter-wise / Previous Year / Grand Test). -->
+            <div class="form-group" id="bqImportModeGroup" style="margin:0;display:none;">
               <label style="font-size:11px;color:#8f9bba;">Import Type</label>
               <select id="bqImportMode" style="background:#181d28;color:#fff;border:1px solid #2e364a;border-radius:6px;padding:6px 10px;font-size:12px;width:100%;">
                 <option value="chapter" selected>Chapter-wise</option>
@@ -2013,9 +2013,11 @@ img,svg,canvas{max-width:100%;}
           </div>
           <div id="bqGrandTestHint" style="display:none;margin-top:10px;font-size:11px;color:#8f9bba;">
             <span id="bqGrandTestHintGT">Grand Test paper names are assigned automatically (GT1, GT2, GT3…), so no <code>@paper</code> line is needed. Add <code>@subject:</code>, <code>@class:</code> (11 or 12), <code>@chapter:</code> and <code>@concept:</code> (NCERT concept) to every question, plus optional <code>@type:</code> and <code>@difficulty:</code>.</span>
-            <span id="bqGrandTestHintPYQ">Add <code>@paper: ReNEET</code> once at the top. For Previous Year papers, also add <code>@year: 2024</code> (required); Grand Test papers do not need a year. Add <code>@class:</code> (11 or 12) and <code>@chapter:</code> to every question. For PCMB, PCM or PCB papers, add <code>@subject:</code> to every question.</span>
+            <span id="bqGrandTestHintPYQ">Add <code>@paper: NEET</code> and <code>@year: 2024</code> (required) once at the top. Add <code>@class:</code> (11 or 12) and <code>@chapter:</code> to every question. For PCMB, PCM or PCB papers, add <code>@subject:</code> to every question.</span>
           </div>
           <div id="bqGrandTestPaperName" style="display:none;margin-top:8px;font-size:12px;font-weight:700;color:var(--gold);"></div>
+          <!-- Whole-paper duplicate check (Grand Test / Previous Year) -->
+          <div id="bqPaperDuplicate" style="display:none;margin-top:10px;padding:8px 12px;border:1px solid;border-radius:8px;font-size:12px;font-weight:600;"></div>
         </div>
 
         <!-- MAIN WORKSPACE LAYOUT -->
@@ -2846,9 +2848,45 @@ function showAppPage() {
 // ── PAGE ROUTING ─────────────────────────────────────────────
 // ============================================================
 
+// Previous Year and Grand Test imports have their own sidebar entries but
+// share the Bulk Import screen, locked to that import type.
+const BULK_IMPORT_VIEWS = {
+  pageBulkImport: {
+    mode: 'chapter',
+    title: 'Bulk Import (Chapter-wise)',
+    desc: 'Import chapter-wise questions at once from PDF, OCR, Word or LaTeX text with intelligent auto-detection.',
+  },
+  pageBulkImportPYQ: {
+    mode: 'previous_year',
+    title: 'Previous Year Paper Import',
+    desc: 'Import a complete previous year question paper. The paper is checked as a whole for duplicates.',
+  },
+  pageBulkImportGT: {
+    mode: 'grand_test',
+    title: 'Grand Test Paper Import',
+    desc: 'Import a complete Grand Test paper. Paper names (GT1, GT2…) are assigned automatically and the paper is checked as a whole for duplicates.',
+  },
+};
+
+function setBulkImportView(view) {
+  const title = document.getElementById('bqPageTitle');
+  const desc = document.getElementById('bqPageDesc');
+  if (title) title.textContent = view.title;
+  if (desc) desc.textContent = view.desc;
+  if (window.BulkModule) {
+    window.BulkModule.init();
+    if (window.BulkModule.setImportMode) window.BulkModule.setImportMode(view.mode);
+  }
+  if (typeof updateBulkImportMode === 'function') updateBulkImportMode();
+}
+
 function showPage(id) {
 
   closeMobileSidebar();
+
+  const navId = id;
+  const bulkImportView = BULK_IMPORT_VIEWS[id] || null;
+  if (bulkImportView) id = 'pageBulkImport';
 
   document
     .querySelectorAll('.page-section')
@@ -2868,7 +2906,7 @@ function showPage(id) {
     .forEach(b => {
       b.classList.toggle(
         'active',
-        b.dataset.page === id
+        b.dataset.page === navId
       );
     });
 
@@ -2899,9 +2937,7 @@ function showPage(id) {
   }
 
   else if (id === 'pageBulkImport') {
-    if (window.BulkModule) {
-      window.BulkModule.init();
-    }
+    setBulkImportView(bulkImportView || BULK_IMPORT_VIEWS.pageBulkImport);
   }
 
   else if (id === 'pageQuestions') {
@@ -2989,7 +3025,9 @@ function buildSidebar() {
       { icon:'🏠', text:'Dashboard',           page:'pageDashboard',  roles:['admin'] },
       { icon:'📚', text:'Questions',           page:'pageQuestions',  roles:['admin','adder','editor','viewer'] },
       { icon:'✅', text:'Review Dashboard',     page:'pageReviewDashboard', roles:['admin','editor'] },
-      { icon:'📥', text:'Bulk Question Import', page:'pageBulkImport', roles:['admin','adder'] },
+      { icon:'📥', text:'Bulk Import (Chapter-wise)', page:'pageBulkImport', roles:['admin','adder'] },
+      { icon:'📄', text:'Previous Year Paper Import', page:'pageBulkImportPYQ', roles:['admin','adder'] },
+      { icon:'📝', text:'Grand Test Paper Import', page:'pageBulkImportGT', roles:['admin','adder'] },
       { icon:'🗂️', text:'Chapters & Concepts', page:'pageTaxonomy', roles:['admin','adder'] },
     ]},
     { label: 'Administration', items: [
@@ -7533,10 +7571,11 @@ function renderList(){
       ||((!selectedPaper.paper||paperMeta.paper===selectedPaper.paper)
         &&(!selectedPaper.year||paperMeta.year===selectedPaper.year));
     const qConcept=paperMeta?paperMeta.concept:q.topic;
-    const matchesQuestionSet=!questionSetF
-      ||(questionSetF==='grand_test'&&grandTest)
+    // Grand Test / Previous Year questions appear only when their set is
+    // selected; chapter-wise (the default) never includes them.
+    const matchesQuestionSet=(questionSetF==='grand_test'&&grandTest)
       ||(questionSetF==='previous_year'&&previousYear)
-      ||(questionSetF==='chapter'&&!grandTest&&!previousYear);
+      ||(!['grand_test','previous_year'].includes(questionSetF)&&!grandTest&&!previousYear);
     return (!assignedSubject||sameSubject(q.subject,assignedSubject))
       &&(!subjF||sameSubject(q.subject,subjF))
       &&(!classF||String(qClass||'').replace(/^class\s*/i,'').trim()===classF)

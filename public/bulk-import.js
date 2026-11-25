@@ -20,6 +20,8 @@
   debounceTimer: null,
   duplicateRequestId: 0,
   duplicateCheckPromise: Promise.resolve(),
+  // Grand Test / Previous Year: duplicates are checked for the whole paper.
+  paperDuplicate: null,
   // Grand Test papers are named automatically (GT1, GT2…) by the server.
   autoGrandTestPaper: '',
   autoGrandTestPaperLoad: null,
@@ -35,6 +37,50 @@
   initialized: false,
   editorInitialized: false,
 };
+
+  // ── SEPARATE IMPORT PAGES (added) ─────────────────────────────────
+  // Chapter-wise, Previous Year and Grand Test imports each open from their
+  // own sidebar entry and keep their own editor draft. Chapter-wise keeps the
+  // original draft key so existing drafts are not lost.
+  function draftKeyFor(mode) {
+    return !mode || mode === 'chapter' ? 'bq_draft_v2' : 'bq_draft_v2_' + mode;
+  }
+  function draftKey() {
+    return draftKeyFor(val('bqImportMode') || 'chapter');
+  }
+  function setImportMode(mode) {
+    const select = document.getElementById('bqImportMode');
+    if (!select) return;
+    const next = ['chapter', 'grand_test', 'previous_year'].includes(mode) ? mode : 'chapter';
+    const previous = select.value || 'chapter';
+    if (state.importModeSet && previous === next) return;
+    const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
+    clearTimeout(state.autoSaveTimer);
+    if (ta && state.importModeSet) {
+      try { localStorage.setItem(draftKeyFor(previous), ta.value); } catch (_) {}
+    }
+    select.value = next;
+    state.importModeSet = true;
+    state.paperDuplicate = null;
+    state.parsedQuestions = [];
+    state.duplicateRequestId++;
+    if (ta) {
+      let draft = '';
+      try { draft = localStorage.getItem(draftKeyFor(next)) || ''; } catch (_) {}
+      ta.value = draft;
+      state.historyStack = [draft];
+      state.historyIndex = 0;
+      const ln = document.getElementById('bqLineNumbers');
+      if (ln) {
+        const count = draft.split('\n').length;
+        let nums = '';
+        for (let i = 1; i <= count; i++) nums += i + '\n';
+        ln.textContent = nums;
+        ln.scrollTop = 0;
+      }
+    }
+    renderPaperDuplicate();
+  }
 
   // ── METADATA PANEL HELPERS ───────────────────────────────────────
   function getMeta() {
@@ -1626,6 +1672,19 @@ function checkDuplicates(
     return;
   }
 
+  // Grand Test / Previous Year papers are checked as a whole paper
+  // (checkPaperDuplicate), never question by question.
+  if (getMeta().isPaperSet) {
+    questions.forEach(question => {
+      question.isDuplicate = false;
+      question.existingId = null;
+      question.overwriteId = null;
+      question.duplicateReason = '';
+      question.dupAction = '';
+    });
+    return;
+  }
+
   const currentImport =
     new Map();
 
@@ -1712,7 +1771,90 @@ function checkDuplicates(
   }
 }
 
+function renderPaperDuplicate() {
+  const box = document.getElementById('bqPaperDuplicate');
+  if (!box) return;
+  const info = state.paperDuplicate;
+  const meta = getMeta();
+  if (!meta.isPaperSet || !info) {
+    box.style.display = 'none';
+    box.textContent = '';
+    return;
+  }
+  const label = p => (p.year ? `${p.paper} ${p.year}` : p.paper);
+  let tone = 'ok';
+  let text = '';
+  if (info.loading) {
+    text = 'Checking whether this paper is already saved…';
+  } else if (info.error) {
+    tone = 'warn';
+    text = 'Could not check for a duplicate paper: ' + info.error;
+  } else if (info.full) {
+    tone = 'dup';
+    text = `⚠ Duplicate paper: all ${info.total} question(s) are already saved in ${label(info.full)} ` +
+      `(${info.full.questions} question(s) saved). Importing again will create a second copy.`;
+  } else if (info.partial.length || info.sameName) {
+    tone = 'warn';
+    const parts = info.partial.slice(0, 3).map(p => `${label(p)}: ${p.matched} of ${info.total}`);
+    text = parts.length ? `Some questions already appear in saved paper(s) — ${parts.join('; ')}. ` : '';
+    if (info.sameName) {
+      text += `${label(info.sameName)} already has ${info.sameName.questions} saved question(s); these will be added to it.`;
+    } else {
+      text += 'This is not a full duplicate, so it can be imported as a new paper.';
+    }
+  } else {
+    text = `✓ New paper: none of these ${info.total} question(s) are in a saved paper.`;
+  }
+  const colors = { ok: '#4caf7d', warn: '#e89c2b', dup: '#e05252' };
+  box.style.display = '';
+  box.style.color = colors[tone];
+  box.style.borderColor = colors[tone];
+  box.textContent = text;
+}
+
+async function checkPaperDuplicate(questions, requestId) {
+  const meta = getMeta();
+  const texts = (questions || []).filter(q => q && q.question && !q.ignored).map(q => q.question);
+  if (!texts.length) {
+    state.paperDuplicate = null;
+    renderPaperDuplicate();
+    return;
+  }
+  const header = questions.find(q => q && (q.source || q.year)) || {};
+  state.paperDuplicate = { loading: true, total: texts.length, partial: [] };
+  renderPaperDuplicate();
+  try {
+    const result = await apiReq('/api/questions/paper-duplicates', {
+      method: 'POST',
+      body: JSON.stringify({
+        questionSet: meta.isGrandTest ? 'grand_test' : 'previous_year',
+        paper: meta.isPreviousYear ? (header.source || '') : '',
+        year: meta.isPreviousYear ? (header.year || '') : '',
+        questions: texts,
+      }),
+    });
+    if (requestId !== state.duplicateRequestId) return;
+    const total = Number(result.importedQuestions) || texts.length;
+    const papers = Array.isArray(result.papers) ? result.papers : [];
+    state.paperDuplicate = {
+      total,
+      full: papers.find(p => total > 0 && p.matched >= total) || null,
+      partial: papers.filter(p => p.matched > 0 && p.matched < total),
+      sameName: papers.find(p => p.sameName) || null,
+    };
+  } catch (error) {
+    if (requestId !== state.duplicateRequestId) return;
+    state.paperDuplicate = { error: error?.message || String(error), total: texts.length, partial: [] };
+  }
+  renderPaperDuplicate();
+}
+
 async function checkPreviousImports(questions, requestId) {
+  if (getMeta().isPaperSet) {
+    return checkPaperDuplicate(questions, requestId);
+  }
+  state.paperDuplicate = null;
+  renderPaperDuplicate();
   const candidates = questions
     .filter(question => question && question.question)
     .map(question => ({
@@ -2138,6 +2280,8 @@ async function checkPreviousImports(questions, requestId) {
       state.duplicateRequestId++;
       state.duplicateCheckPromise = Promise.resolve();
       state.parsedQuestions = [];
+      state.paperDuplicate = null;
+      renderPaperDuplicate();
       renderCards();
       return;
     }
@@ -2247,7 +2391,7 @@ function initEditor() {
       }
     });
 
-    const draft = localStorage.getItem('bq_draft_v2');
+    const draft = localStorage.getItem(draftKey());
     if (draft) {
       ta.value = draft;
       updateLineNumbers();
@@ -2322,7 +2466,7 @@ function scheduleHistorySave() {
     clearTimeout(state.autoSaveTimer);
     state.autoSaveTimer = setTimeout(() => {
       const ta = document.getElementById('bqTextarea') || document.getElementById('bulkEditorTextarea');
-      if (ta) localStorage.setItem('bq_draft_v2', ta.value);
+      if (ta) localStorage.setItem(draftKey(), ta.value);
     }, 1500);
   }
 
@@ -2342,7 +2486,7 @@ function scheduleHistorySave() {
       pushHistory('');
       scheduleReparse();
     }
-    localStorage.removeItem('bq_draft_v2');
+    localStorage.removeItem(draftKey());
   }
 
   function restoreSample() {
@@ -2809,6 +2953,13 @@ if (duplicateKey) {
       }
     }
 
+    // Whole-paper duplicate: ask before saving a second copy of the paper.
+    if (meta.isPaperSet && state.paperDuplicate && state.paperDuplicate.full) {
+      const dup = state.paperDuplicate.full;
+      const dupName = dup.year ? `${dup.paper} ${dup.year}` : dup.paper;
+      if (!confirm(`This paper is already saved as ${dupName}: all ${state.paperDuplicate.total} question(s) match.\n\nImport it again as a separate copy?`)) return;
+    }
+
     if (!confirm(`Update ${overwriteList.length} existing question(s) and import ${newQuestionCount} new question(s)${grandTestPaperNote}?`)) return;
 
     const btn = document.getElementById('bqImportBtn') || document.getElementById('bulkImportBtn');
@@ -2953,7 +3104,7 @@ if (ta) {
   ta.value = '';
 
   localStorage.removeItem(
-    'bq_draft_v2'
+    draftKey()
   );
 
   runParse();
@@ -3113,6 +3264,7 @@ if (ta) {
 
   _global.BulkModule = {
     init,
+    setImportMode,
     runParse,
     openCardEditor,
     closeCardEditor,

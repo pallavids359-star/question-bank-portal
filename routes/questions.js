@@ -1115,11 +1115,11 @@ function applyQuestionFilters(query, params) {
       .eq('chapter', 'Previous Year Questions');
   } else {
     if (klass) query = query.in('klass', [klass, `Class ${klass}`]);
-    if (questionSet === 'chapter') {
-      query = query
-        .neq('klass', 'Full Syllabus')
-        .neq('klass', 'Class Full Syllabus');
-    }
+    // Chapter-wise (and the default, no set chosen): Grand Test and Previous
+    // Year questions are included ONLY when their own set is selected.
+    query = query
+      .neq('klass', 'Full Syllabus')
+      .neq('klass', 'Class Full Syllabus');
   }
   // Paper sets: class/chapter come from metadata (see paperSetMetadataFilters).
   if (!paperSet && chapter) query = query.eq('chapter', chapter);
@@ -1915,6 +1915,78 @@ router.get('/grand-test/next-paper', ...CREATE_ROLES, async (req, res) => {
   }
 });
 
+// ── Whole-paper duplicate check for Grand Test / Previous Year imports ──
+// Paper imports are not checked question by question. Instead the pasted
+// paper is compared with every saved paper of the same kind (GT1, GT2… or
+// "NEET 2024", "JEE Main 2023"…) and the server reports how many of the
+// pasted questions each saved paper already contains.
+async function readSavedPaperIndex(questionSet) {
+  const papers = new Map();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    let query = supabaseControl
+      .from('questions')
+      .select('id, source, year, question, solution_text')
+      .in('klass', ['Full Syllabus', 'Class Full Syllabus'])
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    query = questionSet === 'previous_year'
+      ? query.eq('chapter', 'Previous Year Questions')
+      : query.neq('chapter', 'Previous Year Questions');
+    const { data, error } = await query;
+    if (error) throw error;
+    for (const row of data || []) {
+      const legacy = readLegacyData(row.solution_text);
+      const meta = (questionSet === 'previous_year' ? legacy.previousYear : legacy.grandTest) || {};
+      const paper = String(row.source || meta.paper || '').trim();
+      const year = questionSet === 'previous_year' ? String(row.year || meta.year || '').trim() : '';
+      if (!paper) continue;
+      const key = `${paper.toLowerCase()}\u0000${year}`;
+      if (!papers.has(key)) papers.set(key, { paper, year, questions: 0, keys: new Set() });
+      const entry = papers.get(key);
+      entry.questions += 1;
+      const normalized = normalizeDuplicateQuestion(row.question);
+      if (normalized) entry.keys.add(normalized);
+    }
+    if (!data || data.length < PAGE) break;
+  }
+  return papers;
+}
+
+router.post('/paper-duplicates', ...CREATE_ROLES, async (req, res) => {
+  const questionSet = String(req.body?.questionSet || '').trim().toLowerCase();
+  if (!isPaperQuestionSet(questionSet)) {
+    return res.status(400).json({ error: 'questionSet must be grand_test or previous_year.' });
+  }
+  const questions = Array.isArray(req.body?.questions) ? req.body.questions : [];
+  if (!questions.length || questions.length > 1000) {
+    return res.status(400).json({ error: 'Provide between 1 and 1000 questions.' });
+  }
+  const requestedPaper = String(req.body?.paper || '').trim().toLowerCase();
+  const requestedYear = String(req.body?.year || '').trim();
+
+  try {
+    const importedKeys = new Set(questions.map(normalizeDuplicateQuestion).filter(Boolean));
+    const saved = await readSavedPaperIndex(questionSet);
+    const papers = [];
+    for (const entry of saved.values()) {
+      let matched = 0;
+      importedKeys.forEach(key => { if (entry.keys.has(key)) matched += 1; });
+      const sameName = questionSet === 'previous_year'
+        && requestedPaper
+        && entry.paper.toLowerCase() === requestedPaper
+        && entry.year === requestedYear;
+      if (matched || sameName) {
+        papers.push({ paper: entry.paper, year: entry.year, questions: entry.questions, matched, sameName: Boolean(sameName) });
+      }
+    }
+    papers.sort((a, b) => b.matched - a.matched || Number(b.sameName) - Number(a.sameName));
+    res.json({ questionSet, importedQuestions: importedKeys.size, papers });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to check for duplicate papers.', details: error.message });
+  }
+});
+
 // Lightweight values used by the cascading dropdowns. This intentionally
 // avoids downloading question text, options, solutions, and embedded images.
 router.get('/facets', ...READ_ROLES, async (req, res) => {
@@ -1963,7 +2035,11 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
     // Build each dropdown from all OTHER active filters.
     // Therefore both selecting and deselecting a filter immediately narrows
     // or broadens the valid choices in the remaining dropdowns.
+    // Grand Test / Previous Year rows only feed the dropdowns when that set
+    // is selected; chapter-wise (default) dropdowns never include them.
+    const isPaperRow = row => /^(class\s*)?full syllabus$/i.test(String(row.klass || '').trim());
     const matchesFacetRow = (row, ignore = '') => {
+      if (!isPaperQuestionSet(questionSet) && isPaperRow(row)) return false;
       const isPreviousYear = String(row.chapter || '') === 'Previous Year Questions';
       if (questionSet === 'grand_test' && isPreviousYear) return false;
       if (questionSet === 'previous_year' && !isPreviousYear) return false;
@@ -2023,6 +2099,7 @@ router.get('/facets', ...READ_ROLES, async (req, res) => {
       row => matchesFacetRow(row, 'chapter')
     );
     const conceptRows = accessibleRows.filter(row => {
+      if(!isPaperQuestionSet(questionSet) && isPaperRow(row)) return false;
       if(
         chapter &&
         String(row.chapter || '') !== chapter
